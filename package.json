@@ -1,0 +1,33 @@
+{
+  "name": "workspace",
+  "version": "1.0.0",
+  "description": "Far Rover demo: pick sensors, write rules, and watch a rover explore on its own.",
+  "main": "simulation.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "npm run test:sim && npm run test:ui",
+    "test:sim": "node tests/simulation.test.js",
+    "test:ui": "npx playwright test",
+    "serve": "npx http-server -p 8080 -c-1"
+  },
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/biggyclops/far-rover.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/biggyclops/far-rover/issues"
+  },
+  "homepage": "https://github.com/biggyclops/far-rover#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "http-server": "^14.1.1",
+    "playwright": "^1.63.0"
+  }
+}
