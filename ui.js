@@ -440,7 +440,7 @@ function showOperateView() {
           
           <div class="controls-panel">
             <div class="speed-controls">
-              <button class="speed-btn ${isPaused ? 'active' : ''}" data-speed="pause">⏸ Pause</button>
+              <button class="speed-btn ${isPaused ? 'active' : ''}" data-speed="pause" id="pause-btn">${isPaused ? '▶ Resume' : '⏸ Pause'}</button>
               <button class="speed-btn ${!isPaused && currentSpeed === 1 ? 'active' : ''}" data-speed="1">1×</button>
               <button class="speed-btn ${!isPaused && currentSpeed === 4 ? 'active' : ''}" data-speed="4">4×</button>
               <button class="speed-btn ${!isPaused && currentSpeed === 16 ? 'active' : ''}" data-speed="16">16×</button>
@@ -684,7 +684,12 @@ function wireOperateControls() {
     btn.addEventListener('click', (e) => {
       const speed = e.target.dataset.speed;
       if (speed === 'pause') {
-        pause();
+        // Toggle: if paused, resume; if running, pause
+        if (isPaused) {
+          setSpeed(currentSpeed || 1);
+        } else {
+          pause();
+        }
       } else {
         setSpeed(parseInt(speed));
       }
@@ -732,6 +737,12 @@ function updateOperateView() {
       (speed !== 'pause' && !isPaused && currentSpeed === parseInt(speed))
     );
   });
+  
+  // Update Pause/Resume button text
+  const pauseBtn = document.getElementById('pause-btn');
+  if (pauseBtn) {
+    pauseBtn.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
+  }
   
   const stepBtn = document.getElementById('step-btn');
   if (stepBtn) stepBtn.classList.toggle('hidden', !isPaused);
@@ -1127,7 +1138,7 @@ function showEndScreen() {
       </div>
       
       <div class="end-trace">
-        <h3>Failure Trace (Last 5 Ticks)</h3>
+        <h3>Trace (Last 5 Ticks)</h3>
         <div class="trace-list" id="trace-list">
           ${renderTrace()}
         </div>

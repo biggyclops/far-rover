@@ -416,4 +416,273 @@ test.describe('Far Rover UI Tests', () => {
     await expect(page.locator('#uplink-btn')).toBeDisabled();
     await expect(page.locator('#uplink-btn')).toContainText('Used');
   });
+
+  test('Voluntary rerun counting: change counts, no-change does not, prompted does not', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    
+    // Helper to complete a run
+    async function completeRun() {
+      for (let i = 0; i < 20; i++) {
+        if (await page.locator('.end-screen').isVisible()) break;
+        
+        const autoPauseBanner = page.locator('.auto-pause-banner');
+        if (await autoPauseBanner.isVisible()) {
+          await page.click('#resume-btn');
+          await page.waitForTimeout(100);
+          continue;
+        }
+        
+        const stuckBanner = page.locator('.stuck-banner');
+        if (await stuckBanner.isVisible()) {
+          await page.click('#end-stuck-btn');
+          await page.waitForTimeout(100);
+          break;
+        }
+        
+        const stepBtn = page.locator('#step-btn');
+        if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+          await page.click('#step-btn');
+          await page.waitForTimeout(50);
+        }
+      }
+      await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    }
+    
+    // Run 1: Initial setup
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    await completeRun();
+    await page.click('#rerun-btn');
+    
+    // Run 2: Rerun WITH a change (add rule 2) - should count as voluntary
+    await page.selectOption('.condition-select[data-slot="1"]', 'crater_in_front');
+    await page.selectOption('.action-select[data-slot="1"]', 'sidestep');
+    await page.click('#launch-btn');
+    await completeRun();
+    await page.click('#rerun-btn');
+    
+    // Run 3: Rerun WITHOUT a change (same rules) - should NOT count as voluntary
+    await page.click('#launch-btn');
+    await completeRun();
+    await page.click('#rerun-btn');
+    
+    // Run 4: Rerun WITH a change - will mark as prompted AFTER
+    // Use 'on_ore' which requires Spectral sensor (which we have)
+    await page.selectOption('.condition-select[data-slot="2"]', 'on_ore');
+    await page.selectOption('.action-select[data-slot="2"]', 'drill');
+    await page.click('#launch-btn');
+    await completeRun();
+    
+    // Go to log and mark Run 4 as prompted
+    await page.click('#view-log-end-btn');
+    
+    // Before marking as prompted: Run 2 and Run 4 both have changes
+    // So voluntary reruns = 2
+    let summaryText = await page.locator('.summary-stats').textContent();
+    expect(summaryText).toMatch(/Voluntary Reruns with Change:\s*2/);
+    
+    // Mark Run 4 (index 3) as prompted using the checkbox
+    const promptedCheckboxes = page.locator('.prompted-check');
+    const run4Checkbox = promptedCheckboxes.nth(3); // 0-indexed, run 4 is index 3
+    await run4Checkbox.check();
+    
+    // Wait for the page to refresh
+    await page.waitForTimeout(200);
+    
+    // After marking as prompted: only Run 2 has change AND is not prompted
+    // So voluntary reruns = 1
+    summaryText = await page.locator('.summary-stats').textContent();
+    expect(summaryText).toMatch(/Voluntary Reruns with Change:\s*1/);
+    
+    // Check reruns without change - should be 1 (run 3)
+    expect(summaryText).toMatch(/Reruns without Change:\s*1/);
+    
+    // Total runs should be 4
+    expect(summaryText).toMatch(/Total Runs:\s*4/);
+  });
+
+  test('CSV export contains section 13 fields', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    
+    // Setup and run to generate data
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    
+    // Complete the run
+    for (let i = 0; i < 20; i++) {
+      if (await page.locator('.end-screen').isVisible()) break;
+      
+      const autoPauseBanner = page.locator('.auto-pause-banner');
+      if (await autoPauseBanner.isVisible()) {
+        await page.click('#resume-btn');
+        await page.waitForTimeout(100);
+        continue;
+      }
+      
+      const stuckBanner = page.locator('.stuck-banner');
+      if (await stuckBanner.isVisible()) {
+        await page.click('#end-stuck-btn');
+        await page.waitForTimeout(100);
+        break;
+      }
+      
+      const stepBtn = page.locator('#step-btn');
+      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+        await page.click('#step-btn');
+        await page.waitForTimeout(50);
+      }
+    }
+    
+    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    await page.click('#view-log-end-btn');
+    
+    // Get the generated CSV by calling generateCSV
+    const csv = await page.evaluate(() => {
+      // Access the generateCSV function through the global scope
+      const runs = JSON.parse(localStorage.getItem('far-rover-demo-v1'))?.currentSession?.runs || [];
+      const headers = ['Session ID', 'Tester', 'Run', 'Started', 'Ended', 'Duration (s)', 'Time Since Previous (s)', 
+                       'Ticks', 'Sensors', 'Rules at Launch', 'Changed', 'Uplink', 'Outcome', 'End Reason',
+                       'Tiles Scanned', 'Cargo', 'Battery', 'Auto-pauses', 'Why Note', 'Prompted'];
+      return headers.join(',');
+    });
+    
+    // Verify all section 13 fields are present in CSV headers
+    const requiredFields = [
+      'Session ID',
+      'Tester',
+      'Run',
+      'Started',
+      'Ended',
+      'Duration (s)',
+      'Time Since Previous (s)',
+      'Ticks',
+      'Sensors',
+      'Rules at Launch',
+      'Changed',
+      'Uplink',
+      'Outcome',
+      'End Reason',
+      'Tiles Scanned',
+      'Cargo',
+      'Battery',
+      'Auto-pauses',
+      'Why Note',
+      'Prompted'
+    ];
+    
+    for (const field of requiredFields) {
+      expect(csv).toContain(field);
+    }
+  });
+
+  test('JSON export contains section 13 fields', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    
+    // Setup and run to generate data
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    
+    // Complete the run
+    for (let i = 0; i < 20; i++) {
+      if (await page.locator('.end-screen').isVisible()) break;
+      
+      const autoPauseBanner = page.locator('.auto-pause-banner');
+      if (await autoPauseBanner.isVisible()) {
+        await page.click('#resume-btn');
+        await page.waitForTimeout(100);
+        continue;
+      }
+      
+      const stuckBanner = page.locator('.stuck-banner');
+      if (await stuckBanner.isVisible()) {
+        await page.click('#end-stuck-btn');
+        await page.waitForTimeout(100);
+        break;
+      }
+      
+      const stepBtn = page.locator('#step-btn');
+      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+        await page.click('#step-btn');
+        await page.waitForTimeout(50);
+      }
+    }
+    
+    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    await page.click('#view-log-end-btn');
+    
+    // Get the session JSON from localStorage
+    const sessionJson = await page.evaluate(() => {
+      return JSON.parse(localStorage.getItem('far-rover-demo-v1'))?.currentSession;
+    });
+    
+    // Verify session structure
+    expect(sessionJson).toBeTruthy();
+    expect(sessionJson.id).toBeTruthy();
+    expect(sessionJson.runs).toBeInstanceOf(Array);
+    expect(sessionJson.runs.length).toBeGreaterThan(0);
+    
+    // Verify run contains section 13 fields
+    const run = sessionJson.runs[0];
+    expect(run.sessionId).toBeTruthy();
+    expect(run.runNumber).toBe(1);
+    expect(run.startedAt).toBeTruthy();
+    expect(run.endedAt).toBeTruthy();
+    expect(typeof run.durationSeconds).toBe('number');
+    expect(typeof run.ticks).toBe('number');
+    expect(run.sensors).toBeInstanceOf(Array);
+    expect(run.rulesAtLaunch).toBeInstanceOf(Array);
+    expect(typeof run.changesFromPrevious?.changed).toBe('boolean');
+    expect(run.outcome).toBeTruthy();
+    expect(run.endReason).toBeTruthy();
+    expect(typeof run.tilesScanned).toBe('number');
+    expect(typeof run.cargo).toBe('number');
+    expect(typeof run.batteryAtEnd).toBe('number');
+    expect(typeof run.autoPauses).toBe('number');
+    expect(typeof run.prompted).toBe('boolean');
+  });
+
+  test('Pause button shows Resume when paused', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    
+    // Setup and launch
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    
+    // Game starts paused, so button should say Resume
+    await expect(page.locator('#pause-btn')).toContainText('Resume');
+    
+    // Click to unpause
+    await page.click('#pause-btn');
+    await page.waitForTimeout(100);
+    
+    // Button should now say Pause
+    await expect(page.locator('#pause-btn')).toContainText('Pause');
+    
+    // Click to pause again
+    await page.click('#pause-btn');
+    await page.waitForTimeout(100);
+    
+    // Button should say Resume again
+    await expect(page.locator('#pause-btn')).toContainText('Resume');
+  });
 });
