@@ -37,6 +37,7 @@ let tickInterval = null;
 let previouslyRevealed = null;
 let pendingAutoPause = null;
 let pendingStuck = null;
+let continueFromStep4Data = null;
 let animatingMove = false;
 let lastTickResult = null;
 
@@ -977,12 +978,11 @@ function doTick() {
   if (animatingMove) return;
   if (gameState.outcome) return;
   
-  // If we had a pending auto-pause that needs to continue from step 4
+  // If we need to continue from step 4 after an auto-pause resume
   let result;
-  if (pendingAutoPause && pendingAutoPause.continueFromStep4) {
-    const tickRecord = pendingAutoPause.tickRecord;
-    const readings = gameState.readings;
-    pendingAutoPause = null;
+  if (continueFromStep4Data) {
+    const { tickRecord, readings } = continueFromStep4Data;
+    continueFromStep4Data = null;
     result = Sim.continueTickFromStep4(gameState, tickRecord, readings);
   } else {
     result = Sim.runTick(gameState, previouslyRevealed);
@@ -994,7 +994,10 @@ function doTick() {
   // Handle auto-pause
   if (result.autoPause) {
     autoPauseCount++;
-    pendingAutoPause = { ...result.autoPause, continueFromStep4: result.continueFromStep4, tickRecord: result.tickRecord };
+    pendingAutoPause = { ...result.autoPause };
+    if (result.continueFromStep4) {
+      continueFromStep4Data = { tickRecord: result.tickRecord, readings: gameState.readings };
+    }
     isPaused = true;
     stopTicking();
     showOperateView();
@@ -1038,6 +1041,11 @@ function resumeFromAutoPause() {
   showOperateView();
   if (!isPaused) {
     startTicking();
+  } else {
+    // If we're stepping manually, continue the tick now
+    if (continueFromStep4Data) {
+      doTick();
+    }
   }
 }
 
