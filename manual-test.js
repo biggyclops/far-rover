@@ -204,11 +204,28 @@ async function runManualTest() {
   await sleep(500);
   await page.screenshot({ path: `${ARTIFACTS_DIR}/11-end-screen-run2.png` });
   
-  // View log
+  // View log - try both buttons
   console.log('11. View log');
-  await page.click('#view-log-end-btn');
-  await sleep(500);
-  await page.screenshot({ path: `${ARTIFACTS_DIR}/12-run-log.png` });
+  const viewLogEndBtn = page.locator('#view-log-end-btn');
+  const rerunBtn = page.locator('#rerun-btn');
+  
+  if (await viewLogEndBtn.isVisible()) {
+    await viewLogEndBtn.click();
+    await sleep(500);
+    await page.screenshot({ path: `${ARTIFACTS_DIR}/12-run-log.png` });
+  } else if (await rerunBtn.isVisible()) {
+    await rerunBtn.click();
+    await sleep(300);
+    const viewLogBtn = page.locator('#view-log-btn');
+    if (await viewLogBtn.isVisible()) {
+      await viewLogBtn.click();
+      await sleep(500);
+      await page.screenshot({ path: `${ARTIFACTS_DIR}/12-run-log.png` });
+    }
+  } else {
+    console.log('   Could not find View Log button, taking current screen');
+    await page.screenshot({ path: `${ARTIFACTS_DIR}/12-current-screen.png` });
+  }
   
   // Export CSV
   console.log('12. Export CSV');
