@@ -93,6 +93,11 @@ button {
   color: white;
 }
 
+.starter-btn {
+  margin-bottom: 10px;
+  font-size: 0.85rem;
+}
+
 /* === TITLE SCREEN === */
 
 .title-screen {
@@ -486,6 +491,12 @@ button {
 
 .map-cell.dust {
   background: var(--tile-dust);
+}
+
+/* v3.2: Camera-seen but not driven onto - shown faded with dashed border */
+.map-cell.camera-seen {
+  opacity: 0.5;
+  border: 2px dashed var(--accent-dim);
 }
 
 .map-cell.lander-area {

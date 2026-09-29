@@ -90,7 +90,7 @@ export function showTitleScreen() {
       <h1>Far Rover</h1>
       <p class="pitch">Build a tiny rover from three sensors and four if-then rules, launch it onto a hidden alien grid, and watch it live or die by the logic you wrote.</p>
       <div class="goal-box">
-        <strong>Goal:</strong> Scan 30 tiles and return to the lander, or drill 3 ore and return.
+        <strong>Goal:</strong> Drive onto 25 tiles and return to the lander, or drill 3 ore and return.
       </div>
       <button id="start-btn" class="primary-btn">Start</button>
     </div>
@@ -151,6 +151,7 @@ export function showBuildScreen() {
         
         <div class="rules-section">
           <h3>Rules <span class="rule-note">(First match wins)</span></h3>
+          <button id="load-starter-btn" class="secondary-btn starter-btn">Load Starter Program</button>
           <div class="rules-list" id="rules-list">
             ${renderRuleSlots()}
           </div>
@@ -163,6 +164,7 @@ export function showBuildScreen() {
               <h4>Conditions</h4>
               <ul>
                 <li><strong>Battery below N:</strong> battery points &lt; N</li>
+                <li><strong>Goal met:</strong> 25 tiles driven onto or 3 ore (sticky)</li>
                 <li><strong>Crater in front:</strong> needs Distance sensor</li>
                 <li><strong>On a dust tile:</strong> needs Dust sensor</li>
                 <li><strong>Ore next to rover:</strong> needs Spectral sensor</li>
@@ -173,10 +175,10 @@ export function showBuildScreen() {
             <div class="reference-col">
               <h4>Actions</h4>
               <ul>
-                <li><strong>Explore:</strong> move toward nearest hidden tile</li>
+                <li><strong>Explore:</strong> move toward nearest hidden tile (avoids known craters)</li>
                 <li><strong>Return and charge:</strong> go to lander and charge (3 ticks)</li>
                 <li><strong>Sidestep:</strong> move right or left, keep facing</li>
-                <li><strong>Go to ore:</strong> move to adjacent ore (needs Spectral)</li>
+                <li><strong>Go to ore:</strong> move to adjacent ore and drill (costs 3, needs Spectral)</li>
                 <li><strong>Drill:</strong> drill ore on current tile (costs 2)</li>
                 <li><strong>Wait:</strong> do nothing this tick</li>
               </ul>
@@ -203,8 +205,50 @@ export function showBuildScreen() {
   // Wire up buttons
   document.getElementById('launch-btn').addEventListener('click', launch);
   document.getElementById('view-log-btn').addEventListener('click', showLogScreen);
+  document.getElementById('load-starter-btn').addEventListener('click', loadStarterProgram);
   
   updateLaunchButton();
+}
+
+// v3.2: Load the printed starter program preset
+function loadStarterProgram() {
+  // Starter program needs Distance and Spectral
+  const requiredSensors = [Sim.SENSORS.DISTANCE, Sim.SENSORS.SPECTRAL];
+  
+  // Ensure required sensors are selected
+  for (const sensor of requiredSensors) {
+    if (!selectedSensors.includes(sensor)) {
+      // Remove a non-required sensor if we're at max
+      if (selectedSensors.length >= 3) {
+        // Keep Camera if selected, otherwise remove the first non-required
+        const toRemove = selectedSensors.find(s => !requiredSensors.includes(s) && s !== Sim.SENSORS.CAMERA);
+        if (toRemove) {
+          selectedSensors = selectedSensors.filter(s => s !== toRemove);
+        } else {
+          selectedSensors = selectedSensors.filter(s => requiredSensors.includes(s));
+        }
+      }
+      selectedSensors.push(sensor);
+    }
+  }
+  
+  // If we still need a third sensor, add Camera (or Dust if Camera not available)
+  if (selectedSensors.length < 3) {
+    if (!selectedSensors.includes(Sim.SENSORS.CAMERA)) {
+      selectedSensors.push(Sim.SENSORS.CAMERA);
+    } else if (!selectedSensors.includes(Sim.SENSORS.DUST)) {
+      selectedSensors.push(Sim.SENSORS.DUST);
+    }
+  }
+  
+  // Load the starter program rules
+  rules = Sim.STARTER_PROGRAM.map(r => ({
+    condition: { ...r.condition },
+    action: { ...r.action }
+  }));
+  
+  // Re-render the build screen
+  showBuildScreen();
 }
 
 function renderRuleSlots() {
@@ -241,6 +285,7 @@ function renderConditionOptions(selected) {
   const options = [
     { value: '', label: '-- Select condition --' },
     { value: Sim.CONDITIONS.BATTERY_BELOW, label: 'Battery below N', sensor: null },
+    { value: Sim.CONDITIONS.GOAL_MET, label: 'Goal met', sensor: null },
     { value: Sim.CONDITIONS.CRATER_IN_FRONT, label: 'Crater in front', sensor: Sim.SENSORS.DISTANCE },
     { value: Sim.CONDITIONS.ON_DUST, label: 'On a dust tile', sensor: Sim.SENSORS.DUST },
     { value: Sim.CONDITIONS.ORE_NEXT_TO, label: 'Ore next to rover', sensor: Sim.SENSORS.SPECTRAL },
@@ -433,7 +478,7 @@ function showOperateView() {
               <div class="battery-bar"><div class="battery-fill" style="width: ${gameState.battery * 5}%"></div></div>
             </div>
             <div class="stats-row">
-              <span>Tiles: ${gameState.tilesScanned}/30</span>
+              <span>Tiles: ${gameState.tilesScanned}/${Sim.GOAL_TILES}</span>
               <span>Cargo: ${gameState.cargo}/3</span>
             </div>
           </div>
@@ -447,7 +492,7 @@ function showOperateView() {
             </div>
             <button class="step-btn ${isPaused ? '' : 'hidden'}" id="step-btn">Step 1 Tick</button>
             <div class="uplink-control">
-              <button class="uplink-btn ${gameState.uplink.used ? 'used' : ''}" id="uplink-btn" ${gameState.uplink.used || !isPaused ? 'disabled' : ''}>
+              <button class="uplink-btn ${gameState.uplink.used ? 'used' : ''}" id="uplink-btn" ${!Sim.canUseUplink(gameState) || !isPaused ? 'disabled' : ''}>
                 ${gameState.uplink.used ? '📡 Uplink Used' : '📡 Use Uplink'}
               </button>
             </div>
@@ -476,7 +521,7 @@ function renderAutoPauseBanner() {
       </div>
       <div class="banner-actions">
         <button class="resume-btn" id="resume-btn">Resume</button>
-        ${!gameState.uplink.used ? '<button class="uplink-banner-btn" id="uplink-banner-btn">Use Uplink</button>' : ''}
+        ${Sim.canUseUplink(gameState) ? '<button class="uplink-banner-btn" id="uplink-banner-btn">Use Uplink</button>' : ''}
       </div>
     </div>
   `;
@@ -490,7 +535,7 @@ function renderStuckBanner() {
         <span class="banner-text">Stuck: ${pendingStuck.reason}</span>
       </div>
       <div class="banner-actions">
-        ${!gameState.uplink.used ? '<button class="uplink-banner-btn" id="uplink-stuck-btn">Use Uplink</button>' : ''}
+        ${Sim.canUseUplink(gameState) ? '<button class="uplink-banner-btn" id="uplink-stuck-btn">Use Uplink</button>' : ''}
         <button class="end-stuck-btn" id="end-stuck-btn">End Run</button>
       </div>
     </div>
@@ -511,13 +556,14 @@ function renderMap() {
     html += `<div class="map-row"><span class="row-label">${r + 1}</span>`;
     for (let c = 0; c < 12; c++) {
       const isRevealed = gameState.revealed[r][c];
+      const isCameraSeen = gameState.cameraSeen?.[r]?.[c] || false;
       const terrain = gameState.terrain[r][c];
       const isDrilled = gameState.drilled[r][c];
       const isRover = gameState.col === c && gameState.row === r;
       
       // Check if detected but not revealed
       let detected = false;
-      if (!isRevealed) {
+      if (!isRevealed && !isCameraSeen) {
         if (gameState.sensors.includes(Sim.SENSORS.DISTANCE)) {
           const [fc, fr] = [gameState.col + Sim.DIR_VECTORS[gameState.facing][0], 
                            gameState.row + Sim.DIR_VECTORS[gameState.facing][1]];
@@ -528,7 +574,11 @@ function renderMap() {
       }
       
       let cellClass = 'map-cell';
-      if (!isRevealed) {
+      if (isCameraSeen && !isRevealed) {
+        // v3.2: Camera-seen but not driven onto - show terrain but faded
+        cellClass += ` ${terrain} camera-seen`;
+        if (isDrilled) cellClass += ' drilled';
+      } else if (!isRevealed) {
         cellClass += ' hidden';
         if (detected) cellClass += ' detected';
       } else {
@@ -724,7 +774,7 @@ function updateOperateView() {
   const statsRow = document.querySelector('.stats-row');
   if (statsRow) {
     statsRow.innerHTML = `
-      <span>Tiles: ${gameState.tilesScanned}/30</span>
+      <span>Tiles: ${gameState.tilesScanned}/${Sim.GOAL_TILES}</span>
       <span>Cargo: ${gameState.cargo}/3</span>
     `;
   }
@@ -749,7 +799,7 @@ function updateOperateView() {
   
   const uplinkBtn = document.getElementById('uplink-btn');
   if (uplinkBtn) {
-    uplinkBtn.disabled = gameState.uplink.used || !isPaused;
+    uplinkBtn.disabled = !Sim.canUseUplink(gameState) || !isPaused;
     uplinkBtn.textContent = gameState.uplink.used ? '📡 Uplink Used' : '📡 Use Uplink';
     uplinkBtn.classList.toggle('used', gameState.uplink.used);
   }
@@ -762,7 +812,7 @@ function updateOperateView() {
 // === UPLINK DIALOG ===
 
 function showUplinkDialog() {
-  if (gameState.uplink.used) return;
+  if (!Sim.canUseUplink(gameState)) return;
   
   const dialog = document.createElement('div');
   dialog.className = 'uplink-dialog-overlay';
@@ -1131,7 +1181,7 @@ function showEndScreen() {
       
       <div class="end-stats">
         <div class="stat-item"><span class="stat-label">Ticks:</span> <span class="stat-value">${gameState.tick}</span></div>
-        <div class="stat-item"><span class="stat-label">Tiles Scanned:</span> <span class="stat-value">${gameState.tilesScanned}/30</span></div>
+        <div class="stat-item"><span class="stat-label">Tiles Scanned:</span> <span class="stat-value">${gameState.tilesScanned}/${Sim.GOAL_TILES}</span></div>
         <div class="stat-item"><span class="stat-label">Cargo:</span> <span class="stat-value">${gameState.cargo}/3</span></div>
         <div class="stat-item"><span class="stat-label">Battery:</span> <span class="stat-value">${gameState.battery} pts</span></div>
         <div class="stat-item"><span class="stat-label">Uplink:</span> <span class="stat-value">${gameState.uplink.used ? 'Used' : 'Not used'}</span></div>
@@ -1262,7 +1312,7 @@ function showLogScreen() {
                 <td>${r.runNumber}</td>
                 <td class="${r.outcome?.startsWith('success') ? 'success' : 'failure'}">${r.outcome || '?'}</td>
                 <td>${r.ticks}</td>
-                <td>${r.tilesScanned}/30</td>
+                <td>${r.tilesScanned}/${Sim.GOAL_TILES}</td>
                 <td>${r.cargo}/3</td>
                 <td>${r.changesFromPrevious?.changed ? 'Yes' : (i === 0 ? '-' : 'No')}</td>
                 <td><input type="checkbox" data-run="${i}" ${r.prompted ? 'checked' : ''} class="prompted-check"></td>
