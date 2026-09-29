@@ -1,5 +1,6 @@
 // Far Rover Simulation Module
 // Pure and deterministic - no UI, no randomness, no side effects
+// v3.2 kit rules (paper-test kit v3.2, design.md v0.6.7)
 
 // === MAP DATA ===
 // Fixed 12x12 terrain, identical every run
@@ -92,6 +93,7 @@ export const SENSORS = {
 // === CONDITIONS ===
 export const CONDITIONS = {
   BATTERY_BELOW: 'battery_below',
+  GOAL_MET: 'goal_met',           // v3.2: new always-available condition
   CRATER_IN_FRONT: 'crater_in_front',
   ON_DUST: 'on_dust',
   ORE_NEXT_TO: 'ore_next_to',
@@ -101,7 +103,8 @@ export const CONDITIONS = {
 
 // Which sensor each condition needs
 export const CONDITION_SENSORS = {
-  [CONDITIONS.BATTERY_BELOW]: null, // Always available
+  [CONDITIONS.BATTERY_BELOW]: null,    // Always available
+  [CONDITIONS.GOAL_MET]: null,         // Always available (v3.2)
   [CONDITIONS.CRATER_IN_FRONT]: SENSORS.DISTANCE,
   [CONDITIONS.ON_DUST]: SENSORS.DUST,
   [CONDITIONS.ORE_NEXT_TO]: SENSORS.SPECTRAL,
@@ -129,6 +132,10 @@ export const ACTION_SENSORS = {
   [ACTIONS.WAIT]: null
 };
 
+// === CONSTANTS ===
+export const GOAL_TILES = 25;     // v3.2: goal is 25 tiles (driven onto only)
+export const GOAL_ORE = 3;
+
 // === GAME STATE ===
 export function createInitialState(sensors, rules) {
   return {
@@ -141,9 +148,13 @@ export function createInitialState(sensors, rules) {
     
     // Map state
     terrain: createTerrain(),
-    revealed: Array(12).fill(null).map(() => Array(12).fill(false)),
+    revealed: Array(12).fill(null).map(() => Array(12).fill(false)),   // All known tiles (driven + camera craters)
+    cameraSeen: Array(12).fill(null).map(() => Array(12).fill(false)), // Camera-seen but not driven onto
     drilled: Array(12).fill(null).map(() => Array(12).fill(false)),
-    tilesScanned: 0,
+    tilesScanned: 0,     // v3.2: only tiles rover has driven onto (not craters, not camera)
+    
+    // Goal state (v3.2)
+    goalMet: false,      // Sticky: once true, stays true for rest of run
     
     // Run state
     tick: 0,
@@ -157,12 +168,12 @@ export function createInitialState(sensors, rules) {
     charging: false,
     chargeTick: 0,
     
-    // Stuck detection
+    // Stuck detection (v3.2: exact rules)
     noMoveCount: 0,
     chargeWithoutLeaving: false,
     leftLanderSinceCharge: true,
-    loopMemory: [], // [{col, row, facing}] since last progress
-    lastProgress: null,
+    // v3.2: circling tracks (tile, facing) since last scan of new tile or drill
+    circlingMemory: [],  // [{col, row, facing}]
     
     // Auto-pause state
     autoPaused: false,
@@ -187,6 +198,7 @@ function isOnLander(col, row) {
   return col === 5 && row === 12;
 }
 
+// v3.2: Lander's only neighbor is F12
 function isValidNeighbor(col, row, fromCol, fromRow) {
   // On-grid cell
   if (isOnGrid(col, row)) return true;
@@ -195,6 +207,12 @@ function isValidNeighbor(col, row, fromCol, fromRow) {
   // F12 when moving north from lander
   if (col === 5 && row === 11 && fromCol === 5 && fromRow === 12) return true;
   return false;
+}
+
+// v3.2: For Sidestep, lander counts as off-map
+function isValidSidestepTarget(col, row, fromCol, fromRow) {
+  // Only on-grid cells are valid for Sidestep
+  return isOnGrid(col, row);
 }
 
 function getNeighbor(col, row, direction) {
@@ -209,10 +227,17 @@ function stepDistance(col1, row1, col2, row2) {
   return Math.abs(col1 - col2) + Math.abs(r1 - r2);
 }
 
+// v3.2: Dust costs 2 regardless of Dust sensor
 function getMoveCost(state, toCol, toRow) {
   if (isOnLander(toCol, toRow)) return 1;
   if (state.terrain[toRow][toCol] === TERRAIN.DUST) return 2;
   return 1;
+}
+
+// v3.2: Check if a cell is a known (face-up) crater
+function isKnownCrater(state, col, row) {
+  if (!isOnGrid(col, row)) return false;
+  return state.revealed[row][col] && state.terrain[row][col] === TERRAIN.CRATER;
 }
 
 // === SENSOR READINGS ===
@@ -223,9 +248,13 @@ export function computeReadings(state) {
   // Battery (always)
   readings.battery = state.battery;
   
+  // Goal met (v3.2: sticky condition)
+  readings.goalMet = state.goalMet;
+  
   // Distance sensor: crater in front?
   if (state.sensors.includes(SENSORS.DISTANCE)) {
     const [fc, fr] = getNeighbor(state.col, state.row, state.facing);
+    // v3.2: false when facing lander or map edge
     if (isOnGrid(fc, fr) && state.terrain[fr][fc] === TERRAIN.CRATER) {
       readings.craterInFront = { detected: true, cell: formatCell(fc, fr) };
     } else {
@@ -271,6 +300,8 @@ export function evaluateCondition(condition, state, readings) {
   switch (condition.type) {
     case CONDITIONS.BATTERY_BELOW:
       return readings.battery < condition.n;
+    case CONDITIONS.GOAL_MET:
+      return readings.goalMet || false;
     case CONDITIONS.CRATER_IN_FRONT:
       return readings.craterInFront?.detected || false;
     case CONDITIONS.ON_DUST:
@@ -288,11 +319,54 @@ export function evaluateCondition(condition, state, readings) {
 
 // === ACTION EXECUTION ===
 
-function findNearestHiddenTile(state) {
+// v3.2: Explore targets "face-down" tiles, which includes camera-seen non-crater tiles
+function isTileHiddenForExplore(state, col, row) {
+  // A tile is "hidden for Explore" if not revealed OR if camera-seen but not driven onto
+  // But actually in v3.2, camera-seen tiles stay "face-down" for Explore targeting
+  // Only tiles the rover has driven onto are "face-up"
+  // Camera-revealed craters ARE face-up (known) but other camera tiles are just "seen"
+  if (!isOnGrid(col, row)) return false;
+  
+  // If it's a crater that's been revealed (by camera), it's face-up (known)
+  if (state.terrain[row][col] === TERRAIN.CRATER && state.revealed[row][col]) {
+    return false; // Known crater is NOT hidden
+  }
+  
+  // For non-craters: only driven-onto tiles are "face-up"
+  // Camera-seen tiles are still targetable by Explore
+  // We need to track which tiles were DRIVEN onto vs just camera-seen
+  // The tilesScanned count tells us driven-onto count
+  // We'll use a separate check: was this tile revealed by driving onto it?
+  
+  // A tile is hidden for Explore if:
+  // - Not revealed at all, OR
+  // - Camera-seen but not driven onto (for non-craters)
+  
+  // Actually, simpler: check if cameraSeen is true but the tile wasn't driven onto
+  // We can determine driven onto by: revealed AND (not cameraSeen OR is crater)
+  // But this is complex. Let me use the clearer approach:
+  
+  // The revealed array marks ALL revealed tiles (driven + camera craters)
+  // The cameraSeen array marks tiles seen by camera that are NOT craters
+  // For Explore targeting:
+  // - Known craters (revealed AND is crater) are NOT targets
+  // - Camera-seen non-craters (cameraSeen) ARE still targets
+  // - Completely unrevealed tiles ARE targets
+  
+  if (state.cameraSeen[row][col]) {
+    return true; // Camera-seen non-crater is still targetable
+  }
+  if (!state.revealed[row][col]) {
+    return true; // Not revealed at all
+  }
+  return false; // Driven onto (revealed but not just camera-seen)
+}
+
+function findNearestHiddenTileForExplore(state) {
   let minDist = Infinity;
   for (let row = 0; row < 12; row++) {
     for (let col = 0; col < 12; col++) {
-      if (!state.revealed[row][col]) {
+      if (isTileHiddenForExplore(state, col, row)) {
         const dist = stepDistance(state.col, state.row, col, row);
         if (dist < minDist) {
           minDist = dist;
@@ -303,11 +377,11 @@ function findNearestHiddenTile(state) {
   return minDist === Infinity ? null : minDist;
 }
 
-function distanceToNearestHidden(state, col, row) {
+function distanceToNearestHiddenForExplore(state, col, row) {
   let minDist = Infinity;
   for (let r = 0; r < 12; r++) {
     for (let c = 0; c < 12; c++) {
-      if (!state.revealed[r][c]) {
+      if (isTileHiddenForExplore(state, c, r)) {
         const dist = stepDistance(col, row, c, r);
         if (dist < minDist) {
           minDist = dist;
@@ -322,16 +396,17 @@ function distanceToLander(col, row) {
   return stepDistance(col, row, 5, 12);
 }
 
+// v3.2: Explore never steps onto a known (face-up) crater
 function executeExplore(state) {
-  const currentDist = findNearestHiddenTile(state);
+  const currentDist = findNearestHiddenTileForExplore(state);
   if (currentDist === null) {
     return { moved: false, turned: false, reason: 'no hidden tiles' };
   }
   
-  // Check front first
+  // Check front first - but not if it's a known crater
   const [fc, fr] = getNeighbor(state.col, state.row, state.facing);
-  if (isValidNeighbor(fc, fr, state.col, state.row) && isOnGrid(fc, fr)) {
-    const frontDist = distanceToNearestHidden(state, fc, fr);
+  if (isValidNeighbor(fc, fr, state.col, state.row) && isOnGrid(fc, fr) && !isKnownCrater(state, fc, fr)) {
+    const frontDist = distanceToNearestHiddenForExplore(state, fc, fr);
     if (frontDist < currentDist) {
       const cost = getMoveCost(state, fc, fr);
       state.battery = Math.max(0, state.battery - cost);
@@ -346,17 +421,17 @@ function executeExplore(state) {
     }
   }
   
-  // Check right, left, back for turning
+  // Check right, left, back for turning - exclude known craters
   const turns = RELATIVE_TURNS[state.facing];
   for (const rel of ['right', 'left', 'back']) {
     const dir = turns[rel];
     const [nc, nr] = getNeighbor(state.col, state.row, dir);
-    if (isValidNeighbor(nc, nr, state.col, state.row)) {
+    if (isValidNeighbor(nc, nr, state.col, state.row) && !isKnownCrater(state, nc, nr)) {
       let neighborDist;
       if (isOnGrid(nc, nr)) {
-        neighborDist = distanceToNearestHidden(state, nc, nr);
+        neighborDist = distanceToNearestHiddenForExplore(state, nc, nr);
       } else {
-        neighborDist = distanceToNearestHidden(state, nc, nr);
+        neighborDist = distanceToNearestHiddenForExplore(state, nc, nr);
       }
       if (neighborDist < currentDist) {
         state.facing = dir;
@@ -368,8 +443,10 @@ function executeExplore(state) {
   return { moved: false, turned: false, reason: 'no closer path' };
 }
 
+// v3.2: Return and charge does NOT avoid known craters, starts charge even at full battery
 function executeReturnAndCharge(state) {
   if (isOnLander(state.col, state.row)) {
+    // v3.2: starts charge even at full battery
     state.charging = true;
     state.chargeTick = 1;
     if (!state.leftLanderSinceCharge) {
@@ -379,7 +456,7 @@ function executeReturnAndCharge(state) {
     return { charging: true, chargeTick: 1 };
   }
   
-  // Navigate to lander
+  // Navigate to lander - v3.2: does NOT avoid known craters
   const currentDist = distanceToLander(state.col, state.row);
   
   // Check front first
@@ -416,42 +493,45 @@ function executeReturnAndCharge(state) {
   return { moved: false, turned: false, reason: 'no closer path to lander' };
 }
 
+// v3.2: Sidestep treats lander as off-map, does nothing on lander
 function executeSidestep(state) {
+  // v3.2: On the lander, Sidestep does nothing
+  if (isOnLander(state.col, state.row)) {
+    return { moved: false, reason: 'on lander' };
+  }
+  
   const turns = RELATIVE_TURNS[state.facing];
   
-  // Try right first
+  // Try right first - v3.2: lander counts as off-map
   const rightDir = turns.right;
   const [rc, rr] = getNeighbor(state.col, state.row, rightDir);
-  if (isValidNeighbor(rc, rr, state.col, state.row) && isOnGrid(rc, rr)) {
+  if (isValidSidestepTarget(rc, rr, state.col, state.row)) {
     const cost = getMoveCost(state, rc, rr);
     state.battery = Math.max(0, state.battery - cost);
     const from = formatCell(state.col, state.row);
     state.col = rc;
     state.row = rr;
-    if (!isOnLander(rc, rr)) {
-      state.leftLanderSinceCharge = true;
-    }
+    state.leftLanderSinceCharge = true;
     return { moved: true, to: formatCell(rc, rr), from, cost, direction: 'right' };
   }
   
-  // Try left
+  // Try left - v3.2: lander counts as off-map
   const leftDir = turns.left;
   const [lc, lr] = getNeighbor(state.col, state.row, leftDir);
-  if (isValidNeighbor(lc, lr, state.col, state.row) && isOnGrid(lc, lr)) {
+  if (isValidSidestepTarget(lc, lr, state.col, state.row)) {
     const cost = getMoveCost(state, lc, lr);
     state.battery = Math.max(0, state.battery - cost);
     const from = formatCell(state.col, state.row);
     state.col = lc;
     state.row = lr;
-    if (!isOnLander(lc, lr)) {
-      state.leftLanderSinceCharge = true;
-    }
+    state.leftLanderSinceCharge = true;
     return { moved: true, to: formatCell(lc, lr), from, cost, direction: 'left' };
   }
   
   return { moved: false, reason: 'no valid sidestep' };
 }
 
+// v3.2: Go to ore costs 3 (1 move + 2 drill), drills in same tick
 function executeGoToOre(state) {
   // Check front, right, left, back for neighboring undrilled ore
   const dirs = [state.facing, RELATIVE_TURNS[state.facing].right, 
@@ -462,17 +542,23 @@ function executeGoToOre(state) {
     if (isOnGrid(nc, nr) && 
         state.terrain[nr][nc] === TERRAIN.ORE && 
         !state.drilled[nr][nc]) {
-      state.battery = Math.max(0, state.battery - 1);
+      // v3.2: Move and drill in same tick, cost 3 (1 move + 2 drill)
+      const moveCost = getMoveCost(state, nc, nr);
+      state.battery = Math.max(0, state.battery - moveCost - 2); // Total cost 3 (or 4 onto dust)
       const from = formatCell(state.col, state.row);
       state.col = nc;
       state.row = nr;
       state.facing = dir;
       state.leftLanderSinceCharge = true;
-      return { moved: true, to: formatCell(nc, nr), from, cost: 1, direction: dir };
+      // Drill the ore
+      state.drilled[nr][nc] = true;
+      state.cargo++;
+      return { moved: true, drilled: true, to: formatCell(nc, nr), from, cost: moveCost + 2, direction: dir };
     }
   }
   
-  return { moved: false, reason: 'no ore nearby' };
+  // v3.2: If no adjacent ore, costs 0
+  return { moved: false, drilled: false, reason: 'no ore nearby', cost: 0 };
 }
 
 function executeDrill(state) {
@@ -512,42 +598,105 @@ export function executeAction(action, state) {
 }
 
 // === SCANNING ===
+// v3.2: Only tiles the rover drives onto count toward the goal.
+// Camera-revealed tiles don't count. Craters never count.
 
-function revealTile(state, col, row) {
-  if (isOnGrid(col, row) && !state.revealed[row][col]) {
-    state.revealed[row][col] = true;
-    state.tilesScanned++;
-    return true;
+function revealTileByDriving(state, col, row) {
+  if (!isOnGrid(col, row)) return false;
+  
+  const wasRevealed = state.revealed[row][col];
+  const wasCameraSeen = state.cameraSeen[row][col];
+  
+  state.revealed[row][col] = true;
+  state.cameraSeen[row][col] = false; // No longer just camera-seen
+  
+  // v3.2: Only count non-craters that weren't already driven onto
+  if (!wasRevealed || wasCameraSeen) {
+    if (state.terrain[row][col] !== TERRAIN.CRATER) {
+      state.tilesScanned++;
+      return true; // Progress made
+    }
   }
-  return false;
+  return !wasRevealed; // Return true if newly revealed for terrain info
 }
 
-export function scan(state, previousCol, previousRow) {
+function revealTileByCamera(state, col, row) {
+  if (!isOnGrid(col, row)) return { revealed: false, isCrater: false };
+  
+  if (state.revealed[row][col] && !state.cameraSeen[row][col]) {
+    // Already driven onto, camera doesn't change anything
+    return { revealed: false, isCrater: false };
+  }
+  
+  const isCrater = state.terrain[row][col] === TERRAIN.CRATER;
+  
+  if (isCrater) {
+    // Craters become known (face-up) when camera sees them
+    state.revealed[row][col] = true;
+    state.cameraSeen[row][col] = false;
+    return { revealed: true, isCrater: true, terrain: state.terrain[row][col] };
+  } else {
+    // Non-craters are "seen" but not "scanned"
+    state.cameraSeen[row][col] = true;
+    return { revealed: true, isCrater: false, terrain: state.terrain[row][col] };
+  }
+}
+
+export function scan(state, didMove, actionResult) {
   const newlyRevealed = [];
   
   if (isOnLander(state.col, state.row)) {
     return newlyRevealed; // Lander scans nothing
   }
   
+  if (!didMove) {
+    return newlyRevealed; // No move, no scan
+  }
+  
+  // First, reveal the tile the rover drove onto
+  const droveOnto = revealTileByDriving(state, state.col, state.row);
+  if (droveOnto || state.terrain[state.row][state.col] === TERRAIN.CRATER) {
+    newlyRevealed.push({ 
+      col: state.col, 
+      row: state.row, 
+      terrain: state.terrain[state.row][state.col],
+      drivenOnto: true
+    });
+  }
+  
+  // With camera, reveal the 3x3 area
   if (state.sensors.includes(SENSORS.CAMERA)) {
-    // 3x3 area centered on rover
     for (let dr = -1; dr <= 1; dr++) {
       for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue; // Skip center (already handled)
         const c = state.col + dc;
         const r = state.row + dr;
-        if (revealTile(state, c, r)) {
-          newlyRevealed.push({ col: c, row: r, terrain: state.terrain[r][c] });
+        const result = revealTileByCamera(state, c, r);
+        if (result.revealed) {
+          newlyRevealed.push({ 
+            col: c, 
+            row: r, 
+            terrain: result.terrain,
+            drivenOnto: false,
+            isCrater: result.isCrater
+          });
         }
       }
-    }
-  } else {
-    // Just the current tile
-    if (revealTile(state, state.col, state.row)) {
-      newlyRevealed.push({ col: state.col, row: state.row, terrain: state.terrain[state.row][state.col] });
     }
   }
   
   return newlyRevealed;
+}
+
+// === GOAL CHECK ===
+// v3.2: Goal is 25 tiles driven onto OR 3 ore. Sticky once met.
+
+function updateGoalStatus(state) {
+  if (state.goalMet) return; // Already met, stays met
+  
+  if (state.tilesScanned >= GOAL_TILES || state.cargo >= GOAL_ORE) {
+    state.goalMet = true;
+  }
 }
 
 // === END CONDITIONS ===
@@ -580,34 +729,34 @@ export function checkEndConditions(state) {
     };
   }
   
-  // 3. Success conditions (on lander with goals met)
-  if (isOnLander(state.col, state.row)) {
-    if (state.tilesScanned >= 30) {
-      return { 
-        outcome: OUTCOMES.SUCCESS_SCAN, 
-        reason: `returned to lander with ${state.tilesScanned} tiles scanned on tick ${state.tick}` 
-      };
-    }
-    if (state.cargo >= 3) {
+  // 3. Success: on lander with goal met
+  if (isOnLander(state.col, state.row) && state.goalMet) {
+    if (state.cargo >= GOAL_ORE) {
       return { 
         outcome: OUTCOMES.SUCCESS_ORE, 
         reason: `returned to lander with ${state.cargo} ore on tick ${state.tick}` 
       };
     }
+    return { 
+      outcome: OUTCOMES.SUCCESS_SCAN, 
+      reason: `returned to lander with ${state.tilesScanned} tiles scanned on tick ${state.tick}` 
+    };
   }
   
   return null;
 }
 
-export function checkStuckConditions(state, didMove) {
+// v3.2: Exact stuck rules
+export function checkStuckConditions(state, didMove, didTurn, madeProgress) {
   // Update no-move counter
+  // v3.2: Turning in place counts as not moving
   if (didMove) {
     state.noMoveCount = 0;
   } else {
     state.noMoveCount++;
   }
   
-  // 1. No move: 3 ticks without changing cell
+  // 1. Idle: 3 turns without moving (turning in place counts as not moving)
   if (state.noMoveCount >= 3) {
     return { 
       outcome: OUTCOMES.STUCK_NO_MOVE, 
@@ -615,7 +764,7 @@ export function checkStuckConditions(state, didMove) {
     };
   }
   
-  // 2. Charge twice without leaving
+  // 2. Double charge: charging twice without leaving lander
   if (state.chargeWithoutLeaving) {
     return { 
       outcome: OUTCOMES.STUCK_CHARGE, 
@@ -623,10 +772,16 @@ export function checkStuckConditions(state, didMove) {
     };
   }
   
-  // 3. Loop detection
-  if (didMove) {
-    const key = `${state.col},${state.row},${state.facing}`;
-    const matches = state.loopMemory.filter(m => 
+  // 3. Circling: same (tile, facing) for 3rd time since last progress
+  // v3.2: Progress = newly scanned tile (driven onto) or drilled ore
+  // v3.2: Turns in place count for circling detection
+  if (madeProgress) {
+    state.circlingMemory = [];
+  }
+  
+  if (didMove || didTurn) {
+    const key = { col: state.col, row: state.row, facing: state.facing };
+    const matches = state.circlingMemory.filter(m => 
       m.col === state.col && m.row === state.row && m.facing === state.facing
     );
     if (matches.length >= 2) {
@@ -635,7 +790,7 @@ export function checkStuckConditions(state, didMove) {
         reason: `stuck: loop detected at ${formatCell(state.col, state.row)} facing ${state.facing}` 
       };
     }
-    state.loopMemory.push({ col: state.col, row: state.row, facing: state.facing });
+    state.circlingMemory.push(key);
   }
   
   return null;
@@ -709,24 +864,6 @@ export function checkHazardAutoPause(state, readings, previouslyRevealed) {
   }
   
   return hazards;
-}
-
-// === PROGRESS TRACKING ===
-
-function recordProgress(state, newlyRevealed, actionResult) {
-  let madeProgress = false;
-  
-  if (newlyRevealed && newlyRevealed.length > 0) {
-    madeProgress = true;
-  }
-  if (actionResult && actionResult.drilled) {
-    madeProgress = true;
-  }
-  
-  if (madeProgress) {
-    state.loopMemory = [];
-    state.lastProgress = state.tick;
-  }
 }
 
 // === MAIN TICK FUNCTION ===
@@ -824,11 +961,15 @@ export function continueTickFromStep4(state, tickRecord, readings) {
   // Step 5: Act
   let actionResult = null;
   let didMove = false;
+  let didTurn = false;
+  let didDrill = false;
   
   if (matchedRule) {
     tickRecord.ruleFired = matchedIndex + 1;
     actionResult = executeAction(matchedRule.action, state);
     didMove = actionResult.moved || false;
+    didTurn = actionResult.turned || false;
+    didDrill = actionResult.drilled || false;
     
     // Build reason string
     const condStr = formatCondition(matchedRule.condition, readings);
@@ -845,16 +986,28 @@ export function continueTickFromStep4(state, tickRecord, readings) {
   
   // Step 6: Scan
   let newlyRevealed = null;
+  let madeProgress = false;
+  
   if (didMove) {
-    newlyRevealed = scan(state, tickRecord.positionBefore.col, tickRecord.positionBefore.row);
+    const tilesBeforeScan = state.tilesScanned;
+    newlyRevealed = scan(state, didMove, actionResult);
+    // Progress if we scanned a new tile (driven onto, not crater)
+    if (state.tilesScanned > tilesBeforeScan) {
+      madeProgress = true;
+    }
   }
+  
+  // Progress also happens on drill
+  if (didDrill) {
+    madeProgress = true;
+  }
+  
+  // Update goal status
+  updateGoalStatus(state);
   
   tickRecord.battery = state.battery;
   tickRecord.tilesScanned = state.tilesScanned;
   tickRecord.cargo = state.cargo;
-  
-  // Record progress
-  recordProgress(state, newlyRevealed, actionResult);
   
   // Step 7: End checks
   const endCondition = checkEndConditions(state);
@@ -872,7 +1025,11 @@ export function continueTickFromStep4(state, tickRecord, readings) {
   }
   
   // Stuck checks (ignore charging ticks)
-  const stuckCondition = checkStuckConditions(state, didMove);
+  const stuckCondition = checkStuckConditions(state, didMove, didTurn, madeProgress);
+  if (stuckCondition) {
+    state.outcome = stuckCondition.outcome;
+    state.endReason = stuckCondition.reason;
+  }
   
   // Step 8: Record
   state.trace.push(tickRecord);
@@ -892,6 +1049,8 @@ function formatCondition(condition, readings) {
   switch (condition.type) {
     case CONDITIONS.BATTERY_BELOW:
       return `battery ${readings.battery} < ${condition.n}`;
+    case CONDITIONS.GOAL_MET:
+      return `goal met = ${readings.goalMet ? 'yes' : 'no'}`;
     case CONDITIONS.CRATER_IN_FRONT:
       const craterCell = readings.craterInFront?.cell || '?';
       return `crater in front (${craterCell}) = ${readings.craterInFront?.detected ? 'yes' : 'no'}`;
@@ -921,6 +1080,9 @@ function formatActionResult(action, result) {
   
   const name = actionNames[action.type] || action.type;
   
+  if (result.moved && result.drilled) {
+    return `${name}: moved to ${result.to} and drilled ore`;
+  }
   if (result.moved) {
     return `${name}: moved to ${result.to}`;
   }
@@ -961,9 +1123,16 @@ export function isRuleLegal(rule, sensors) {
 }
 
 // === UPLINK ===
+// v3.2: Can't be used before the first tick (between turns, not before first turn)
+
+export function canUseUplink(state) {
+  if (state.uplink.used) return false;
+  if (state.tick < 1) return false; // v3.2: not before first tick
+  return true;
+}
 
 export function applyUplink(state, slot, newCondition, newAction) {
-  if (state.uplink.used) return false;
+  if (!canUseUplink(state)) return false;
   
   const oldRule = state.rules[slot] ? { ...state.rules[slot] } : null;
   
@@ -978,7 +1147,7 @@ export function applyUplink(state, slot, newCondition, newAction) {
   // Clear stuck counters
   state.noMoveCount = 0;
   state.chargeWithoutLeaving = false;
-  state.loopMemory = [];
+  state.circlingMemory = [];
   
   return true;
 }
@@ -987,6 +1156,7 @@ export function applyUplink(state, slot, newCondition, newAction) {
 
 export const CONDITION_NAMES = {
   [CONDITIONS.BATTERY_BELOW]: 'Battery below N',
+  [CONDITIONS.GOAL_MET]: 'Goal met',
   [CONDITIONS.CRATER_IN_FRONT]: 'Crater in front',
   [CONDITIONS.ON_DUST]: 'On a dust tile',
   [CONDITIONS.ORE_NEXT_TO]: 'Ore next to rover',
@@ -1009,3 +1179,15 @@ export const TERRAIN_DATA = {
   ores: ORES,
   dusts: DUSTS
 };
+
+// === STARTER PROGRAM PRESET ===
+// v3.2: Printed starter program from the kit
+export const STARTER_PROGRAM = [
+  { condition: { type: CONDITIONS.CRATER_IN_FRONT }, action: { type: ACTIONS.SIDESTEP } },
+  { condition: { type: CONDITIONS.BATTERY_BELOW, n: 12 }, action: { type: ACTIONS.RETURN_CHARGE } },
+  { condition: { type: CONDITIONS.ON_ORE }, action: { type: ACTIONS.DRILL } },
+  { condition: { type: CONDITIONS.ALWAYS }, action: { type: ACTIONS.EXPLORE } }
+];
+
+// Sensors needed for starter program: Distance and Spectral
+export const STARTER_REQUIRED_SENSORS = [SENSORS.DISTANCE, SENSORS.SPECTRAL];

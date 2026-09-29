@@ -20,8 +20,8 @@ test.describe('Far Rover UI Tests', () => {
     // Check pitch
     await expect(page.locator('.pitch')).toContainText('Build a tiny rover');
     
-    // Check goal
-    await expect(page.locator('.goal-box')).toContainText('Scan 30 tiles');
+    // Check goal (v3.2: "Drive onto 25 tiles")
+    await expect(page.locator('.goal-box')).toContainText('Drive onto 25 tiles');
     await expect(page.locator('.goal-box')).toContainText('drill 3 ore');
     
     // Check start button
@@ -189,7 +189,8 @@ test.describe('Far Rover UI Tests', () => {
     await page.click('#launch-btn');
     
     // Step through manually to avoid timing issues with auto-pause
-    for (let i = 0; i < 20; i++) {
+    // v3.2: Scenario A runs 25 ticks (lost battery), so allow more iterations
+    for (let i = 0; i < 50; i++) {
       // Check for end screen first
       if (await page.locator('.end-screen').isVisible()) {
         break;
@@ -236,8 +237,8 @@ test.describe('Far Rover UI Tests', () => {
     await page.selectOption('.action-select[data-slot="0"]', 'explore');
     await page.click('#launch-btn');
     
-    // Step through to end screen manually
-    for (let i = 0; i < 20; i++) {
+    // Step through to end screen manually (v3.2: allow more iterations)
+    for (let i = 0; i < 50; i++) {
       if (await page.locator('.end-screen').isVisible()) break;
       
       const autoPauseBanner = page.locator('.auto-pause-banner');
@@ -316,7 +317,7 @@ test.describe('Far Rover UI Tests', () => {
     await page.click('#launch-btn');
     
     // Complete the run by stepping through
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 50; i++) {
       if (await page.locator('.end-screen').isVisible()) break;
       
       const autoPauseBanner = page.locator('.auto-pause-banner');
@@ -400,7 +401,11 @@ test.describe('Far Rover UI Tests', () => {
     await page.selectOption('.action-select[data-slot="0"]', 'explore');
     await page.click('#launch-btn');
     
-    // Uplink button should be enabled while paused
+    // v3.2: Uplink is disabled before tick 1, so step forward first
+    await page.click('#step-btn');
+    await page.waitForTimeout(100);
+    
+    // Uplink button should be enabled after tick 1 while paused
     await expect(page.locator('#uplink-btn')).toBeEnabled();
     
     // Open uplink dialog
@@ -423,7 +428,7 @@ test.describe('Far Rover UI Tests', () => {
     
     // Helper to complete a run
     async function completeRun() {
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 50; i++) {
         if (await page.locator('.end-screen').isVisible()) break;
         
         const autoPauseBanner = page.locator('.auto-pause-banner');
@@ -519,7 +524,7 @@ test.describe('Far Rover UI Tests', () => {
     await page.click('#launch-btn');
     
     // Complete the run
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 50; i++) {
       if (await page.locator('.end-screen').isVisible()) break;
       
       const autoPauseBanner = page.locator('.auto-pause-banner');
@@ -598,7 +603,7 @@ test.describe('Far Rover UI Tests', () => {
     await page.click('#launch-btn');
     
     // Complete the run
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 50; i++) {
       if (await page.locator('.end-screen').isVisible()) break;
       
       const autoPauseBanner = page.locator('.auto-pause-banner');
