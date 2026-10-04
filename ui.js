@@ -2,6 +2,7 @@
 // Handles all screen rendering and user interaction
 
 import * as Sim from './simulation.js';
+import { GameRenderer, loadAssets, hasRealArt, getTile, getRoverSprite, getLanderSprite } from './renderer.js';
 
 // === LOCAL STORAGE ===
 const STORAGE_KEY = 'far-rover-demo-v1';
@@ -37,9 +38,11 @@ let tickInterval = null;
 let previouslyRevealed = null;
 let pendingAutoPause = null;
 let pendingStuck = null;
-let continueFromStep4Data = null;
 let animatingMove = false;
 let lastTickResult = null;
+
+// Renderer
+let renderer = null;
 
 // Build state
 let selectedSensors = [];
@@ -51,7 +54,10 @@ let currentRun = null;
 
 // === INITIALIZATION ===
 
-export function init() {
+export async function init() {
+  // Load art assets
+  await loadAssets();
+  
   // Load existing session or create new
   if (!log.currentSession) {
     startNewSession();
@@ -78,6 +84,7 @@ function startNewSession(label = '') {
 
 function clearScreen() {
   document.getElementById('game-container').innerHTML = '';
+  renderer = null;
 }
 
 export function showTitleScreen() {
@@ -87,12 +94,17 @@ export function showTitleScreen() {
   const container = document.getElementById('game-container');
   container.innerHTML = `
     <div class="title-screen">
+      <div class="title-glow"></div>
       <h1>Far Rover</h1>
-      <p class="pitch">Build a tiny rover from three sensors and four if-then rules, launch it onto a hidden alien grid, and watch it live or die by the logic you wrote.</p>
+      <p class="pitch">Build a tiny rover from three sensors and four if-then rules, launch it onto a hidden Mars grid, and watch it live or die by the logic you wrote.</p>
       <div class="goal-box">
-        <strong>Goal:</strong> Drive onto 25 tiles and return to the lander, or drill 3 ore and return.
+        <div class="goal-icon">🎯</div>
+        <div class="goal-text">
+          <strong>Goal:</strong> Drive onto 25 tiles and return to the lander, or drill 3 ore and return.
+        </div>
       </div>
-      <button id="start-btn" class="primary-btn">Start</button>
+      <button id="start-btn" class="primary-btn glow-btn">Start Mission</button>
+      ${!hasRealArt() ? '<div class="art-notice">🎨 Art in progress</div>' : ''}
     </div>
   `;
   
@@ -108,12 +120,12 @@ export function showBuildScreen() {
   container.innerHTML = `
     <div class="build-screen">
       <div class="build-header">
-        <h2>Build Your Rover</h2>
+        <h2><span class="header-icon">🛠️</span> Build Your Rover</h2>
         <span class="run-indicator">Run ${runNumber + 1}</span>
       </div>
       
       <div class="build-content">
-        <div class="sensors-section">
+        <div class="sensors-section glass-panel">
           <h3>Sensors <span class="sensor-count">(Pick exactly 3)</span></h3>
           <div class="sensor-list">
             <div class="sensor-item always-on">
@@ -149,36 +161,40 @@ export function showBuildScreen() {
           </div>
         </div>
         
-        <div class="rules-section">
-          <h3>Rules <span class="rule-note">(First match wins)</span></h3>
-          <button id="load-starter-btn" class="secondary-btn starter-btn">Load Starter Program</button>
+        <div class="rules-section glass-panel">
+          <div class="rules-header">
+            <h3>Rules <span class="rule-note">(First match wins)</span></h3>
+            <button id="starter-preset-btn" class="preset-btn" title="Load starter program">
+              ⚡ Starter
+            </button>
+          </div>
           <div class="rules-list" id="rules-list">
             ${renderRuleSlots()}
           </div>
         </div>
         
-        <div class="reference-section">
+        <div class="reference-section glass-panel">
           <h3>Reference</h3>
           <div class="reference-content">
             <div class="reference-col">
               <h4>Conditions</h4>
               <ul>
                 <li><strong>Battery below N:</strong> battery points &lt; N</li>
-                <li><strong>Goal met:</strong> 25 tiles driven onto or 3 ore (sticky)</li>
                 <li><strong>Crater in front:</strong> needs Distance sensor</li>
                 <li><strong>On a dust tile:</strong> needs Dust sensor</li>
                 <li><strong>Ore next to rover:</strong> needs Spectral sensor</li>
                 <li><strong>On an ore tile:</strong> needs Spectral sensor</li>
+                <li><strong>Goal met:</strong> 25 tiles scanned or 3 ore drilled</li>
                 <li><strong>Always:</strong> every tick (use as "otherwise")</li>
               </ul>
             </div>
             <div class="reference-col">
               <h4>Actions</h4>
               <ul>
-                <li><strong>Explore:</strong> move toward nearest hidden tile (avoids known craters)</li>
+                <li><strong>Explore:</strong> move toward nearest hidden tile</li>
                 <li><strong>Return and charge:</strong> go to lander and charge (3 ticks)</li>
                 <li><strong>Sidestep:</strong> move right or left, keep facing</li>
-                <li><strong>Go to ore:</strong> move to adjacent ore and drill (costs 3, needs Spectral)</li>
+                <li><strong>Go to ore:</strong> move to adjacent ore (needs Spectral)</li>
                 <li><strong>Drill:</strong> drill ore on current tile (costs 2)</li>
                 <li><strong>Wait:</strong> do nothing this tick</li>
               </ul>
@@ -188,9 +204,10 @@ export function showBuildScreen() {
       </div>
       
       <div class="build-footer">
-        <button id="launch-btn" class="primary-btn" disabled>Launch</button>
+        <button id="launch-btn" class="primary-btn glow-btn" disabled>🚀 Launch</button>
         <button id="view-log-btn" class="secondary-btn">View Log</button>
       </div>
+      ${!hasRealArt() ? '<div class="art-notice">🎨 Art in progress</div>' : ''}
     </div>
   `;
   
@@ -205,49 +222,22 @@ export function showBuildScreen() {
   // Wire up buttons
   document.getElementById('launch-btn').addEventListener('click', launch);
   document.getElementById('view-log-btn').addEventListener('click', showLogScreen);
-  document.getElementById('load-starter-btn').addEventListener('click', loadStarterProgram);
+  document.getElementById('starter-preset-btn').addEventListener('click', loadStarterPreset);
   
   updateLaunchButton();
 }
 
-// v3.2: Load the printed starter program preset
-function loadStarterProgram() {
-  // Starter program needs Distance and Spectral
-  const requiredSensors = [Sim.SENSORS.DISTANCE, Sim.SENSORS.SPECTRAL];
+function loadStarterPreset() {
+  // Starter program: Crater→Sidestep, Battery<12→Return, OnOre→Drill, Always→Explore
+  selectedSensors = [Sim.SENSORS.DISTANCE, Sim.SENSORS.SPECTRAL, Sim.SENSORS.CAMERA];
+  rules = [
+    { condition: { type: Sim.CONDITIONS.CRATER_IN_FRONT }, action: { type: Sim.ACTIONS.SIDESTEP } },
+    { condition: { type: Sim.CONDITIONS.BATTERY_BELOW, n: 12 }, action: { type: Sim.ACTIONS.RETURN_CHARGE } },
+    { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.DRILL } },
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } }
+  ];
   
-  // Ensure required sensors are selected
-  for (const sensor of requiredSensors) {
-    if (!selectedSensors.includes(sensor)) {
-      // Remove a non-required sensor if we're at max
-      if (selectedSensors.length >= 3) {
-        // Keep Camera if selected, otherwise remove the first non-required
-        const toRemove = selectedSensors.find(s => !requiredSensors.includes(s) && s !== Sim.SENSORS.CAMERA);
-        if (toRemove) {
-          selectedSensors = selectedSensors.filter(s => s !== toRemove);
-        } else {
-          selectedSensors = selectedSensors.filter(s => requiredSensors.includes(s));
-        }
-      }
-      selectedSensors.push(sensor);
-    }
-  }
-  
-  // If we still need a third sensor, add Camera (or Dust if Camera not available)
-  if (selectedSensors.length < 3) {
-    if (!selectedSensors.includes(Sim.SENSORS.CAMERA)) {
-      selectedSensors.push(Sim.SENSORS.CAMERA);
-    } else if (!selectedSensors.includes(Sim.SENSORS.DUST)) {
-      selectedSensors.push(Sim.SENSORS.DUST);
-    }
-  }
-  
-  // Load the starter program rules
-  rules = Sim.STARTER_PROGRAM.map(r => ({
-    condition: { ...r.condition },
-    action: { ...r.action }
-  }));
-  
-  // Re-render the build screen
+  // Re-render
   showBuildScreen();
 }
 
@@ -285,11 +275,11 @@ function renderConditionOptions(selected) {
   const options = [
     { value: '', label: '-- Select condition --' },
     { value: Sim.CONDITIONS.BATTERY_BELOW, label: 'Battery below N', sensor: null },
-    { value: Sim.CONDITIONS.GOAL_MET, label: 'Goal met', sensor: null },
     { value: Sim.CONDITIONS.CRATER_IN_FRONT, label: 'Crater in front', sensor: Sim.SENSORS.DISTANCE },
     { value: Sim.CONDITIONS.ON_DUST, label: 'On a dust tile', sensor: Sim.SENSORS.DUST },
     { value: Sim.CONDITIONS.ORE_NEXT_TO, label: 'Ore next to rover', sensor: Sim.SENSORS.SPECTRAL },
     { value: Sim.CONDITIONS.ON_ORE, label: 'On an ore tile', sensor: Sim.SENSORS.SPECTRAL },
+    { value: Sim.CONDITIONS.GOAL_MET, label: 'Goal met', sensor: null },
     { value: Sim.CONDITIONS.ALWAYS, label: 'Always', sensor: null }
   ];
   
@@ -443,72 +433,91 @@ function showOperateView() {
   const container = document.getElementById('game-container');
   container.innerHTML = `
     <div class="operate-view">
-      <div class="operate-main">
-        <div class="map-container">
-          <div class="map-header">
-            <span class="run-indicator">Run ${runNumber}</span>
-            <span class="tick-indicator">Tick ${gameState.tick}</span>
+      <!-- Top HUD Bar -->
+      <div class="hud-bar">
+        <span class="run-indicator">Run ${runNumber}</span>
+        <div class="hud-section hud-sol">
+          <span class="hud-label">Sol</span>
+          <span class="hud-value tick-indicator" id="hud-tick">Tick ${gameState.tick}</span>
+        </div>
+        <div class="hud-section hud-uplink">
+          <span class="hud-icon">📡</span>
+          <span class="hud-value" id="hud-uplink">${gameState.uplink.used ? 'Used' : 'Ready'}</span>
+        </div>
+        <div class="hud-section hud-battery">
+          <span class="hud-icon">🔋</span>
+          <div class="battery-gauge">
+            <div class="battery-fill" id="battery-fill" style="width: ${gameState.battery * 5}%"></div>
           </div>
-          <div class="map-grid" id="map-grid"></div>
-          <div class="map-legend">
-            <span class="legend-item"><span class="legend-color hidden"></span> Hidden</span>
-            <span class="legend-item"><span class="legend-color empty"></span> Empty</span>
-            <span class="legend-item"><span class="legend-color crater"></span> Crater</span>
-            <span class="legend-item"><span class="legend-color ore"></span> Ore</span>
-            <span class="legend-item"><span class="legend-color dust"></span> Dust</span>
+          <span class="hud-value" id="hud-battery">${gameState.battery}</span>
+        </div>
+        <div class="hud-section hud-ore">
+          <span class="hud-icon">💎</span>
+          <span class="hud-value" id="hud-ore">${gameState.cargo}</span>
+        </div>
+        <div class="hud-section hud-tiles">
+          <span class="hud-icon">🗺️</span>
+          <span class="hud-value" id="hud-tiles">${gameState.tilesScanned}/25</span>
+        </div>
+      </div>
+      
+      <div class="operate-main">
+        <!-- Left Panel: Rules -->
+        <div class="rules-panel glass-panel">
+          <h3>Rover Rules</h3>
+          <div class="rule-display" id="rule-display"></div>
+        </div>
+        
+        <!-- Center: Mars Grid -->
+        <div class="map-container" id="map-container">
+          <div class="map-grid" id="map-grid">
+            <div class="canvas-wrapper" id="canvas-wrapper"></div>
           </div>
         </div>
         
+        <!-- Right Panel: Controls + Sensors -->
         <div class="info-panel">
-          <div class="rules-panel">
-            <h3>Rules</h3>
-            <div class="rule-display" id="rule-display"></div>
-            <div class="rule-reason" id="rule-reason"></div>
-          </div>
-          
-          <div class="sensors-panel">
+          <div class="sensors-panel glass-panel">
             <h3>Sensor Readings</h3>
             <div class="sensor-readings" id="sensor-readings"></div>
           </div>
           
-          <div class="status-panel">
-            <div class="battery-display" id="battery-display">
-              <span class="battery-icon">🔋</span>
-              <span class="battery-value">${gameState.battery} pts (${gameState.battery * 5} Wh)</span>
-              <div class="battery-bar"><div class="battery-fill" style="width: ${gameState.battery * 5}%"></div></div>
-            </div>
-            <div class="stats-row">
-              <span>Tiles: ${gameState.tilesScanned}/${Sim.GOAL_TILES}</span>
-              <span>Cargo: ${gameState.cargo}/3</span>
-            </div>
-          </div>
-          
-          <div class="controls-panel">
+          <div class="controls-panel glass-panel">
+            <button class="pause-btn" id="pause-btn">${isPaused ? 'Resume' : 'Pause'}</button>
             <div class="speed-controls">
-              <button class="speed-btn ${isPaused ? 'active' : ''}" data-speed="pause" id="pause-btn">${isPaused ? '▶ Resume' : '⏸ Pause'}</button>
+              <button class="speed-btn ${isPaused ? 'active' : ''}" data-speed="pause">⏸</button>
               <button class="speed-btn ${!isPaused && currentSpeed === 1 ? 'active' : ''}" data-speed="1">1×</button>
               <button class="speed-btn ${!isPaused && currentSpeed === 4 ? 'active' : ''}" data-speed="4">4×</button>
               <button class="speed-btn ${!isPaused && currentSpeed === 16 ? 'active' : ''}" data-speed="16">16×</button>
             </div>
-            <button class="step-btn ${isPaused ? '' : 'hidden'}" id="step-btn">Step 1 Tick</button>
-            <div class="uplink-control">
-              <button class="uplink-btn ${gameState.uplink.used ? 'used' : ''}" id="uplink-btn" ${!Sim.canUseUplink(gameState) || !isPaused ? 'disabled' : ''}>
-                ${gameState.uplink.used ? '📡 Uplink Used' : '📡 Use Uplink'}
-              </button>
-            </div>
+            <button class="step-btn ${isPaused ? '' : 'hidden'}" id="step-btn">Step</button>
+            <button class="uplink-btn ${gameState.uplink.used ? 'used' : ''}" id="uplink-btn" ${gameState.uplink.used || !isPaused ? 'disabled' : ''}>
+              ${gameState.uplink.used ? '📡 Uplink Used' : '📡 Uplink'}
+            </button>
             <button class="end-run-btn" id="end-run-btn">End Run</button>
           </div>
         </div>
       </div>
       
+      <!-- Bottom Left: Minimap -->
+      <div class="minimap glass-panel" id="minimap">
+        <canvas id="minimap-canvas" width="120" height="130"></canvas>
+      </div>
+      
       ${pendingAutoPause ? renderAutoPauseBanner() : ''}
       ${pendingStuck ? renderStuckBanner() : ''}
+      ${!hasRealArt() ? '<div class="art-notice corner">🎨 Art in progress</div>' : ''}
     </div>
   `;
   
-  renderMap();
+  // Initialize renderer
+  const canvasWrapper = document.getElementById('canvas-wrapper');
+  renderer = new GameRenderer(canvasWrapper, gameState);
+  renderer.mount();
+  
   renderRuleDisplay();
   renderSensorReadings();
+  renderMinimap();
   wireOperateControls();
 }
 
@@ -521,7 +530,7 @@ function renderAutoPauseBanner() {
       </div>
       <div class="banner-actions">
         <button class="resume-btn" id="resume-btn">Resume</button>
-        ${Sim.canUseUplink(gameState) ? '<button class="uplink-banner-btn" id="uplink-banner-btn">Use Uplink</button>' : ''}
+        ${!gameState.uplink.used ? '<button class="uplink-banner-btn" id="uplink-banner-btn">Use Uplink</button>' : ''}
       </div>
     </div>
   `;
@@ -535,90 +544,57 @@ function renderStuckBanner() {
         <span class="banner-text">Stuck: ${pendingStuck.reason}</span>
       </div>
       <div class="banner-actions">
-        ${Sim.canUseUplink(gameState) ? '<button class="uplink-banner-btn" id="uplink-stuck-btn">Use Uplink</button>' : ''}
+        ${!gameState.uplink.used ? '<button class="uplink-banner-btn" id="uplink-stuck-btn">Use Uplink</button>' : ''}
         <button class="end-stuck-btn" id="end-stuck-btn">End Run</button>
       </div>
     </div>
   `;
 }
 
-function renderMap() {
-  const grid = document.getElementById('map-grid');
-  if (!grid) return;
+function renderMinimap() {
+  const canvas = document.getElementById('minimap-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
   
-  let html = '<div class="column-labels"><span></span>';
-  for (let c = 0; c < 12; c++) {
-    html += `<span>${String.fromCharCode('A'.charCodeAt(0) + c)}</span>`;
-  }
-  html += '</div>';
+  const cellSize = 10;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  for (let r = 0; r < 12; r++) {
-    html += `<div class="map-row"><span class="row-label">${r + 1}</span>`;
-    for (let c = 0; c < 12; c++) {
-      const isRevealed = gameState.revealed[r][c];
-      const isCameraSeen = gameState.cameraSeen?.[r]?.[c] || false;
-      const terrain = gameState.terrain[r][c];
-      const isDrilled = gameState.drilled[r][c];
-      const isRover = gameState.col === c && gameState.row === r;
+  // Draw grid
+  for (let row = 0; row < 12; row++) {
+    for (let col = 0; col < 12; col++) {
+      const x = col * cellSize;
+      const y = row * cellSize;
       
-      // Check if detected but not revealed
-      let detected = false;
-      if (!isRevealed && !isCameraSeen) {
-        if (gameState.sensors.includes(Sim.SENSORS.DISTANCE)) {
-          const [fc, fr] = [gameState.col + Sim.DIR_VECTORS[gameState.facing][0], 
-                           gameState.row + Sim.DIR_VECTORS[gameState.facing][1]];
-          if (c === fc && r === fr && terrain === Sim.TERRAIN.CRATER) {
-            detected = true;
-          }
+      const isRevealed = gameState.revealed[row][col];
+      const terrain = gameState.terrain[row][col];
+      
+      if (!isRevealed) {
+        ctx.fillStyle = '#2d2d3d';
+      } else {
+        switch (terrain) {
+          case 'crater': ctx.fillStyle = '#7c3aed'; break;
+          case 'ore': ctx.fillStyle = gameState.drilled[row][col] ? '#78350f' : '#f59e0b'; break;
+          case 'dust': ctx.fillStyle = '#b87333'; break;
+          default: ctx.fillStyle = '#6b7280'; break;
         }
       }
-      
-      let cellClass = 'map-cell';
-      if (isCameraSeen && !isRevealed) {
-        // v3.2: Camera-seen but not driven onto - show terrain but faded
-        cellClass += ` ${terrain} camera-seen`;
-        if (isDrilled) cellClass += ' drilled';
-      } else if (!isRevealed) {
-        cellClass += ' hidden';
-        if (detected) cellClass += ' detected';
-      } else {
-        cellClass += ` ${terrain}`;
-        if (isDrilled) cellClass += ' drilled';
-      }
-      if (isRover) cellClass += ' rover';
-      
-      let cellContent = '';
-      if (isRover) {
-        const rotations = { north: 0, east: 90, south: 180, west: 270 };
-        cellContent = `<div class="rover-icon ${gameState.charging ? 'charging' : ''}" style="transform: rotate(${rotations[gameState.facing]}deg)">▲</div>`;
-      }
-      
-      html += `<div class="${cellClass}" data-col="${c}" data-row="${r}">${cellContent}</div>`;
+      ctx.fillRect(x, y, cellSize - 1, cellSize - 1);
     }
-    html += '</div>';
   }
   
-  // Add lander row
-  html += '<div class="map-row lander-row"><span class="row-label">L</span>';
-  for (let c = 0; c < 12; c++) {
-    let cellClass = 'map-cell lander-area';
-    let cellContent = '';
-    if (c === 5) {
-      cellClass += ' lander';
-      const isRover = gameState.col === 5 && gameState.row === 12;
-      if (isRover) {
-        cellClass += ' rover';
-        const rotations = { north: 0, east: 90, south: 180, west: 270 };
-        cellContent = `<div class="rover-icon ${gameState.charging ? 'charging' : ''}" style="transform: rotate(${rotations[gameState.facing]}deg)">▲</div>`;
-      } else {
-        cellContent = '<div class="lander-icon">🛬</div>';
-      }
-    }
-    html += `<div class="${cellClass}">${cellContent}</div>`;
-  }
-  html += '</div>';
+  // Draw lander
+  ctx.fillStyle = '#06b6d4';
+  ctx.fillRect(5 * cellSize, 12 * cellSize, cellSize - 1, cellSize - 1);
   
-  grid.innerHTML = html;
+  // Draw rover
+  ctx.fillStyle = '#22c55e';
+  ctx.beginPath();
+  ctx.arc(
+    gameState.col * cellSize + cellSize/2,
+    gameState.row * cellSize + cellSize/2,
+    4, 0, Math.PI * 2
+  );
+  ctx.fill();
 }
 
 function renderRuleDisplay() {
@@ -634,18 +610,12 @@ function renderRuleDisplay() {
       const condText = formatConditionForDisplay(rule.condition);
       const actText = Sim.ACTION_NAMES[rule.action.type] || rule.action.type;
       html += `<div class="rule-line ${isFired ? 'fired' : ''}">
-        <span class="rule-num">${i + 1}.</span>
-        <span class="rule-text">${condText} → ${actText}</span>
+        <span class="rule-indicator">${isFired ? '▶' : ''}</span>
+        <span class="rule-text">${condText} : <span class="action-name">${actText}</span></span>
       </div>`;
     }
   }
   display.innerHTML = html || '<div class="no-rules">No rules defined</div>';
-  
-  // Update reason
-  const reasonEl = document.getElementById('rule-reason');
-  if (reasonEl && lastTickResult?.tickRecord?.ruleReason) {
-    reasonEl.textContent = lastTickResult.tickRecord.ruleReason;
-  }
 }
 
 function formatConditionForDisplay(condition) {
@@ -672,13 +642,8 @@ function renderSensorReadings() {
   if (gameState.sensors.includes(Sim.SENSORS.DISTANCE)) {
     const crater = readings.craterInFront;
     html += `<div class="sensor-reading">
-      <span class="sensor-label">Crater in front:</span>
+      <span class="sensor-label">Crater ahead:</span>
       <span class="sensor-value ${crater?.detected ? 'warning' : ''}">${crater?.detected ? `Yes (${crater.cell})` : 'No'}</span>
-    </div>`;
-  } else {
-    html += `<div class="sensor-reading disabled">
-      <span class="sensor-label">Distance:</span>
-      <span class="sensor-value">?</span>
     </div>`;
   }
   
@@ -687,11 +652,6 @@ function renderSensorReadings() {
     html += `<div class="sensor-reading">
       <span class="sensor-label">On dust:</span>
       <span class="sensor-value ${readings.onDust ? 'warning' : ''}">${readings.onDust ? 'Yes' : 'No'}</span>
-    </div>`;
-  } else {
-    html += `<div class="sensor-reading disabled">
-      <span class="sensor-label">Dust:</span>
-      <span class="sensor-value">?</span>
     </div>`;
   }
   
@@ -706,11 +666,6 @@ function renderSensorReadings() {
       <span class="sensor-label">On ore:</span>
       <span class="sensor-value">${readings.onOre ? 'Yes' : 'No'}</span>
     </div>`;
-  } else {
-    html += `<div class="sensor-reading disabled">
-      <span class="sensor-label">Spectral:</span>
-      <span class="sensor-value">?</span>
-    </div>`;
   }
   
   // Camera
@@ -718,11 +673,6 @@ function renderSensorReadings() {
     html += `<div class="sensor-reading">
       <span class="sensor-label">Camera:</span>
       <span class="sensor-value">3×3 scanning</span>
-    </div>`;
-  } else {
-    html += `<div class="sensor-reading disabled">
-      <span class="sensor-label">Camera:</span>
-      <span class="sensor-value">?</span>
     </div>`;
   }
   
@@ -734,12 +684,7 @@ function wireOperateControls() {
     btn.addEventListener('click', (e) => {
       const speed = e.target.dataset.speed;
       if (speed === 'pause') {
-        // Toggle: if paused, resume; if running, pause
-        if (isPaused) {
-          setSpeed(currentSpeed || 1);
-        } else {
-          pause();
-        }
+        pause();
       } else {
         setSpeed(parseInt(speed));
       }
@@ -747,6 +692,7 @@ function wireOperateControls() {
   });
   
   document.getElementById('step-btn')?.addEventListener('click', stepOneTick);
+  document.getElementById('pause-btn')?.addEventListener('click', togglePause);
   document.getElementById('uplink-btn')?.addEventListener('click', showUplinkDialog);
   document.getElementById('uplink-banner-btn')?.addEventListener('click', showUplinkDialog);
   document.getElementById('uplink-stuck-btn')?.addEventListener('click', showUplinkDialog);
@@ -756,28 +702,24 @@ function wireOperateControls() {
 }
 
 function updateOperateView() {
-  // Update tick and run indicators
-  const tickIndicator = document.querySelector('.tick-indicator');
-  if (tickIndicator) tickIndicator.textContent = `Tick ${gameState.tick}`;
+  // Update HUD
+  const hudTick = document.getElementById('hud-tick');
+  if (hudTick) hudTick.textContent = `Tick ${gameState.tick}`;
   
-  // Update battery
-  const batteryDisplay = document.getElementById('battery-display');
-  if (batteryDisplay) {
-    batteryDisplay.innerHTML = `
-      <span class="battery-icon ${gameState.charging ? 'charging' : ''}">🔋</span>
-      <span class="battery-value">${gameState.battery} pts (${gameState.battery * 5} Wh)</span>
-      <div class="battery-bar"><div class="battery-fill" style="width: ${gameState.battery * 5}%"></div></div>
-    `;
-  }
+  const hudBattery = document.getElementById('hud-battery');
+  if (hudBattery) hudBattery.textContent = gameState.battery;
   
-  // Update stats
-  const statsRow = document.querySelector('.stats-row');
-  if (statsRow) {
-    statsRow.innerHTML = `
-      <span>Tiles: ${gameState.tilesScanned}/${Sim.GOAL_TILES}</span>
-      <span>Cargo: ${gameState.cargo}/3</span>
-    `;
-  }
+  const batteryFill = document.getElementById('battery-fill');
+  if (batteryFill) batteryFill.style.width = `${gameState.battery * 5}%`;
+  
+  const hudOre = document.getElementById('hud-ore');
+  if (hudOre) hudOre.textContent = gameState.cargo;
+  
+  const hudTiles = document.getElementById('hud-tiles');
+  if (hudTiles) hudTiles.textContent = `${gameState.tilesScanned}/25`;
+  
+  const hudUplink = document.getElementById('hud-uplink');
+  if (hudUplink) hudUplink.textContent = gameState.uplink.used ? 'Used' : 'Ready';
   
   // Update button states
   document.querySelectorAll('.speed-btn').forEach(btn => {
@@ -788,36 +730,38 @@ function updateOperateView() {
     );
   });
   
-  // Update Pause/Resume button text
-  const pauseBtn = document.getElementById('pause-btn');
-  if (pauseBtn) {
-    pauseBtn.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
-  }
-  
   const stepBtn = document.getElementById('step-btn');
   if (stepBtn) stepBtn.classList.toggle('hidden', !isPaused);
   
+  const pauseBtn = document.getElementById('pause-btn');
+  if (pauseBtn) pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
+  
   const uplinkBtn = document.getElementById('uplink-btn');
   if (uplinkBtn) {
-    uplinkBtn.disabled = !Sim.canUseUplink(gameState) || !isPaused;
-    uplinkBtn.textContent = gameState.uplink.used ? '📡 Uplink Used' : '📡 Use Uplink';
+    uplinkBtn.disabled = gameState.uplink.used || !isPaused;
     uplinkBtn.classList.toggle('used', gameState.uplink.used);
   }
   
-  renderMap();
+  // Update renderer
+  if (renderer) {
+    renderer.updateState(gameState);
+    renderer.render();
+  }
+  
   renderRuleDisplay();
   renderSensorReadings();
+  renderMinimap();
 }
 
 // === UPLINK DIALOG ===
 
 function showUplinkDialog() {
-  if (!Sim.canUseUplink(gameState)) return;
+  if (gameState.uplink.used) return;
   
   const dialog = document.createElement('div');
   dialog.className = 'uplink-dialog-overlay';
   dialog.innerHTML = `
-    <div class="uplink-dialog">
+    <div class="uplink-dialog glass-panel">
       <h3>📡 Uplink Edit</h3>
       <p>Change one rule slot. This is your only edit this run.</p>
       
@@ -1017,6 +961,14 @@ function setSpeed(speed) {
   updateOperateView();
 }
 
+function togglePause() {
+  if (isPaused) {
+    setSpeed(currentSpeed || 1);
+  } else {
+    pause();
+  }
+}
+
 function startTicking() {
   stopTicking();
   const interval = currentSpeed === 1 ? 1000 : currentSpeed === 4 ? 250 : 62.5;
@@ -1039,11 +991,15 @@ function doTick() {
   if (animatingMove) return;
   if (gameState.outcome) return;
   
-  // If we need to continue from step 4 after an auto-pause resume
+  const prevCol = gameState.col;
+  const prevRow = gameState.row;
+  
+  // If we had a pending auto-pause that needs to continue from step 4
   let result;
-  if (continueFromStep4Data) {
-    const { tickRecord, readings } = continueFromStep4Data;
-    continueFromStep4Data = null;
+  if (pendingAutoPause && pendingAutoPause.continueFromStep4) {
+    const tickRecord = pendingAutoPause.tickRecord;
+    const readings = gameState.readings;
+    pendingAutoPause = null;
     result = Sim.continueTickFromStep4(gameState, tickRecord, readings);
   } else {
     result = Sim.runTick(gameState, previouslyRevealed);
@@ -1055,10 +1011,7 @@ function doTick() {
   // Handle auto-pause
   if (result.autoPause) {
     autoPauseCount++;
-    pendingAutoPause = { ...result.autoPause };
-    if (result.continueFromStep4) {
-      continueFromStep4Data = { tickRecord: result.tickRecord, readings: gameState.readings };
-    }
+    pendingAutoPause = { ...result.autoPause, continueFromStep4: result.continueFromStep4, tickRecord: result.tickRecord };
     isPaused = true;
     stopTicking();
     showOperateView();
@@ -1085,9 +1038,10 @@ function doTick() {
   
   // Animate movement if needed
   const shouldAnimate = currentSpeed <= 4 && result.tickRecord?.actionResult?.moved;
-  if (shouldAnimate) {
+  if (shouldAnimate && renderer) {
     animatingMove = true;
     const duration = currentSpeed === 1 ? 120 : currentSpeed === 4 ? 30 : 0;
+    renderer.startAnimation(prevCol, prevRow, gameState.col, gameState.row, duration);
     setTimeout(() => {
       animatingMove = false;
       updateOperateView();
@@ -1102,11 +1056,6 @@ function resumeFromAutoPause() {
   showOperateView();
   if (!isPaused) {
     startTicking();
-  } else {
-    // If we're stepping manually, continue the tick now
-    if (continueFromStep4Data) {
-      doTick();
-    }
   }
 }
 
@@ -1180,14 +1129,29 @@ function showEndScreen() {
       </div>
       
       <div class="end-stats">
-        <div class="stat-item"><span class="stat-label">Ticks:</span> <span class="stat-value">${gameState.tick}</span></div>
-        <div class="stat-item"><span class="stat-label">Tiles Scanned:</span> <span class="stat-value">${gameState.tilesScanned}/${Sim.GOAL_TILES}</span></div>
-        <div class="stat-item"><span class="stat-label">Cargo:</span> <span class="stat-value">${gameState.cargo}/3</span></div>
-        <div class="stat-item"><span class="stat-label">Battery:</span> <span class="stat-value">${gameState.battery} pts</span></div>
-        <div class="stat-item"><span class="stat-label">Uplink:</span> <span class="stat-value">${gameState.uplink.used ? 'Used' : 'Not used'}</span></div>
+        <div class="stat-item glass-panel">
+          <span class="stat-label">Ticks:</span>
+          <span class="stat-value">${gameState.tick}</span>
+        </div>
+        <div class="stat-item glass-panel">
+          <span class="stat-label">Tiles Scanned:</span>
+          <span class="stat-value">${gameState.tilesScanned}/25</span>
+        </div>
+        <div class="stat-item glass-panel">
+          <span class="stat-label">Cargo:</span>
+          <span class="stat-value">${gameState.cargo}/3</span>
+        </div>
+        <div class="stat-item glass-panel">
+          <span class="stat-label">Battery:</span>
+          <span class="stat-value">${gameState.battery} pts</span>
+        </div>
+        <div class="stat-item glass-panel">
+          <span class="stat-label">Uplink:</span>
+          <span class="stat-value">${gameState.uplink.used ? 'Used' : 'Not used'}</span>
+        </div>
       </div>
       
-      <div class="end-trace">
+      <div class="end-trace glass-panel">
         <h3>Trace (Last 5 Ticks)</h3>
         <div class="trace-list" id="trace-list">
           ${renderTrace()}
@@ -1201,9 +1165,10 @@ function showEndScreen() {
       </div>
       
       <div class="end-actions">
-        <button id="rerun-btn" class="primary-btn">Rerun</button>
+        <button id="rerun-btn" class="primary-btn glow-btn">Rerun</button>
         <button id="view-log-end-btn" class="secondary-btn">View Log</button>
       </div>
+      ${!hasRealArt() ? '<div class="art-notice">🎨 Art in progress</div>' : ''}
     </div>
   `;
   
@@ -1282,7 +1247,7 @@ function showLogScreen() {
         <span class="session-id">Session: ${session?.id || 'None'} ${session?.label ? `(${session.label})` : ''}</span>
       </div>
       
-      <div class="log-summary">
+      <div class="log-summary glass-panel">
         <h3>Session Summary</h3>
         <div class="summary-stats">
           <div class="summary-item"><span>Total Runs:</span> <span>${runs.length}</span></div>
@@ -1292,7 +1257,7 @@ function showLogScreen() {
         </div>
       </div>
       
-      <div class="log-table-container">
+      <div class="log-table-container glass-panel">
         <table class="log-table">
           <thead>
             <tr>
@@ -1312,7 +1277,7 @@ function showLogScreen() {
                 <td>${r.runNumber}</td>
                 <td class="${r.outcome?.startsWith('success') ? 'success' : 'failure'}">${r.outcome || '?'}</td>
                 <td>${r.ticks}</td>
-                <td>${r.tilesScanned}/${Sim.GOAL_TILES}</td>
+                <td>${r.tilesScanned}/25</td>
                 <td>${r.cargo}/3</td>
                 <td>${r.changesFromPrevious?.changed ? 'Yes' : (i === 0 ? '-' : 'No')}</td>
                 <td><input type="checkbox" data-run="${i}" ${r.prompted ? 'checked' : ''} class="prompted-check"></td>
