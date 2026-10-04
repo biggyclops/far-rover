@@ -197,16 +197,16 @@ test.describe('Far Rover UI Tests', () => {
       }
       
       // Check for auto-pause banner and resume
-      const autoPauseBanner = page.locator('.auto-pause-banner');
-      if (await autoPauseBanner.isVisible()) {
+      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
+      if (await autoPauseToast.isVisible()) {
         await page.click('#resume-btn');
         await page.waitForTimeout(100);
         continue;
       }
       
-      // Check for stuck banner
-      const stuckBanner = page.locator('.stuck-banner');
-      if (await stuckBanner.isVisible()) {
+      // Check for stuck toast
+      const stuckToast = page.locator('.auto-pause-toast.stuck');
+      if (await stuckToast.isVisible()) {
         await page.click('#end-stuck-btn');
         await page.waitForTimeout(100);
         break;
@@ -241,15 +241,15 @@ test.describe('Far Rover UI Tests', () => {
     for (let i = 0; i < 50; i++) {
       if (await page.locator('.end-screen').isVisible()) break;
       
-      const autoPauseBanner = page.locator('.auto-pause-banner');
-      if (await autoPauseBanner.isVisible()) {
+      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
+      if (await autoPauseToast.isVisible()) {
         await page.click('#resume-btn');
         await page.waitForTimeout(100);
         continue;
       }
       
-      const stuckBanner = page.locator('.stuck-banner');
-      if (await stuckBanner.isVisible()) {
+      const stuckToast = page.locator('.auto-pause-toast.stuck');
+      if (await stuckToast.isVisible()) {
         await page.click('#end-stuck-btn');
         await page.waitForTimeout(100);
         break;
@@ -320,15 +320,15 @@ test.describe('Far Rover UI Tests', () => {
     for (let i = 0; i < 50; i++) {
       if (await page.locator('.end-screen').isVisible()) break;
       
-      const autoPauseBanner = page.locator('.auto-pause-banner');
-      if (await autoPauseBanner.isVisible()) {
+      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
+      if (await autoPauseToast.isVisible()) {
         await page.click('#resume-btn');
         await page.waitForTimeout(100);
         continue;
       }
       
-      const stuckBanner = page.locator('.stuck-banner');
-      if (await stuckBanner.isVisible()) {
+      const stuckToast = page.locator('.auto-pause-toast.stuck');
+      if (await stuckToast.isVisible()) {
         await page.click('#end-stuck-btn');
         await page.waitForTimeout(100);
         break;
@@ -431,15 +431,15 @@ test.describe('Far Rover UI Tests', () => {
       for (let i = 0; i < 50; i++) {
         if (await page.locator('.end-screen').isVisible()) break;
         
-        const autoPauseBanner = page.locator('.auto-pause-banner');
-        if (await autoPauseBanner.isVisible()) {
+        const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
+        if (await autoPauseToast.isVisible()) {
           await page.click('#resume-btn');
           await page.waitForTimeout(100);
           continue;
         }
         
-        const stuckBanner = page.locator('.stuck-banner');
-        if (await stuckBanner.isVisible()) {
+        const stuckToast = page.locator('.auto-pause-toast.stuck');
+        if (await stuckToast.isVisible()) {
           await page.click('#end-stuck-btn');
           await page.waitForTimeout(100);
           break;
@@ -527,15 +527,15 @@ test.describe('Far Rover UI Tests', () => {
     for (let i = 0; i < 50; i++) {
       if (await page.locator('.end-screen').isVisible()) break;
       
-      const autoPauseBanner = page.locator('.auto-pause-banner');
-      if (await autoPauseBanner.isVisible()) {
+      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
+      if (await autoPauseToast.isVisible()) {
         await page.click('#resume-btn');
         await page.waitForTimeout(100);
         continue;
       }
       
-      const stuckBanner = page.locator('.stuck-banner');
-      if (await stuckBanner.isVisible()) {
+      const stuckToast = page.locator('.auto-pause-toast.stuck');
+      if (await stuckToast.isVisible()) {
         await page.click('#end-stuck-btn');
         await page.waitForTimeout(100);
         break;
@@ -606,15 +606,15 @@ test.describe('Far Rover UI Tests', () => {
     for (let i = 0; i < 50; i++) {
       if (await page.locator('.end-screen').isVisible()) break;
       
-      const autoPauseBanner = page.locator('.auto-pause-banner');
-      if (await autoPauseBanner.isVisible()) {
+      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
+      if (await autoPauseToast.isVisible()) {
         await page.click('#resume-btn');
         await page.waitForTimeout(100);
         continue;
       }
       
-      const stuckBanner = page.locator('.stuck-banner');
-      if (await stuckBanner.isVisible()) {
+      const stuckToast = page.locator('.auto-pause-toast.stuck');
+      if (await stuckToast.isVisible()) {
         await page.click('#end-stuck-btn');
         await page.waitForTimeout(100);
         break;
@@ -689,5 +689,235 @@ test.describe('Far Rover UI Tests', () => {
     
     // Button should say Resume again
     await expect(page.locator('#pause-btn')).toContainText('Resume');
+  });
+
+  test('First-minute story ends at tick 5 (not higher)', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    
+    // Setup first-minute scenario (scenario B):
+    // Sensors: Distance, Dust, Spectral (NOT Camera!)
+    // Rule: Always → Explore (walks north into crater at F8)
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="dust"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    
+    // Run through the scenario handling auto-pauses
+    for (let i = 0; i < 30; i++) {
+      if (await page.locator('.end-screen').isVisible()) break;
+      
+      // Handle auto-pause (hazard detection)
+      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
+      if (await autoPauseToast.isVisible()) {
+        await page.click('#resume-btn');
+        await page.waitForTimeout(100);
+        continue;
+      }
+      
+      // Handle stuck condition
+      const stuckToast = page.locator('.auto-pause-toast.stuck');
+      if (await stuckToast.isVisible()) {
+        await page.click('#end-stuck-btn');
+        await page.waitForTimeout(100);
+        break;
+      }
+      
+      // Step one tick
+      const stepBtn = page.locator('#step-btn');
+      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+        await page.click('#step-btn');
+        await page.waitForTimeout(100);
+      }
+    }
+    
+    // Should be on end screen
+    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    
+    // Get the final tick count from the end screen stats
+    // The first stat is "Ticks: N"
+    const ticksStat = await page.locator('.stat-item').first().locator('.stat-value').textContent();
+    const finalTick = parseInt(ticksStat);
+    
+    // First-minute story MUST end at tick 5, not 7
+    expect(finalTick).toBe(5);
+    
+    // Should be a crater loss
+    const outcomeText = await page.locator('.end-header h2').textContent();
+    expect(outcomeText).toContain('Crater');
+    
+    // End screen must fit 1280x800 without scrolling
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const scroll = await page.locator('.end-screen').evaluate(el => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight
+    }));
+    expect(scroll.scrollHeight).toBeLessThanOrEqual(scroll.clientHeight);
+    
+    // Saved log and CSV tick numbers must also be 5
+    await page.click('#view-log-end-btn');
+    const savedTicks = await page.evaluate(() => {
+      const run = JSON.parse(localStorage.getItem('far-rover-demo-v1'))?.currentSession?.runs?.[0];
+      return run?.ticks;
+    });
+    expect(savedTicks).toBe(5);
+    
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.click('#download-csv-btn')
+    ]);
+    const csvPath = await download.path();
+    const fs = await import('fs');
+    const csv = fs.readFileSync(csvPath, 'utf8');
+    const lines = csv.trim().split('\n');
+    const headers = lines[0].split(',');
+    const tickCol = headers.indexOf('Ticks');
+    expect(tickCol).toBeGreaterThanOrEqual(0);
+    const values = lines[1].split(',');
+    expect(parseInt(values[tickCol], 10)).toBe(5);
+  });
+
+  test('Starter preset wins at tick 46 (not higher)', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    
+    // Load the starter preset
+    await page.click('#starter-preset-btn');
+    
+    // Verify preset is loaded correctly
+    await expect(page.locator('input[data-sensor="distance"]')).toBeChecked();
+    await expect(page.locator('input[data-sensor="spectral"]')).toBeChecked();
+    await expect(page.locator('input[data-sensor="camera"]')).toBeChecked();
+    
+    await page.click('#launch-btn');
+    
+    // Run through the game, handling auto-pauses
+    for (let i = 0; i < 100; i++) {
+      if (await page.locator('.end-screen').isVisible()) break;
+      
+      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
+      if (await autoPauseToast.isVisible()) {
+        await page.click('#resume-btn');
+        await page.waitForTimeout(50);
+        continue;
+      }
+      
+      const stuckToast = page.locator('.auto-pause-toast.stuck');
+      if (await stuckToast.isVisible()) {
+        await page.click('#end-stuck-btn');
+        await page.waitForTimeout(50);
+        break;
+      }
+      
+      const stepBtn = page.locator('#step-btn');
+      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+        await page.click('#step-btn');
+        await page.waitForTimeout(30);
+      }
+    }
+    
+    // Should be on end screen
+    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    
+    // Get the final tick count from the end screen
+    const ticksStat = await page.locator('.stat-value').first().textContent();
+    const finalTick = parseInt(ticksStat);
+    
+    // Starter preset MUST win at tick 46, not 49
+    expect(finalTick).toBe(46);
+    
+    // Should be a success outcome
+    const outcomeText = await page.locator('.end-header h2').textContent();
+    expect(outcomeText).toContain('Success');
+    
+    // Saved log and CSV tick numbers must also be 46
+    await page.click('#view-log-end-btn');
+    const savedTicks = await page.evaluate(() => {
+      const run = JSON.parse(localStorage.getItem('far-rover-demo-v1'))?.currentSession?.runs?.[0];
+      return run?.ticks;
+    });
+    expect(savedTicks).toBe(46);
+    
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.click('#download-csv-btn')
+    ]);
+    const csvPath = await download.path();
+    const fs = await import('fs');
+    const csv = fs.readFileSync(csvPath, 'utf8');
+    const lines = csv.trim().split('\n');
+    const headers = lines[0].split(',');
+    const tickCol = headers.indexOf('Ticks');
+    expect(tickCol).toBeGreaterThanOrEqual(0);
+    const values = lines[1].split(',');
+    expect(parseInt(values[tickCol], 10)).toBe(46);
+  });
+
+  test('Trace tick numbers are consecutive in end screen', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    
+    // Setup the first-minute scenario which has auto-pauses
+    // Sensors: Distance, Dust, Spectral (NOT Camera!)
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="dust"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    
+    // Run through handling auto-pauses
+    for (let i = 0; i < 30; i++) {
+      if (await page.locator('.end-screen').isVisible()) break;
+      
+      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
+      if (await autoPauseToast.isVisible()) {
+        await page.click('#resume-btn');
+        await page.waitForTimeout(100);
+        continue;
+      }
+      
+      const stuckToast = page.locator('.auto-pause-toast.stuck');
+      if (await stuckToast.isVisible()) {
+        await page.click('#end-stuck-btn');
+        await page.waitForTimeout(100);
+        break;
+      }
+      
+      const stepBtn = page.locator('#step-btn');
+      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+        await page.click('#step-btn');
+        await page.waitForTimeout(100);
+      }
+    }
+    
+    // Should be on end screen
+    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    
+    // Click "Show more..." to see all trace entries if available
+    const showMoreBtn = page.locator('#show-more-trace');
+    if (await showMoreBtn.isVisible()) {
+      await showMoreBtn.click();
+      await page.waitForTimeout(100);
+    }
+    
+    // Get all trace tick numbers from the trace list
+    const traceItems = await page.locator('.trace-item .trace-tick').allTextContents();
+    const tickNumbers = traceItems.map(t => parseInt(t.replace('Tick ', '')));
+    
+    // Verify tick numbers are consecutive (1, 2, 3, 4, 5 - no gaps like 1, 2, 3, 5, 7)
+    expect(tickNumbers.length).toBeGreaterThan(0);
+    for (let i = 1; i < tickNumbers.length; i++) {
+      const diff = tickNumbers[i] - tickNumbers[i - 1];
+      expect(diff).toBe(1);
+    }
+    
+    // Verify that first tick is 1 and last tick matches the final tick count
+    expect(tickNumbers[0]).toBe(1);
+    const ticksStat = await page.locator('.stat-item').first().locator('.stat-value').textContent();
+    const finalTick = parseInt(ticksStat);
+    expect(tickNumbers[tickNumbers.length - 1]).toBe(finalTick);
   });
 });

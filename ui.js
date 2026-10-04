@@ -96,7 +96,7 @@ export function showTitleScreen() {
     <div class="title-screen">
       <h1>Far Rover</h1>
       <p class="pitch">Build a tiny rover from three sensors and four if-then rules, launch it onto a hidden Mars grid, and watch it live or die by the logic you wrote.</p>
-      <div class="goal-box">
+      <div class="goal-box glass-panel">
         <div class="goal-icon">🎯</div>
         <div class="goal-text">
           <strong>Goal:</strong> Drive onto 25 tiles and return to the lander, or drill 3 ore and return.
@@ -117,7 +117,7 @@ export function showBuildScreen() {
   const container = document.getElementById('game-container');
   container.innerHTML = `
     <div class="build-screen">
-      <div class="build-header">
+      <div class="build-header glass-panel">
         <h2><span class="header-icon">🛠️</span> Build Your Rover</h2>
         <span class="run-indicator">Run ${runNumber + 1}</span>
       </div>
@@ -201,7 +201,7 @@ export function showBuildScreen() {
         </div>
       </div>
       
-      <div class="build-footer">
+      <div class="build-footer glass-panel">
         <button id="launch-btn" class="primary-btn glow-btn" disabled>🚀 Launch</button>
         <button id="view-log-btn" class="secondary-btn">View Log</button>
       </div>
@@ -500,7 +500,7 @@ function showOperateView() {
         <canvas id="minimap-canvas" width="108" height="117"></canvas>
       </div>
       
-      ${pendingAutoPause ? renderAutoPauseToast() : ''}
+      ${pendingAutoPause && !pendingAutoPause.resumed ? renderAutoPauseToast() : ''}
       ${pendingStuck ? renderStuckToast() : ''}
     </div>
   `;
@@ -1012,7 +1012,9 @@ function doTick() {
 }
 
 function resumeFromAutoPause() {
-  pendingAutoPause = null;
+  if (pendingAutoPause) {
+    pendingAutoPause.resumed = true;
+  }
   showOperateView();
   if (!isPaused) {
     startTicking();
@@ -1083,7 +1085,7 @@ function showEndScreen() {
   const container = document.getElementById('game-container');
   container.innerHTML = `
     <div class="end-screen ${isSuccess ? 'success' : 'failure'}">
-      <div class="end-header">
+      <div class="end-header glass-panel">
         <h2>${outcomeText[outcome] || outcome}</h2>
         <p class="end-reason">${gameState.endReason}</p>
       </div>
@@ -1119,7 +1121,7 @@ function showEndScreen() {
         ${gameState.trace.length > 5 ? '<button id="show-more-trace" class="secondary-btn">Show more...</button>' : ''}
       </div>
       
-      <div class="end-why">
+      <div class="end-why glass-panel">
         <label for="why-note">Why do you think that happened?</label>
         <input type="text" id="why-note" placeholder="Optional note..." maxlength="200">
       </div>
@@ -1201,7 +1203,7 @@ function showLogScreen() {
   const container = document.getElementById('game-container');
   container.innerHTML = `
     <div class="log-screen">
-      <div class="log-header">
+      <div class="log-header glass-panel">
         <h2>Run Log</h2>
         <span class="session-id">Session: ${session?.id || 'None'} ${session?.label ? `(${session.label})` : ''}</span>
       </div>
