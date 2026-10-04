@@ -94,9 +94,9 @@ const COLORS = {
   ore: '#f1c40f',
   dust: '#c47a4a',
   crater: '#4a2315',
-  hidden: 'rgba(20, 15, 10, 0.85)',
-  cameraSeen: 'rgba(40, 30, 20, 0.5)',
-  fog: 'rgba(30, 20, 15, 0.7)',
+  hidden: 'rgba(15, 10, 8, 0.65)',
+  cameraSeen: 'rgba(20, 15, 12, 0.35)',
+  fog: 'rgba(30, 20, 15, 0.5)',
   track: 'rgba(60, 40, 25, 0.4)'
 };
 
@@ -470,33 +470,27 @@ export class GameRenderer {
     const isCameraSeen = state.cameraSeen?.[row]?.[col];
     
     const quad = this.getTileQuad(col, row);
-    
-    // Determine base tile type
-    let tileType = 'ground';
     let variant = getGroundVariant(col, row);
     
+    // Always draw base terrain texture (ground) first - even for hidden tiles
+    const baseTile = getTile('ground', variant);
+    this.drawTexturedQuad(ctx, baseTile, quad);
+    
+    // Draw special terrain on top if revealed
     if (isRevealed) {
+      let tileType = null;
       switch (terrain) {
         case 'crater': tileType = 'crater'; break;
         case 'ore': tileType = isDrilled ? 'ore-drilled' : 'ore'; break;
         case 'dust': tileType = 'dust'; break;
-        default: tileType = 'ground'; break;
       }
-    }
-    
-    // Always draw base terrain (ground) first, then overlay type
-    const baseTile = getTile('ground', variant);
-    this.drawTexturedQuad(ctx, baseTile, quad);
-    
-    // If it's a special tile type, draw on top
-    if (tileType !== 'ground') {
-      const specialTile = getTile(tileType, variant);
-      if (specialTile !== baseTile) {
+      if (tileType) {
+        const specialTile = getTile(tileType, variant);
         this.drawTexturedQuad(ctx, specialTile, quad);
       }
     }
     
-    // Fog of war overlay
+    // Fog of war overlay (shows terrain underneath with hazy effect)
     if (!isRevealed) {
       ctx.save();
       ctx.beginPath();
@@ -507,13 +501,19 @@ export class GameRenderer {
       ctx.closePath();
       
       if (isCameraSeen) {
-        // Lighter haze for camera-seen tiles
+        // Lighter haze for camera-seen tiles - terrain visible underneath
         ctx.fillStyle = COLORS.cameraSeen;
       } else {
-        // Dark fog for completely hidden tiles
+        // Dark haze for completely hidden tiles - terrain still slightly visible
         ctx.fillStyle = COLORS.hidden;
       }
       ctx.fill();
+      
+      // Add desaturation effect by overlaying with brown-grey
+      ctx.globalCompositeOperation = 'saturation';
+      ctx.fillStyle = 'rgba(80, 60, 50, 0.4)';
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
       ctx.restore();
     }
     
