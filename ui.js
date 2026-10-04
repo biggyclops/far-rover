@@ -2,7 +2,7 @@
 // Handles all screen rendering and user interaction
 
 import * as Sim from './simulation.js';
-import { GameRenderer, loadAssets, hasRealArt, getTile, getRoverSprite, getLanderSprite } from './renderer.js';
+import { GameRenderer, MinimapRenderer, loadAssets, hasRealArt, getBackgroundImage, getIcon } from './renderer.js';
 
 // === LOCAL STORAGE ===
 const STORAGE_KEY = 'far-rover-demo-v1';
@@ -94,7 +94,6 @@ export function showTitleScreen() {
   const container = document.getElementById('game-container');
   container.innerHTML = `
     <div class="title-screen">
-      <div class="title-glow"></div>
       <h1>Far Rover</h1>
       <p class="pitch">Build a tiny rover from three sensors and four if-then rules, launch it onto a hidden Mars grid, and watch it live or die by the logic you wrote.</p>
       <div class="goal-box">
@@ -104,7 +103,6 @@ export function showTitleScreen() {
         </div>
       </div>
       <button id="start-btn" class="primary-btn glow-btn">Start Mission</button>
-      ${!hasRealArt() ? '<div class="art-notice">🎨 Art in progress</div>' : ''}
     </div>
   `;
   
@@ -207,7 +205,6 @@ export function showBuildScreen() {
         <button id="launch-btn" class="primary-btn glow-btn" disabled>🚀 Launch</button>
         <button id="view-log-btn" class="secondary-btn">View Log</button>
       </div>
-      ${!hasRealArt() ? '<div class="art-notice">🎨 Art in progress</div>' : ''}
     </div>
   `;
   
@@ -427,6 +424,9 @@ function updateLaunchButton() {
 
 // === OPERATE VIEW ===
 
+// Minimap renderer instance
+let minimapRenderer = null;
+
 function showOperateView() {
   clearScreen();
   
@@ -461,59 +461,58 @@ function showOperateView() {
         </div>
       </div>
       
-      <div class="operate-main">
-        <!-- Left Panel: Rules -->
-        <div class="rules-panel glass-panel">
-          <h3>Rover Rules</h3>
-          <div class="rule-display" id="rule-display"></div>
+      <!-- Left Panel: Rules -->
+      <div class="rules-panel glass-panel">
+        <h3>Rover Rules</h3>
+        <div class="rule-display" id="rule-display"></div>
+      </div>
+      
+      <!-- Center: Mars Grid -->
+      <div class="map-container" id="map-container">
+        <div class="map-grid" id="map-grid"></div>
+      </div>
+      
+      <!-- Right Panel: Controls + Sensors -->
+      <div class="info-panel">
+        <div class="sensors-panel glass-panel">
+          <h3>Sensor Readings</h3>
+          <div class="sensor-readings" id="sensor-readings"></div>
         </div>
         
-        <!-- Center: Mars Grid -->
-        <div class="map-container" id="map-container">
-          <div class="map-grid" id="map-grid">
-            <div class="canvas-wrapper" id="canvas-wrapper"></div>
+        <div class="controls-panel glass-panel">
+          <button class="pause-btn" id="pause-btn">${isPaused ? 'Resume' : 'Pause'}</button>
+          <div class="speed-controls">
+            <button class="speed-btn ${isPaused ? 'active' : ''}" data-speed="pause">⏸</button>
+            <button class="speed-btn ${!isPaused && currentSpeed === 1 ? 'active' : ''}" data-speed="1">1×</button>
+            <button class="speed-btn ${!isPaused && currentSpeed === 4 ? 'active' : ''}" data-speed="4">4×</button>
+            <button class="speed-btn ${!isPaused && currentSpeed === 16 ? 'active' : ''}" data-speed="16">16×</button>
           </div>
-        </div>
-        
-        <!-- Right Panel: Controls + Sensors -->
-        <div class="info-panel">
-          <div class="sensors-panel glass-panel">
-            <h3>Sensor Readings</h3>
-            <div class="sensor-readings" id="sensor-readings"></div>
-          </div>
-          
-          <div class="controls-panel glass-panel">
-            <button class="pause-btn" id="pause-btn">${isPaused ? 'Resume' : 'Pause'}</button>
-            <div class="speed-controls">
-              <button class="speed-btn ${isPaused ? 'active' : ''}" data-speed="pause">⏸</button>
-              <button class="speed-btn ${!isPaused && currentSpeed === 1 ? 'active' : ''}" data-speed="1">1×</button>
-              <button class="speed-btn ${!isPaused && currentSpeed === 4 ? 'active' : ''}" data-speed="4">4×</button>
-              <button class="speed-btn ${!isPaused && currentSpeed === 16 ? 'active' : ''}" data-speed="16">16×</button>
-            </div>
-            <button class="step-btn ${isPaused ? '' : 'hidden'}" id="step-btn">Step</button>
-            <button class="uplink-btn ${gameState.uplink.used ? 'used' : ''}" id="uplink-btn" ${gameState.uplink.used || !isPaused ? 'disabled' : ''}>
-              ${gameState.uplink.used ? '📡 Uplink Used' : '📡 Uplink'}
-            </button>
-            <button class="end-run-btn" id="end-run-btn">End Run</button>
-          </div>
+          <button class="step-btn ${isPaused ? '' : 'hidden'}" id="step-btn">Step</button>
+          <button class="uplink-btn ${gameState.uplink.used ? 'used' : ''}" id="uplink-btn" ${gameState.uplink.used || !isPaused ? 'disabled' : ''}>
+            ${gameState.uplink.used ? '📡 Uplink Used' : '📡 Uplink'}
+          </button>
+          <button class="end-run-btn" id="end-run-btn">End Run</button>
         </div>
       </div>
       
       <!-- Bottom Left: Minimap -->
       <div class="minimap glass-panel" id="minimap">
-        <canvas id="minimap-canvas" width="120" height="130"></canvas>
+        <canvas id="minimap-canvas" width="108" height="117"></canvas>
       </div>
       
-      ${pendingAutoPause ? renderAutoPauseBanner() : ''}
-      ${pendingStuck ? renderStuckBanner() : ''}
-      ${!hasRealArt() ? '<div class="art-notice corner">🎨 Art in progress</div>' : ''}
+      ${pendingAutoPause ? renderAutoPauseToast() : ''}
+      ${pendingStuck ? renderStuckToast() : ''}
     </div>
   `;
   
   // Initialize renderer
-  const canvasWrapper = document.getElementById('canvas-wrapper');
-  renderer = new GameRenderer(canvasWrapper, gameState);
+  const mapGrid = document.getElementById('map-grid');
+  renderer = new GameRenderer(mapGrid, gameState);
   renderer.mount();
+  
+  // Initialize minimap renderer
+  const minimapCanvas = document.getElementById('minimap-canvas');
+  minimapRenderer = new MinimapRenderer(minimapCanvas, gameState);
   
   renderRuleDisplay();
   renderSensorReadings();
@@ -521,80 +520,41 @@ function showOperateView() {
   wireOperateControls();
 }
 
-function renderAutoPauseBanner() {
+function renderAutoPauseToast() {
   return `
-    <div class="auto-pause-banner">
-      <div class="banner-content">
-        <span class="banner-icon">⚠️</span>
-        <span class="banner-text">${pendingAutoPause.reason}</span>
+    <div class="auto-pause-toast">
+      <div class="toast-content">
+        <span class="toast-icon">⚠️</span>
+        <span class="toast-text">${pendingAutoPause.reason}</span>
       </div>
-      <div class="banner-actions">
+      <div class="toast-actions">
         <button class="resume-btn" id="resume-btn">Resume</button>
-        ${!gameState.uplink.used ? '<button class="uplink-banner-btn" id="uplink-banner-btn">Use Uplink</button>' : ''}
+        ${!gameState.uplink.used ? '<button class="uplink-toast-btn" id="uplink-banner-btn">Uplink</button>' : ''}
       </div>
     </div>
   `;
 }
 
-function renderStuckBanner() {
+function renderStuckToast() {
   return `
-    <div class="stuck-banner">
-      <div class="banner-content">
-        <span class="banner-icon">🚫</span>
-        <span class="banner-text">Stuck: ${pendingStuck.reason}</span>
+    <div class="auto-pause-toast stuck">
+      <div class="toast-content">
+        <span class="toast-icon">🚫</span>
+        <span class="toast-text">Stuck: ${pendingStuck.reason}</span>
       </div>
-      <div class="banner-actions">
-        ${!gameState.uplink.used ? '<button class="uplink-banner-btn" id="uplink-stuck-btn">Use Uplink</button>' : ''}
-        <button class="end-stuck-btn" id="end-stuck-btn">End Run</button>
+      <div class="toast-actions">
+        ${!gameState.uplink.used ? '<button class="uplink-toast-btn" id="uplink-stuck-btn">Uplink</button>' : ''}
+        <button class="end-toast-btn" id="end-stuck-btn">End Run</button>
       </div>
     </div>
   `;
 }
 
 function renderMinimap() {
-  const canvas = document.getElementById('minimap-canvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  
-  const cellSize = 10;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
-  // Draw grid
-  for (let row = 0; row < 12; row++) {
-    for (let col = 0; col < 12; col++) {
-      const x = col * cellSize;
-      const y = row * cellSize;
-      
-      const isRevealed = gameState.revealed[row][col];
-      const terrain = gameState.terrain[row][col];
-      
-      if (!isRevealed) {
-        ctx.fillStyle = '#2d2d3d';
-      } else {
-        switch (terrain) {
-          case 'crater': ctx.fillStyle = '#7c3aed'; break;
-          case 'ore': ctx.fillStyle = gameState.drilled[row][col] ? '#78350f' : '#f59e0b'; break;
-          case 'dust': ctx.fillStyle = '#b87333'; break;
-          default: ctx.fillStyle = '#6b7280'; break;
-        }
-      }
-      ctx.fillRect(x, y, cellSize - 1, cellSize - 1);
-    }
+  if (minimapRenderer) {
+    minimapRenderer.updateState(gameState);
+    minimapRenderer.render();
   }
-  
-  // Draw lander
-  ctx.fillStyle = '#06b6d4';
-  ctx.fillRect(5 * cellSize, 12 * cellSize, cellSize - 1, cellSize - 1);
-  
-  // Draw rover
-  ctx.fillStyle = '#22c55e';
-  ctx.beginPath();
-  ctx.arc(
-    gameState.col * cellSize + cellSize/2,
-    gameState.row * cellSize + cellSize/2,
-    4, 0, Math.PI * 2
-  );
-  ctx.fill();
 }
 
 function renderRuleDisplay() {
@@ -1168,7 +1128,6 @@ function showEndScreen() {
         <button id="rerun-btn" class="primary-btn glow-btn">Rerun</button>
         <button id="view-log-end-btn" class="secondary-btn">View Log</button>
       </div>
-      ${!hasRealArt() ? '<div class="art-notice">🎨 Art in progress</div>' : ''}
     </div>
   `;
   

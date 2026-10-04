@@ -163,17 +163,17 @@ test.describe('Far Rover UI Tests', () => {
     
     // Step until auto-pause (should happen at tick 3 for dust)
     for (let i = 0; i < 5; i++) {
-      const banner = page.locator('.auto-pause-banner');
-      if (await banner.isVisible()) {
+      const toast = page.locator('.auto-pause-toast');
+      if (await toast.isVisible()) {
         break;
       }
       await page.click('#step-btn');
       await page.waitForTimeout(100);
     }
     
-    // Should see auto-pause banner
-    await expect(page.locator('.auto-pause-banner')).toBeVisible();
-    await expect(page.locator('.auto-pause-banner')).toContainText('dust');
+    // Should see auto-pause toast
+    await expect(page.locator('.auto-pause-toast')).toBeVisible();
+    await expect(page.locator('.auto-pause-toast')).toContainText('dust');
   });
 
   test('End screen shows outcome and trace', async ({ page }) => {
