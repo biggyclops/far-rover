@@ -647,7 +647,7 @@ export class GameRenderer {
     if (!rover) return;
     
     const pos = this.gridToScreen(roverCol + 0.5, roverRow + 0.5);
-    const roverSize = pos.tileWidth * 0.75;
+    const roverSize = pos.tileWidth * 0.8;
     
     // Draw rover (upright, not tilted with perspective)
     ctx.drawImage(
