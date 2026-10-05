@@ -94,10 +94,11 @@ const COLORS = {
   ore: '#f1c40f',
   dust: '#c47a4a',
   crater: '#4a2315',
-  hidden: 'rgba(15, 10, 8, 0.65)',
-  cameraSeen: 'rgba(20, 15, 12, 0.35)',
-  fog: 'rgba(30, 20, 15, 0.5)',
-  track: 'rgba(60, 40, 25, 0.4)'
+  hidden: 'rgba(70, 32, 14, 0.18)',
+  cameraSeen: 'rgba(190, 110, 55, 0.10)',
+  fog: 'rgba(180, 95, 45, 0.12)',
+  track: 'rgba(90, 50, 28, 0.28)',
+  revealedWash: 'rgba(255, 186, 110, 0.14)'
 };
 
 // Pre-rendered tile cache
@@ -321,12 +322,13 @@ export class GameRenderer {
     // Tire tracks
     this.tireTracks = new Set();
     
-    // Perspective settings
-    this.vanishY = 0.15; // Vanishing point Y (0-1 from top)
-    this.horizonY = 0.08;
-    this.boardTop = 0.12;
-    this.boardBottom = 0.98;
-    this.boardShrink = 0.55; // How much the top edge shrinks
+    // Perspective settings — closer camera, milder tilt so sprites read larger
+    this.vanishY = 0.08;
+    this.horizonY = 0.04;
+    this.boardTop = 0.03;
+    this.boardBottom = 0.995;
+    this.boardShrink = 0.80; // top row is 80% of bottom (was 55%)
+    this.boardFill = 1.0;    // fill the map canvas width
   }
   
   mount() {
@@ -410,7 +412,7 @@ export class GameRenderer {
     // X position with perspective (shrinks toward top)
     const perspectiveFactor = 1 - (1 - rowNorm) * (1 - this.boardShrink);
     const centerX = w / 2;
-    const rowWidth = w * 0.9 * perspectiveFactor;
+    const rowWidth = w * this.boardFill * perspectiveFactor;
     const leftX = centerX - rowWidth / 2;
     const tileWidth = rowWidth / GRID_COLS;
     const x = leftX + col * tileWidth;
@@ -490,7 +492,7 @@ export class GameRenderer {
       }
     }
     
-    // Fog of war overlay (shows terrain underneath with hazy effect)
+    // Fog of war overlay — light warm haze so terrain still reads
     if (!isRevealed) {
       ctx.save();
       ctx.beginPath();
@@ -500,20 +502,20 @@ export class GameRenderer {
       ctx.lineTo(quad[3].x, quad[3].y);
       ctx.closePath();
       
-      if (isCameraSeen) {
-        // Lighter haze for camera-seen tiles - terrain visible underneath
-        ctx.fillStyle = COLORS.cameraSeen;
-      } else {
-        // Dark haze for completely hidden tiles - terrain still slightly visible
-        ctx.fillStyle = COLORS.hidden;
-      }
+      ctx.fillStyle = isCameraSeen ? COLORS.cameraSeen : COLORS.hidden;
       ctx.fill();
-      
-      // Add desaturation effect by overlaying with brown-grey
-      ctx.globalCompositeOperation = 'saturation';
-      ctx.fillStyle = 'rgba(80, 60, 50, 0.4)';
+      ctx.restore();
+    } else {
+      // Warm dusty lift so scanned tiles read bright, not muddy
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(quad[0].x, quad[0].y);
+      ctx.lineTo(quad[1].x, quad[1].y);
+      ctx.lineTo(quad[2].x, quad[2].y);
+      ctx.lineTo(quad[3].x, quad[3].y);
+      ctx.closePath();
+      ctx.fillStyle = COLORS.revealedWash;
       ctx.fill();
-      ctx.globalCompositeOperation = 'source-over';
       ctx.restore();
     }
     
@@ -579,7 +581,9 @@ export class GameRenderer {
     const maxY = Math.max(quad[0].y, quad[1].y, quad[2].y, quad[3].y);
     
     // Draw texture stretched to bounding box (approximation for perspective)
+    ctx.filter = 'brightness(1.16) saturate(1.12) contrast(1.04)';
     ctx.drawImage(texture, minX, minY, maxX - minX, maxY - minY);
+    ctx.filter = 'none';
     
     ctx.restore();
   }
@@ -603,7 +607,7 @@ export class GameRenderer {
         ctx.lineTo(quad[2].x, quad[2].y);
         ctx.lineTo(quad[3].x, quad[3].y);
         ctx.closePath();
-        ctx.fillStyle = 'rgba(10, 8, 5, 0.6)';
+        ctx.fillStyle = 'rgba(28, 14, 8, 0.22)';
         ctx.fill();
         ctx.restore();
       }
@@ -615,7 +619,7 @@ export class GameRenderer {
       const lander = getLanderSprite();
       if (lander) {
         const pos = this.gridToScreen(LANDER_COL + 0.5, LANDER_ROW + 0.5);
-        const landerSize = pos.tileWidth * 1.5;
+        const landerSize = pos.tileWidth * 1.4;
         ctx.drawImage(
           lander,
           pos.x - landerSize / 2,
@@ -643,7 +647,7 @@ export class GameRenderer {
     if (!rover) return;
     
     const pos = this.gridToScreen(roverCol + 0.5, roverRow + 0.5);
-    const roverSize = pos.tileWidth * 0.65;
+    const roverSize = pos.tileWidth * 0.75;
     
     // Draw rover (upright, not tilted with perspective)
     ctx.drawImage(
@@ -697,25 +701,24 @@ export class GameRenderer {
     const w = this.width;
     const h = this.height;
     
-    // Top edge gradient (blends board into horizon)
-    const topGrad = ctx.createLinearGradient(0, 0, 0, h * 0.2);
-    topGrad.addColorStop(0, 'rgba(0, 0, 0, 0.4)');
+    // Soft horizon blend only — keep the board bright
+    const topGrad = ctx.createLinearGradient(0, 0, 0, h * 0.08);
+    topGrad.addColorStop(0, 'rgba(0, 0, 0, 0.12)');
     topGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = topGrad;
-    ctx.fillRect(0, 0, w, h * 0.2);
+    ctx.fillRect(0, 0, w, h * 0.08);
     
-    // Side vignettes
-    const leftGrad = ctx.createLinearGradient(0, 0, w * 0.15, 0);
-    leftGrad.addColorStop(0, 'rgba(0, 0, 0, 0.3)');
+    const leftGrad = ctx.createLinearGradient(0, 0, w * 0.06, 0);
+    leftGrad.addColorStop(0, 'rgba(0, 0, 0, 0.08)');
     leftGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = leftGrad;
-    ctx.fillRect(0, 0, w * 0.15, h);
+    ctx.fillRect(0, 0, w * 0.06, h);
     
-    const rightGrad = ctx.createLinearGradient(w, 0, w * 0.85, 0);
-    rightGrad.addColorStop(0, 'rgba(0, 0, 0, 0.3)');
+    const rightGrad = ctx.createLinearGradient(w, 0, w * 0.94, 0);
+    rightGrad.addColorStop(0, 'rgba(0, 0, 0, 0.08)');
     rightGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = rightGrad;
-    ctx.fillRect(w * 0.85, 0, w * 0.15, h);
+    ctx.fillRect(w * 0.94, 0, w * 0.06, h);
   }
   
   // Get cell from click position
