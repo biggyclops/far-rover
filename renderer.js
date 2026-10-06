@@ -654,6 +654,7 @@ export class GameRenderer {
   startCloudLoop() {
     if (this.cloudRaf) return;
     if (!this.cloudTime0) this.cloudTime0 = performance.now();
+    let lastPaint = 0;
     const tick = (now) => {
       if (!this.canvas.isConnected) {
         this.cloudRaf = null;
@@ -662,9 +663,10 @@ export class GameRenderer {
       this.cloudRaf = requestAnimationFrame(tick);
       const fading = this.stepCloudFade(now);
       const drifting = !this.reduceMotion;
-      if (fading || drifting || this.isAnimating) {
-        if (!this.isAnimating) this.render();
-      }
+      if (!fading && !drifting && !this.isAnimating) return;
+      if (!fading && !this.isAnimating && now - lastPaint < 50) return;
+      lastPaint = now;
+      if (!this.isAnimating) this.render();
     };
     this.cloudRaf = requestAnimationFrame(tick);
   }

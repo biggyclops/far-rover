@@ -5,17 +5,17 @@ const BASE_URL = 'http://localhost:8080';
 
 async function dismissAutoPause(page) {
   const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
-  if (!(await autoPauseToast.isVisible())) return false;
+  if (!(await autoPauseToast.isVisible({ timeout: 0 }))) return false;
   // Step continues the paused tick without starting 1× play (Resume now restarts play).
   const stepBtn = page.locator('#step-btn');
-  if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+  if (await stepBtn.isVisible({ timeout: 0 }) && await stepBtn.isEnabled()) {
     await stepBtn.click();
     return true;
   }
   await page.click('#resume-btn');
-  if (await page.locator('.end-screen').isVisible()) return true;
+  if (await page.locator('.end-screen').isVisible({ timeout: 0 })) return true;
   const pauseBtn = page.locator('#pause-btn');
-  if (await pauseBtn.isVisible()) {
+  if (await pauseBtn.isVisible({ timeout: 0 })) {
     const label = (await pauseBtn.textContent()) || '';
     if (label.trim() === 'Pause') {
       await page.click('#pause-btn');
@@ -26,19 +26,19 @@ async function dismissAutoPause(page) {
 
 async function completeRun(page, maxIter = 120) {
   for (let i = 0; i < maxIter; i++) {
-    if (await page.locator('.end-screen').isVisible()) break;
+    if (await page.locator('.end-screen').isVisible({ timeout: 0 })) break;
     if (await dismissAutoPause(page)) {
       await page.waitForTimeout(30);
       continue;
     }
     const stuckToast = page.locator('.auto-pause-toast.stuck');
-    if (await stuckToast.isVisible()) {
+    if (await stuckToast.isVisible({ timeout: 0 })) {
       await page.click('#end-stuck-btn');
       await page.waitForTimeout(50);
       break;
     }
     const stepBtn = page.locator('#step-btn');
-    if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+    if (await stepBtn.isVisible({ timeout: 0 }) && await stepBtn.isEnabled()) {
       await page.click('#step-btn');
       await page.waitForTimeout(30);
     }
