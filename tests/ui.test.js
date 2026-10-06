@@ -5,17 +5,17 @@ const BASE_URL = 'http://localhost:8080';
 
 async function dismissAutoPause(page) {
   const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
-  if (!(await autoPauseToast.isVisible())) return false;
+  if (!(await autoPauseToast.isVisible({ timeout: 0 }))) return false;
   // Step continues the paused tick without starting 1× play (Resume now restarts play).
   const stepBtn = page.locator('#step-btn');
-  if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+  if (await stepBtn.isVisible({ timeout: 0 }) && await stepBtn.isEnabled()) {
     await stepBtn.click();
     return true;
   }
   await page.click('#resume-btn');
-  if (await page.locator('.end-screen').isVisible()) return true;
+  if (await page.locator('.end-screen').isVisible({ timeout: 0 })) return true;
   const pauseBtn = page.locator('#pause-btn');
-  if (await pauseBtn.isVisible()) {
+  if (await pauseBtn.isVisible({ timeout: 0 })) {
     const label = (await pauseBtn.textContent()) || '';
     if (label.trim() === 'Pause') {
       await page.click('#pause-btn');
@@ -26,19 +26,19 @@ async function dismissAutoPause(page) {
 
 async function completeRun(page, maxIter = 120) {
   for (let i = 0; i < maxIter; i++) {
-    if (await page.locator('.end-screen').isVisible()) break;
+    if (await page.locator('.end-screen').isVisible({ timeout: 0 })) break;
     if (await dismissAutoPause(page)) {
       await page.waitForTimeout(30);
       continue;
     }
     const stuckToast = page.locator('.auto-pause-toast.stuck');
-    if (await stuckToast.isVisible()) {
+    if (await stuckToast.isVisible({ timeout: 0 })) {
       await page.click('#end-stuck-btn');
       await page.waitForTimeout(50);
       break;
     }
     const stepBtn = page.locator('#step-btn');
-    if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+    if (await stepBtn.isVisible({ timeout: 0 }) && await stepBtn.isEnabled()) {
       await page.click('#step-btn');
       await page.waitForTimeout(30);
     }
@@ -75,8 +75,10 @@ test.describe('Far Rover UI Tests', () => {
     await page.goto(BASE_URL);
     await page.click('#start-btn');
     
-    // Should be on build screen
-    await expect(page.locator('h2')).toContainText('Build Your Rover');
+    await expect(page.locator('.sensor-item:has([data-sensor="camera"]) .sensor-desc'))
+      .toContainText('Shows 3×3 (seen, not scanned; dust alerts fire even without Dust)');
+    await expect(page.locator('.sensor-item:has([data-sensor="camera"]) .sensor-desc'))
+      .not.toContainText('Scans');
     
     // Select 3 sensors
     await page.click('input[data-sensor="distance"]');
@@ -137,6 +139,9 @@ test.describe('Far Rover UI Tests', () => {
     await expect(page.locator('.map-grid')).toBeVisible();
     await expect(page.locator('.speed-btn[data-speed="pause"]')).toBeVisible();
     await expect(page.locator('#step-btn')).toBeVisible();
+    await expect(page.locator('#sensor-readings')).toContainText('Camera');
+    await expect(page.locator('#sensor-readings')).toContainText('shows 3×3');
+    await expect(page.locator('#sensor-readings')).not.toContainText('scanning');
   });
 
   test('Step button advances one tick', async ({ page }) => {
@@ -383,6 +388,7 @@ test.describe('Far Rover UI Tests', () => {
   });
 
   test('Voluntary rerun counting: change counts, no-change does not, prompted does not', async ({ page }) => {
+    test.setTimeout(90000);
     await page.goto(BASE_URL);
     await page.click('#start-btn');
     

@@ -98,8 +98,105 @@ const COLORS = {
   cameraSeen: 'rgba(40, 70, 110, 0.28)',
   fog: 'rgba(180, 95, 45, 0.12)',
   track: 'rgba(90, 50, 28, 0.28)',
-  revealedWash: 'rgba(255, 186, 110, 0.14)'
+  revealedWash: 'rgba(255, 186, 110, 0.14)',
+  minimapCloud: '#8b939c'
 };
+
+const CLOUD_HIDDEN = 1;
+const CLOUD_CAMERA = 0.48;
+const CLOUD_CLEAR = 0;
+const CLOUD_TEX_SIZE = 256;
+
+function fract(n) {
+  return n - Math.floor(n);
+}
+
+function hash2(ix, iy, seed) {
+  const n = Math.sin(ix * 127.1 + iy * 311.7 + seed * 19.19) * 43758.5453;
+  return fract(n);
+}
+
+function fade(t) {
+  return t * t * (3 - 2 * t);
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function tileableValueNoise(x, y, cells, seed) {
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const fx = fade(x - x0);
+  const fy = fade(y - y0);
+  const wrap = (n) => ((n % cells) + cells) % cells;
+  const v00 = hash2(wrap(x0), wrap(y0), seed);
+  const v10 = hash2(wrap(x0 + 1), wrap(y0), seed);
+  const v01 = hash2(wrap(x0), wrap(y0 + 1), seed);
+  const v11 = hash2(wrap(x0 + 1), wrap(y0 + 1), seed);
+  return lerp(lerp(v00, v10, fx), lerp(v01, v11, fx), fy);
+}
+
+function createCloudTexture(seed) {
+  const size = CLOUD_TEX_SIZE;
+  const src = document.createElement('canvas');
+  src.width = size;
+  src.height = size;
+  const sctx = src.getContext('2d');
+  const img = sctx.createImageData(size, size);
+  const data = img.data;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const n1 = tileableValueNoise((x / size) * 4, (y / size) * 4, 4, seed);
+      const n2 = tileableValueNoise((x / size) * 8, (y / size) * 8, 8, seed + 1);
+      const n3 = tileableValueNoise((x / size) * 16, (y / size) * 16, 16, seed + 2);
+      let n = n1 * 0.5 + n2 * 0.32 + n3 * 0.18;
+      n = Math.pow(Math.max(0, n), 1.65);
+      const i = (y * size + x) * 4;
+      const shade = 168 + n * 72;
+      data[i] = shade;
+      data[i + 1] = shade + 3;
+      data[i + 2] = Math.min(255, shade + 12);
+      data[i + 3] = Math.min(255, 70 + n * 185);
+    }
+  }
+  sctx.putImageData(img, 0, 0);
+  const out = document.createElement('canvas');
+  out.width = size;
+  out.height = size;
+  const octx = out.getContext('2d');
+  octx.filter = 'blur(6px)';
+  octx.drawImage(src, 0, 0);
+  octx.filter = 'none';
+  return out;
+}
+
+let cloudTexA = null;
+let cloudTexB = null;
+
+function getCloudTextures() {
+  if (!cloudTexA) {
+    cloudTexA = createCloudTexture(7.3);
+    cloudTexB = createCloudTexture(21.9);
+  }
+  return [cloudTexA, cloudTexB];
+}
+
+function prefersReducedMotion() {
+  return typeof window !== 'undefined' &&
+    !!window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function tileCloudTarget(state, col, row) {
+  if (state.cameraSeen?.[row]?.[col]) return CLOUD_CAMERA;
+  if (!state.revealed?.[row]?.[col]) return CLOUD_HIDDEN;
+  if (state.terrain[row][col] === 'crater' &&
+      !(state.col === col && state.row === row)) {
+    return CLOUD_CAMERA;
+  }
+  return CLOUD_CLEAR;
+}
 
 // Pre-rendered tile cache
 const tileCache = new Map();
@@ -321,6 +418,27 @@ export class GameRenderer {
     
     // Tire tracks
     this.tireTracks = new Set();
+
+    // Cloud fog of war (visual only)
+    this.playbackSpeed = 1;
+    this.reduceMotion = prefersReducedMotion();
+    this.cloudDisplay = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(CLOUD_HIDDEN));
+    this.cloudTarget = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(CLOUD_HIDDEN));
+    this.cloudFadeFrom = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(CLOUD_HIDDEN));
+    this.cloudFadeStart = 0;
+    this.cloudFading = false;
+    this.cloudInitialized = false;
+    this.cloudTime0 = 0;
+    this.cloudRaf = null;
+    this.sceneDirty = true;
+    this.maskDirty = true;
+    this.sceneCanvas = null;
+    this.sceneCtx = null;
+    this.maskCanvas = null;
+    this.maskCtx = null;
+    this.cloudScratch = null;
+    this.cloudScratchCtx = null;
+    this.motionQuery = null;
     
     // Perspective settings — closer camera, milder tilt so sprites read larger
     this.vanishY = 0.08;
@@ -335,6 +453,15 @@ export class GameRenderer {
     this.container.appendChild(this.canvas);
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+      this.onMotionChange = () => {
+        this.reduceMotion = this.motionQuery.matches;
+        this.render();
+      };
+      this.motionQuery.addEventListener?.('change', this.onMotionChange);
+    }
+    this.startCloudLoop();
   }
   
   resize() {
@@ -351,16 +478,41 @@ export class GameRenderer {
     
     this.ctx = this.canvas.getContext('2d');
     this.ctx.scale(dpr, dpr);
+
+    this.sceneCanvas = document.createElement('canvas');
+    this.sceneCanvas.width = this.width;
+    this.sceneCanvas.height = this.height;
+    this.sceneCtx = this.sceneCanvas.getContext('2d');
+
+    this.maskCanvas = document.createElement('canvas');
+    this.maskCanvas.width = this.width;
+    this.maskCanvas.height = this.height;
+    this.maskCtx = this.maskCanvas.getContext('2d');
+
+    this.cloudLayer = document.createElement('canvas');
+    this.cloudLayer.width = this.width;
+    this.cloudLayer.height = this.height;
+    this.cloudLayerCtx = this.cloudLayer.getContext('2d');
+
+    this.sceneDirty = true;
+    this.maskDirty = true;
     
     this.render();
+  }
+
+  setPlaybackSpeed(speed) {
+    this.playbackSpeed = speed || 1;
   }
   
   updateState(gameState) {
     this.gameState = gameState;
+    this.syncCloudTargets();
+    this.sceneDirty = true;
   }
   
   addTireTrack(col, row) {
     this.tireTracks.add(`${col},${row}`);
+    this.sceneDirty = true;
   }
   
   startAnimation(fromCol, fromRow, toCol, toRow, duration = 120) {
@@ -372,6 +524,7 @@ export class GameRenderer {
     this.animationDuration = duration;
     this.isAnimating = true;
     this.addTireTrack(fromCol, fromRow);
+    this.startCloudLoop();
     this.animateFrame();
   }
   
@@ -435,33 +588,124 @@ export class GameRenderer {
     ];
   }
   
+  cloudFadeDuration() {
+    const s = this.playbackSpeed || 1;
+    if (s >= 16) return 70;
+    if (s >= 4) return 160;
+    return 420;
+  }
+
+  syncCloudTargets() {
+    const state = this.gameState;
+    if (!state) return;
+    let changed = false;
+    for (let row = 0; row < GRID_ROWS; row++) {
+      for (let col = 0; col < GRID_COLS; col++) {
+        const next = tileCloudTarget(state, col, row);
+        if (this.cloudTarget[row][col] !== next) {
+          this.cloudTarget[row][col] = next;
+          changed = true;
+        }
+      }
+    }
+    if (!this.cloudInitialized) {
+      for (let row = 0; row < GRID_ROWS; row++) {
+        for (let col = 0; col < GRID_COLS; col++) {
+          this.cloudDisplay[row][col] = this.cloudTarget[row][col];
+          this.cloudFadeFrom[row][col] = this.cloudTarget[row][col];
+        }
+      }
+      this.cloudInitialized = true;
+      this.cloudFading = false;
+      this.maskDirty = true;
+      return;
+    }
+    if (changed) {
+      for (let row = 0; row < GRID_ROWS; row++) {
+        for (let col = 0; col < GRID_COLS; col++) {
+          this.cloudFadeFrom[row][col] = this.cloudDisplay[row][col];
+        }
+      }
+      this.cloudFadeStart = performance.now();
+      this.cloudFading = true;
+      this.startCloudLoop();
+    }
+  }
+
+  stepCloudFade(now) {
+    if (!this.cloudFading) return false;
+    const dur = this.cloudFadeDuration();
+    const t = Math.min(1, (now - this.cloudFadeStart) / dur);
+    const eased = t * t * (3 - 2 * t);
+    for (let row = 0; row < GRID_ROWS; row++) {
+      for (let col = 0; col < GRID_COLS; col++) {
+        this.cloudDisplay[row][col] = lerp(
+          this.cloudFadeFrom[row][col],
+          this.cloudTarget[row][col],
+          eased
+        );
+      }
+    }
+    this.maskDirty = true;
+    if (t >= 1) this.cloudFading = false;
+    return true;
+  }
+
+  startCloudLoop() {
+    if (this.cloudRaf) return;
+    if (!this.cloudTime0) this.cloudTime0 = performance.now();
+    let lastPaint = 0;
+    const tick = (now) => {
+      if (!this.canvas.isConnected) {
+        this.cloudRaf = null;
+        return;
+      }
+      this.cloudRaf = requestAnimationFrame(tick);
+      const fading = this.stepCloudFade(now);
+      const drifting = !this.reduceMotion;
+      if (!fading && !drifting && !this.isAnimating) return;
+      if (!fading && !this.isAnimating && now - lastPaint < 50) return;
+      lastPaint = now;
+      if (!this.isAnimating) this.render();
+    };
+    this.cloudRaf = requestAnimationFrame(tick);
+  }
+
   render() {
-    if (!this.gameState) return;
+    if (!this.gameState || !this.ctx) return;
+    this.syncCloudTargets();
     
     const ctx = this.ctx;
     const w = this.width;
     const h = this.height;
     
     ctx.clearRect(0, 0, w, h);
-    
-    // Draw all tiles (back to front for proper overlap)
+
+    if (this.sceneDirty || !this.sceneCanvas) {
+      this.rebuildScene();
+      this.sceneDirty = false;
+    }
+    ctx.drawImage(this.sceneCanvas, 0, 0, w, h);
+
+    this.renderCloudOverlay(ctx);
+
+    this.renderLanderSprite(ctx);
+    this.renderRover(ctx);
+    this.renderVignette(ctx);
+  }
+
+  rebuildScene() {
+    const ctx = this.sceneCtx;
+    const w = this.width;
+    const h = this.height;
+    ctx.clearRect(0, 0, w, h);
     for (let row = 0; row < GRID_ROWS; row++) {
       for (let col = 0; col < GRID_COLS; col++) {
         this.renderTile(ctx, col, row);
       }
     }
-    
-    // Draw lander row
-    this.renderLanderArea(ctx);
-    
-    // Draw rover
-    this.renderRover(ctx);
-    
-    // Draw grid lines (very faint)
+    this.renderLanderGround(ctx);
     this.renderGridLines(ctx);
-    
-    // Draw vignette edges
-    this.renderVignette(ctx);
   }
   
   renderTile(ctx, col, row) {
@@ -492,21 +736,8 @@ export class GameRenderer {
       }
     }
     
-    // Fog of war overlay — light warm haze so terrain still reads
-    if (!isRevealed) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(quad[0].x, quad[0].y);
-      ctx.lineTo(quad[1].x, quad[1].y);
-      ctx.lineTo(quad[2].x, quad[2].y);
-      ctx.lineTo(quad[3].x, quad[3].y);
-      ctx.closePath();
-      
-      ctx.fillStyle = isCameraSeen ? COLORS.cameraSeen : COLORS.hidden;
-      ctx.fill();
-      ctx.restore();
-    } else {
-      // Warm dusty lift so scanned tiles read bright, not muddy
+    if (isRevealed && !isCameraSeen) {
+      // Warm dusty lift so driven-onto tiles read bright, not muddy
       ctx.save();
       ctx.beginPath();
       ctx.moveTo(quad[0].x, quad[0].y);
@@ -588,17 +819,13 @@ export class GameRenderer {
     ctx.restore();
   }
   
-  renderLanderArea(ctx) {
+  renderLanderGround(ctx) {
     const row = GRID_ROWS;
-    
-    // Draw ground texture for lander row
     for (let col = 0; col < GRID_COLS; col++) {
       const quad = this.getTileQuad(col, row);
       const variant = getGroundVariant(col, row);
       const tile = getTile('ground', variant);
       this.drawTexturedQuad(ctx, tile, quad);
-      
-      // Darken non-lander cells
       if (col !== LANDER_COL) {
         ctx.save();
         ctx.beginPath();
@@ -612,21 +839,143 @@ export class GameRenderer {
         ctx.restore();
       }
     }
-    
-    // Draw lander
+  }
+
+  renderLanderSprite(ctx) {
     const state = this.gameState;
-    if (!(state.col === LANDER_COL && state.row === LANDER_ROW)) {
-      const lander = getLanderSprite();
-      if (lander) {
-        const pos = this.gridToScreen(LANDER_COL + 0.5, LANDER_ROW + 0.5);
-        const landerSize = pos.tileWidth * 1.4;
-        ctx.drawImage(
-          lander,
-          pos.x - landerSize / 2,
-          pos.y - landerSize * 0.7,
-          landerSize,
-          landerSize
-        );
+    if (state.col === LANDER_COL && state.row === LANDER_ROW) return;
+    const lander = getLanderSprite();
+    if (!lander) return;
+    const pos = this.gridToScreen(LANDER_COL + 0.5, LANDER_ROW + 0.5);
+    const landerSize = pos.tileWidth * 1.4;
+    ctx.drawImage(
+      lander,
+      pos.x - landerSize / 2,
+      pos.y - landerSize * 0.7,
+      landerSize,
+      landerSize
+    );
+  }
+
+  screenToGrid(x, y) {
+    const w = this.width;
+    const h = this.height;
+    const topY = h * this.boardTop;
+    const bottomY = h * this.boardBottom;
+    const rowNorm = (y - topY) / (bottomY - topY);
+    const perspectiveFactor = 1 - (1 - rowNorm) * (1 - this.boardShrink);
+    const rowWidth = w * this.boardFill * perspectiveFactor;
+    const leftX = w / 2 - rowWidth / 2;
+    const col = rowWidth > 1 ? (x - leftX) / (rowWidth / GRID_COLS) : -1;
+    const row = rowNorm * 13;
+    const inside = rowNorm >= -0.02 && rowNorm <= 1.02 && col >= -0.08 && col <= GRID_COLS + 0.08;
+    return { col, row, inside };
+  }
+
+  sampleCloudCoverage(col, row) {
+    if (row >= GRID_ROWS || row < 0 || col < 0 || col >= GRID_COLS) return CLOUD_HIDDEN;
+    return this.cloudDisplay[Math.min(GRID_ROWS - 1, Math.floor(row))][Math.min(GRID_COLS - 1, Math.floor(col))];
+  }
+
+  rebuildCloudMask() {
+    const w = this.width;
+    const h = this.height;
+    const step = 3;
+    const mw = Math.max(1, Math.ceil(w / step));
+    const mh = Math.max(1, Math.ceil(h / step));
+    if (!this.cloudScratch || this.cloudScratch.width !== mw || this.cloudScratch.height !== mh) {
+      this.cloudScratch = document.createElement('canvas');
+      this.cloudScratch.width = mw;
+      this.cloudScratch.height = mh;
+      this.cloudScratchCtx = this.cloudScratch.getContext('2d');
+    }
+    const img = this.cloudScratchCtx.createImageData(mw, mh);
+    const data = img.data;
+    for (let y = 0; y < mh; y++) {
+      for (let x = 0; x < mw; x++) {
+        const { col, row, inside } = this.screenToGrid((x + 0.5) * step, (y + 0.5) * step);
+        let a = 1;
+        if (inside) {
+          const c0 = Math.floor(col);
+          const r0 = Math.floor(row);
+          const fx = col - c0;
+          const fy = row - r0;
+          const v00 = this.sampleCloudCoverage(c0, r0);
+          const v10 = this.sampleCloudCoverage(c0 + 1, r0);
+          const v01 = this.sampleCloudCoverage(c0, r0 + 1);
+          const v11 = this.sampleCloudCoverage(c0 + 1, r0 + 1);
+          let base = lerp(lerp(v00, v10, fx), lerp(v01, v11, fy), fy);
+          const edge = Math.max(v00, v10, v01, v11) - Math.min(v00, v10, v01, v11);
+          const n = tileableValueNoise(col * 1.4, row * 1.4, 24, 9.4);
+          const n2 = tileableValueNoise(col * 3.1, row * 3.1, 48, 2.2);
+          base += (n - 0.5) * edge * 1.15 + (n2 - 0.5) * edge * 0.5;
+          a = Math.max(0, Math.min(1, base));
+        }
+        const i = (y * mw + x) * 4;
+        data[i] = 255;
+        data[i + 1] = 255;
+        data[i + 2] = 255;
+        data[i + 3] = Math.round(a * 255);
+      }
+    }
+    this.cloudScratchCtx.putImageData(img, 0, 0);
+    const ctx = this.maskCtx;
+    ctx.clearRect(0, 0, w, h);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(this.cloudScratch, 0, 0, w, h);
+    ctx.globalCompositeOperation = 'destination-out';
+    const lander = this.gridToScreen(LANDER_COL + 0.5, LANDER_ROW + 0.55);
+    const lr = Math.max(lander.tileWidth * 1.05, 18);
+    const n1 = hash2(LANDER_COL, LANDER_ROW, 4.2);
+    const lg = ctx.createRadialGradient(lander.x, lander.y, lr * 0.15, lander.x, lander.y, lr * (1.15 + n1 * 0.2));
+    lg.addColorStop(0, 'rgba(255,255,255,1)');
+    lg.addColorStop(0.55, 'rgba(255,255,255,0.75)');
+    lg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = lg;
+    ctx.beginPath();
+    ctx.ellipse(lander.x, lander.y, lr * 1.15, lr * 0.85, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    this.maskDirty = false;
+  }
+
+  renderCloudOverlay(ctx) {
+    if (this.maskDirty) this.rebuildCloudMask();
+    const w = this.width;
+    const h = this.height;
+    const [texA, texB] = getCloudTextures();
+    const layer = this.cloudLayerCtx;
+    layer.clearRect(0, 0, w, h);
+    layer.globalCompositeOperation = 'source-over';
+    layer.fillStyle = 'rgb(170, 178, 190)';
+    layer.fillRect(0, 0, w, h);
+
+    const now = performance.now();
+    const t = this.reduceMotion ? 0 : (now - (this.cloudTime0 || now)) / 1000;
+    const scale = Math.max(w, h) / CLOUD_TEX_SIZE * 1.45;
+
+    layer.globalCompositeOperation = 'source-over';
+    layer.globalAlpha = 0.72;
+    this.tileCloud(layer, texA, t * 16, t * 7, w, h, scale);
+    layer.globalAlpha = 0.48;
+    this.tileCloud(layer, texB, -t * 10, t * 13, w, h, scale * 0.78);
+    layer.globalAlpha = 1;
+    layer.globalCompositeOperation = 'destination-in';
+    layer.drawImage(this.maskCanvas, 0, 0, w, h);
+    layer.globalCompositeOperation = 'source-over';
+
+    ctx.drawImage(this.cloudLayer, 0, 0, w, h);
+  }
+
+  tileCloud(ctx, tex, ox, oy, w, h, scale) {
+    const tw = CLOUD_TEX_SIZE * scale;
+    const th = CLOUD_TEX_SIZE * scale;
+    const startX = ((ox % tw) + tw) % tw - tw;
+    const startY = ((oy % th) + th) % th - th;
+    for (let y = startY; y < h + th; y += th) {
+      for (let x = startX; x < w + tw; x += tw) {
+        ctx.drawImage(tex, x, y, tw, th);
       }
     }
   }
@@ -798,7 +1147,7 @@ export class MinimapRenderer {
             default: ctx.fillStyle = '#4a3828'; break;
           }
         } else {
-          ctx.fillStyle = '#1a1510';
+          ctx.fillStyle = COLORS.minimapCloud;
         }
         ctx.fillRect(x, y, cs - 1, cs - 1);
       }
