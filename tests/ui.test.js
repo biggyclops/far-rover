@@ -6,6 +6,12 @@ const BASE_URL = 'http://localhost:8080';
 async function dismissAutoPause(page) {
   const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
   if (!(await autoPauseToast.isVisible())) return false;
+  // Step continues the paused tick without starting 1× play (Resume now restarts play).
+  const stepBtn = page.locator('#step-btn');
+  if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+    await stepBtn.click();
+    return true;
+  }
   await page.click('#resume-btn');
   if (await page.locator('.end-screen').isVisible()) return true;
   const pauseBtn = page.locator('#pause-btn');
@@ -728,7 +734,7 @@ test.describe('Far Rover UI Tests', () => {
     await expect(page.locator('.uplink-dialog')).toBeVisible();
     await expect(page.locator('#uplink-condition')).toHaveValue('crater_in_front');
     await expect(page.locator('#uplink-action')).toHaveValue('sidestep');
-    await page.selectOption('#uplink-slot', '1');
+    await page.selectOption('#uplink-slot', { value: '1' });
     await expect(page.locator('#uplink-condition')).toHaveValue('battery_below');
     await expect(page.locator('#uplink-battery-n')).toHaveValue('12');
     await expect(page.locator('#uplink-action')).toHaveValue('return_charge');
@@ -741,7 +747,7 @@ test.describe('Far Rover UI Tests', () => {
     await page.click('#launch-btn');
     await page.click('#step-btn');
     await page.click('#uplink-btn');
-    await page.selectOption('#uplink-slot', '1');
+    await page.selectOption('#uplink-slot', { value: '1' });
     await page.fill('#uplink-battery-n', '99');
     await page.click('#uplink-apply');
     await expect(page.locator('#uplink-btn')).toContainText('Used');
@@ -840,7 +846,7 @@ test.describe('Far Rover UI Tests', () => {
     }
     await expect(page.locator('.auto-pause-toast:not(.stuck)')).toBeVisible();
     await page.click('#uplink-banner-btn');
-    await page.selectOption('#uplink-slot', '3');
+    await page.selectOption('#uplink-slot', { value: '3' });
     await expect(page.locator('#uplink-condition')).toHaveValue('always');
     await page.click('#uplink-apply');
     await completeRun(page);
