@@ -447,13 +447,14 @@ export class GameRenderer {
     this.cloudScratchCtx = null;
     this.motionQuery = null;
     
-    // Perspective settings — closer camera, milder tilt so sprites read larger
-    this.vanishY = 0.08;
-    this.horizonY = 0.04;
-    this.boardTop = 0.03;
-    this.boardBottom = 0.995;
-    this.boardShrink = 0.80; // top row is 80% of bottom (was 55%)
-    this.boardFill = 1.0;    // fill the map canvas width
+    // Near-nadir orbital framing for the 2D fallback (mild perspective only)
+    this.vanishY = 0.03;
+    this.horizonY = 0.02;
+    this.boardTop = 0.02;
+    this.boardBottom = 0.98;
+    this.boardShrink = 0.94;
+    this.boardFill = 1.0;
+    this.sensorLayers = { camera: true, lidar: false, thermal: false, spectral: false };
   }
   
   mount() {
@@ -515,6 +516,12 @@ export class GameRenderer {
   setGridForced() {}
   setPausedHint() {}
   dispose() {}
+  setSensorLayer(name, on) {
+    if (!(name in this.sensorLayers)) return;
+    this.sensorLayers[name] = !!on;
+    this.sceneDirty = true;
+    this.render();
+  }
   
   updateState(gameState) {
     this.gameState = gameState;
@@ -696,7 +703,10 @@ export class GameRenderer {
 
     this.renderLanderSprite(ctx);
     this.renderRover(ctx);
+    this.renderReticle(ctx);
+    this.renderSensorOverlays(ctx);
     this.renderVignette(ctx);
+    this.renderRoverCam2D();
   }
 
   rebuildScene() {
@@ -777,8 +787,8 @@ export class GameRenderer {
       ctx.restore();
     }
     
-    // Crater warning ring (dashed red-orange)
-    if (isRevealed && terrain === 'crater') {
+    // Crater warning ring (dashed red-orange), lidar replaces this when on
+    if (isRevealed && terrain === 'crater' && !this.sensorLayers.lidar) {
       ctx.save();
       const cx = (quad[0].x + quad[2].x) / 2;
       const cy = (quad[0].y + quad[2].y) / 2;
@@ -1073,6 +1083,169 @@ export class GameRenderer {
     rightGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = rightGrad;
     ctx.fillRect(w * 0.94, 0, w * 0.06, h);
+  }
+
+  _aheadCell() {
+    const cell = this.gameState?.readings?.craterInFront;
+    if (!cell?.detected || !cell.cell || cell.cell === 'Lander') return null;
+    const col = cell.cell.charCodeAt(0) - 65;
+    const row = parseInt(cell.cell.slice(1), 10) - 1;
+    if (col < 0 || col > 11 || row < 0 || row > 11 || Number.isNaN(row)) return null;
+    return { col, row };
+  }
+
+  renderReticle(ctx) {
+    const state = this.gameState;
+    if (!state || state.row < 0 || state.row > 11) return;
+    const col = this.isAnimating ? this.roverAnimX : state.col;
+    const row = this.isAnimating ? this.roverAnimY : state.row;
+    if (row > 11) return;
+    const quad = this.getTileQuad(col, row);
+    const inset = 6;
+    const len = 12;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(232, 228, 220, 0.85)';
+    ctx.lineWidth = 1.4;
+    const corners = [
+      [quad[0].x + inset, quad[0].y + inset, 1, 1],
+      [quad[1].x - inset, quad[1].y + inset, -1, 1],
+      [quad[3].x + inset, quad[3].y - inset, 1, -1],
+      [quad[2].x - inset, quad[2].y - inset, -1, -1]
+    ];
+    corners.forEach(([x, y, sx, sy]) => {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + len * sx, y);
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y + len * sy);
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  renderSensorOverlays(ctx) {
+    const state = this.gameState;
+    if (!state) return;
+    const ahead = this._aheadCell();
+    for (let row = 0; row < GRID_ROWS; row++) {
+      for (let col = 0; col < GRID_COLS; col++) {
+        const known = !!(state.revealed?.[row]?.[col] || state.cameraSeen?.[row]?.[col]);
+        const terrain = state.terrain[row][col];
+        const quad = this.getTileQuad(col, row);
+        const cx = (quad[0].x + quad[2].x) / 2;
+        const cy = (quad[0].y + quad[2].y) / 2;
+        const rx = (quad[1].x - quad[0].x) * 0.4;
+        const ry = (quad[3].y - quad[0].y) * 0.35;
+
+        if (this.sensorLayers.thermal && state.sensors?.includes('dust') && known && terrain === 'dust') {
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(quad[0].x, quad[0].y);
+          ctx.lineTo(quad[1].x, quad[1].y);
+          ctx.lineTo(quad[2].x, quad[2].y);
+          ctx.lineTo(quad[3].x, quad[3].y);
+          ctx.closePath();
+          ctx.fillStyle = 'rgba(255, 96, 36, 0.28)';
+          ctx.fill();
+          ctx.restore();
+        }
+
+        if (this.sensorLayers.spectral && state.sensors?.includes('spectral') && known && terrain === 'ore' && !state.drilled?.[row]?.[col]) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(quad[0].x, quad[0].y);
+          ctx.lineTo(quad[1].x, quad[1].y);
+          ctx.lineTo(quad[2].x, quad[2].y);
+          ctx.lineTo(quad[3].x, quad[3].y);
+          ctx.closePath();
+          ctx.fillStyle = 'rgba(30, 230, 196, 0.26)';
+          ctx.fill();
+          ctx.restore();
+        }
+
+        const craterKnown = terrain === 'crater' && (known || (ahead && ahead.col === col && ahead.row === row));
+        if (this.sensorLayers.lidar && state.sensors?.includes('distance') && craterKnown) {
+          ctx.save();
+          ctx.strokeStyle = ahead && ahead.col === col && ahead.row === row ? '#9ff6ff' : '#4be4ff';
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = 0.55;
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, rx * 0.7, ry * 0.7, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+  }
+
+  renderRoverCam2D() {
+    const canvas = document.getElementById('rover-cam-canvas');
+    if (!canvas || !this.gameState) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    const state = this.gameState;
+    const facing = state.facing || 'north';
+    const vec = { north: [0, -1], east: [1, 0], south: [0, 1], west: [-1, 0] };
+    const [dx, dy] = vec[facing] || [0, -1];
+    const fc = state.col + dx;
+    const fr = state.row + dy;
+    const onGrid = fc >= 0 && fc < 12 && fr >= 0 && fr < 12;
+    const known = onGrid && !!(state.revealed?.[fr]?.[fc] || state.cameraSeen?.[fr]?.[fc]);
+    const terrain = onGrid ? state.terrain[fr][fc] : null;
+    const ahead = this._aheadCell();
+    const craterAhead = !!(ahead && ahead.col === fc && ahead.row === fr);
+
+    ctx.fillStyle = '#c48a5a';
+    ctx.fillRect(0, 0, w, h);
+    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.46);
+    sky.addColorStop(0, '#e8c7a0');
+    sky.addColorStop(1, '#c07040');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h * 0.46);
+    ctx.fillStyle = '#b45a32';
+    ctx.fillRect(0, h * 0.46, w, h * 0.54);
+
+    const drawBillboard = (img, x, y, tw, th) => {
+      if (!img) return;
+      ctx.drawImage(img, x, y, tw, th);
+    };
+    if (onGrid) {
+      let tile = getTile('ground', 1);
+      if ((known || craterAhead) && terrain === 'crater') tile = getTile('crater', 1);
+      else if (known && terrain === 'dust') tile = getTile('dust', 1);
+      else if (known && terrain === 'ore') tile = getTile('ore', 1);
+      drawBillboard(tile, w * 0.12, h * 0.42, w * 0.76, h * 0.5);
+    }
+
+    if (craterAhead || (known && terrain === 'crater')) {
+      ctx.fillStyle = 'rgba(30, 12, 8, 0.7)';
+      ctx.beginPath();
+      ctx.ellipse(w * 0.5, h * 0.68, w * 0.22, h * 0.1, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (this.sensorLayers.thermal && known && terrain === 'dust') {
+      ctx.fillStyle = 'rgba(255, 90, 30, 0.28)';
+      ctx.fillRect(w * 0.12, h * 0.5, w * 0.76, h * 0.4);
+    }
+    if (this.sensorLayers.spectral && known && terrain === 'ore') {
+      ctx.fillStyle = 'rgba(30, 230, 196, 0.28)';
+      ctx.fillRect(w * 0.3, h * 0.55, w * 0.4, h * 0.2);
+    }
+
+    ctx.strokeStyle = 'rgba(232, 228, 220, 0.35)';
+    ctx.beginPath();
+    ctx.moveTo(w * 0.5, h * 0.18);
+    ctx.lineTo(w * 0.5, h * 0.82);
+    ctx.moveTo(w * 0.22, h * 0.5);
+    ctx.lineTo(w * 0.78, h * 0.5);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(20, 10, 6, 0.12)';
+    for (let y = 0; y < h; y += 3) ctx.fillRect(0, y, w, 1);
   }
   
   // Get cell from click position
