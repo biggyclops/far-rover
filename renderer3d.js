@@ -114,8 +114,9 @@ function createCloudMaterial(coverageTex, noiseTex, layer) {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
+    depthTest: true,
     side: THREE.DoubleSide,
-    fog: true,
+    fog: false,
     uniforms: {
       uCoverage: { value: coverageTex },
       uNoise: { value: noiseTex },
@@ -124,13 +125,9 @@ function createCloudMaterial(coverageTex, noiseTex, layer) {
     },
     vertexShader: `
       varying vec2 vUv;
-      #include <common>
-      #include <fog_pars_vertex>
       void main() {
         vUv = uv;
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_Position = projectionMatrix * mvPosition;
-        #include <fog_vertex>
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
     fragmentShader: `
@@ -139,8 +136,6 @@ function createCloudMaterial(coverageTex, noiseTex, layer) {
       uniform float uTime;
       uniform float uLayer;
       varying vec2 vUv;
-      #include <common>
-      #include <fog_pars_fragment>
       void main() {
         float t = uTime * (0.012 + uLayer * 0.004);
         vec2 n = texture2D(uNoise, vUv * 2.4 + vec2(t, t * 0.35 + uLayer * 0.1)).rg - 0.5;
@@ -149,14 +144,14 @@ function createCloudMaterial(coverageTex, noiseTex, layer) {
         float puff = texture2D(uNoise, vUv * 3.1 - vec2(t * 0.6, uLayer)).r;
         float ragged = texture2D(uNoise, vUv * 7.0 + vec2(uLayer * 0.2, -t * 0.2)).g;
         cov = clamp(cov + (ragged - 0.5) * 0.18 * step(0.04, cov), 0.0, 1.0);
-        if (cov < 0.03) discard;
+        if (cov < 0.04) discard;
         float hidden = smoothstep(0.62, 0.92, cov);
-        float cam = smoothstep(0.08, 0.55, cov) * (1.0 - hidden);
-        float a = hidden * (0.90 + 0.08 * puff) + cam * (0.34 + 0.16 * puff);
-        a *= mix(1.0, 0.62, uLayer * 0.5);
-        vec3 col = mix(vec3(0.82, 0.86, 0.90), vec3(0.58, 0.63, 0.70), puff);
+        float cam = (1.0 - hidden) * smoothstep(0.06, 0.5, cov);
+        float a = hidden * 0.95 + cam * 0.44;
+        a *= mix(1.0, 0.72, uLayer * 0.5);
+        a *= 0.84 + 0.16 * puff;
+        vec3 col = mix(vec3(0.84, 0.88, 0.92), vec3(0.60, 0.65, 0.72), puff);
         gl_FragColor = vec4(col, a);
-        #include <fog_fragment>
       }
     `
   });
@@ -185,7 +180,7 @@ function addBox(parent, w, h, d, color, x, y, z, rx = 0, rz = 0, opts = {}) {
 function createRover() {
   const g = new THREE.Group();
   g.name = 'rover';
-  addBox(g, 0.50, 0.14, 0.36, 0x8a8f96, 0, 0.22, 0);
+  addBox(g, 0.50, 0.14, 0.36, 0xb4bac2, 0, 0.22, 0);
   addBox(g, 0.44, 0.02, 0.30, 0x1b3a5c, 0, 0.30, 0, 0, 0, { roughness: 0.35, metalness: 0.4 });
   const mast = addBox(g, 0.03, 0.32, 0.03, 0xb8bec6, 0.08, 0.48, -0.04);
   addBox(mast, 0.11, 0.055, 0.07, 0x4b5563, 0, 0.18, -0.03);
@@ -226,6 +221,7 @@ function createRover() {
   });
   g.userData.wheels = wheels;
   g.userData.light = light;
+  g.scale.setScalar(1.4);
   return g;
 }
 
@@ -360,6 +356,7 @@ export class GameRenderer3D {
     this.coverageTex.magFilter = THREE.LinearFilter;
     this.coverageTex.minFilter = THREE.LinearFilter;
     this.coverageTex.flipY = false;
+    this.coverageTex.generateMipmaps = false;
     this.coverageTex.needsUpdate = true;
     this.noiseTex = makeNoiseTexture();
 
@@ -819,6 +816,7 @@ export class GameRenderer3D {
   mount() {
     this.container.appendChild(this.canvas);
     this.resize();
+    requestAnimationFrame(() => { if (!this.disposed) this.resize(); });
     this._onResize = () => this.resize();
     window.addEventListener('resize', this._onResize);
     this.running = true;

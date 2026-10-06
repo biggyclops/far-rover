@@ -882,13 +882,35 @@ function updateOperateView() {
   renderRuleDisplay();
   renderSensorReadings();
   renderMinimap();
+  syncOperateNotices();
+}
 
-  const leftoverToast = document.querySelector('.auto-pause-toast:not(.stuck)');
-  if (leftoverToast && (!pendingAutoPause || pendingAutoPause.resumed)) {
-    leftoverToast.remove();
-  }
+function syncOperateNotices() {
   const operate = document.querySelector('.operate-view');
-  if (operate && shownReturnCraterWarning && !operate.querySelector('.return-crater-note')) {
+  if (!operate) return;
+
+  const existingPause = operate.querySelector('.auto-pause-toast:not(.stuck)');
+  const existingStuck = operate.querySelector('.auto-pause-toast.stuck');
+  const wantPause = pendingAutoPause && !pendingAutoPause.resumed;
+  const pauseText = wantPause ? pendingAutoPause.reason : '';
+
+  if (!wantPause) {
+    existingPause?.remove();
+  } else if (!existingPause || existingPause.querySelector('.toast-text')?.textContent !== pauseText) {
+    existingPause?.remove();
+    operate.insertAdjacentHTML('beforeend', renderAutoPauseToast());
+    document.getElementById('resume-btn')?.addEventListener('click', resumeFromAutoPause);
+    document.getElementById('uplink-banner-btn')?.addEventListener('click', showUplinkDialog);
+  }
+
+  if (!pendingStuck) {
+    existingStuck?.remove();
+  } else if (!existingStuck) {
+    operate.insertAdjacentHTML('beforeend', renderStuckToast());
+    document.getElementById('end-stuck-btn')?.addEventListener('click', endFromStuck);
+  }
+
+  if (shownReturnCraterWarning && !operate.querySelector('.return-crater-note')) {
     const note = document.createElement('div');
     note.className = 'return-crater-note';
     note.textContent = "Return and charge doesn't avoid craters.";
@@ -1176,7 +1198,7 @@ function doTick() {
       pendingAutoPause = { ...result.autoPause, continueFromStep4: result.continueFromStep4, tickRecord: result.tickRecord };
       isPaused = true;
       stopTicking();
-      showOperateView();
+      updateOperateView();
       return;
     }
     result = Sim.continueTickFromStep4(gameState, result.tickRecord, gameState.readings);
@@ -1192,7 +1214,7 @@ function doTick() {
     pendingStuck = result.stuckCondition;
     isPaused = true;
     stopTicking();
-    showOperateView();
+    updateOperateView();
     return;
   }
   

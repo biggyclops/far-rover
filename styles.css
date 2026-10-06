@@ -502,6 +502,8 @@ button:disabled {
   padding: 12px;
   overflow-y: auto;
   max-height: calc(100vh - 120px);
+  position: relative;
+  z-index: 20;
 }
 
 .rules-panel h3 {
@@ -569,8 +571,16 @@ button:disabled {
 }
 
 .map-grid[data-renderer="3d"] {
+  position: relative;
   overflow: hidden;
   background: transparent;
+}
+
+.map-grid[data-renderer="3d"] .game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .view-tools {
