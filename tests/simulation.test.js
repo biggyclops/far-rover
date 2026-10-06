@@ -841,6 +841,155 @@ console.log('\n=== v3.2 Unit Tests: Circling includes turns in place ===');
     'Stuck from circling or no move');
 })();
 
+// === PLAYTEST FIXES ===
+
+console.log('\n=== Playtest: charge-start does not count as idle (Player 2 bug 1) ===');
+(() => {
+  const sensors = ['distance', 'spectral', 'camera'];
+  const rules = [
+    { condition: { type: Sim.CONDITIONS.BATTERY_BELOW, n: 13 }, action: { type: Sim.ACTIONS.RETURN_CHARGE } },
+    { condition: { type: Sim.CONDITIONS.BATTERY_BELOW, n: 20 }, action: { type: Sim.ACTIONS.EXPLORE } },
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.DRILL } }
+  ];
+  const { state } = runScenarioDetailed(sensors, rules);
+  assertEqual(state.outcome, Sim.OUTCOMES.SUCCESS_SCAN, 'Player 2 repro: success (scan)');
+  assertEqual(state.tick, 116, 'Player 2 repro: tick 116');
+  assertEqual(state.tilesScanned, 26, 'Player 2 repro: 26 tiles');
+})();
+
+console.log('\n=== Playtest: charge-start leaves idle counter unchanged ===');
+(() => {
+  const state = Sim.createInitialState(['distance', 'spectral', 'camera'], [
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.RETURN_CHARGE } }
+  ]);
+  Sim.runTick(state, null);
+  assert(state.charging, 'Charge started');
+  assertEqual(state.noMoveCount, 0, 'Charge-start turn does not increment idle');
+  assertEqual(state.outcome, null, 'Not stuck after charge start');
+})();
+
+console.log('\n=== Playtest: lander idle copy when no rule matches ===');
+(() => {
+  const { state } = runScenarioDetailed(['distance', 'spectral', 'camera'], [
+    { condition: { type: Sim.CONDITIONS.BATTERY_BELOW, n: 5 }, action: { type: Sim.ACTIONS.EXPLORE } }
+  ]);
+  assertEqual(state.outcome, Sim.OUTCOMES.STUCK_NO_MOVE, 'Stuck idle on lander');
+  assertEqual(state.endReason, 'No rule was true, so the rover never moved.', 'Lander idle copy');
+})();
+
+console.log('\n=== Playtest: uplink does not reset stuck counters ===');
+(() => {
+  const state = Sim.createInitialState(['distance', 'spectral', 'camera'], [
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.WAIT } }
+  ]);
+  Sim.runTick(state, null);
+  assertEqual(state.noMoveCount, 1, 'Idle 1 after wait');
+  const ok = Sim.applyUplink(state, 0,
+    { type: Sim.CONDITIONS.ALWAYS },
+    { type: Sim.ACTIONS.WAIT }
+  );
+  assert(ok, 'Uplink applied');
+  assertEqual(state.noMoveCount, 1, 'Idle counter survives uplink');
+  Sim.runTick(state, null);
+  Sim.runTick(state, null);
+  assertEqual(state.outcome, Sim.OUTCOMES.STUCK_NO_MOVE, 'Stuck after 3 waits across uplink');
+})();
+
+console.log('\n=== Playtest: uplink clamps battery N and is blocked after outcome ===');
+(() => {
+  const state = Sim.createInitialState(['distance', 'spectral', 'camera'], [
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } }
+  ]);
+  Sim.runTick(state, null);
+  const ok = Sim.applyUplink(state, 0,
+    { type: Sim.CONDITIONS.BATTERY_BELOW, n: 99 },
+    { type: Sim.ACTIONS.RETURN_CHARGE }
+  );
+  assert(ok, 'Uplink with out-of-range N applies');
+  assertEqual(state.rules[0].condition.n, 20, 'N clamped to 20');
+
+  const stuck = Sim.createInitialState(['distance', 'spectral', 'camera'], [
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.WAIT } }
+  ]);
+  for (let i = 0; i < 3 && !stuck.outcome; i++) Sim.runTick(stuck, null);
+  assert(stuck.outcome, 'Wait program ends stuck');
+  assert(!Sim.canUseUplink(stuck), 'Uplink disabled after run ended');
+  assert(!Sim.applyUplink(stuck, 0, { type: Sim.CONDITIONS.ALWAYS }, { type: Sim.ACTIONS.EXPLORE }),
+    'Uplink apply fails after outcome');
+})();
+
+console.log('\n=== Playtest: uplink during auto-pause does not add a phantom tick ===');
+(() => {
+  const sensors = ['distance', 'spectral', 'camera'];
+  const starter = [
+    { condition: { type: Sim.CONDITIONS.CRATER_IN_FRONT }, action: { type: Sim.ACTIONS.SIDESTEP } },
+    { condition: { type: Sim.CONDITIONS.BATTERY_BELOW, n: 12 }, action: { type: Sim.ACTIONS.RETURN_CHARGE } },
+    { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.DRILL } },
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } }
+  ];
+  const state = Sim.createInitialState(sensors, starter);
+  let prev = null;
+  let pending = null;
+  let didUplink = false;
+  while (!state.outcome && state.tick < 200) {
+    let r;
+    if (pending) {
+      const tr = pending;
+      pending = null;
+      r = Sim.continueTickFromStep4(state, tr, state.readings);
+    } else {
+      r = Sim.runTick(state, prev);
+    }
+    prev = r.newlyRevealed;
+    if (r.autoPause) {
+      pending = r.tickRecord;
+      if (!didUplink) {
+        didUplink = true;
+        Sim.applyUplink(state, 3, { type: Sim.CONDITIONS.ALWAYS }, { type: Sim.ACTIONS.EXPLORE });
+        // Keep pending — clearing it would start a new tick (phantom)
+      }
+      continue;
+    }
+    if (r.endCondition) {
+      state.outcome = r.endCondition.outcome;
+      break;
+    }
+    if (r.stuckCondition) break;
+  }
+  assert(didUplink, 'Uplink fired at first auto-pause');
+  assertEqual(state.outcome, Sim.OUTCOMES.SUCCESS_SCAN, 'Starter still succeeds after pause-uplink');
+  assertEqual(state.tick, 46, 'No phantom tick: still ends on 46');
+  assertEqual(state.trace.length, state.tick, 'Trace ticks match tick counter');
+})();
+
+console.log('\n=== Playtest: Return into known crater explains itself ===');
+(() => {
+  const state = Sim.createInitialState(['distance', 'spectral', 'camera'], [
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.RETURN_CHARGE } }
+  ]);
+  state.col = 4;
+  state.row = 7;
+  state.facing = Sim.DIRECTIONS.EAST;
+  state.revealed[7][5] = true;
+  state.battery = 10;
+  state.hazardsSeen.add('crater:F8');
+  Sim.runTick(state, null);
+  assertEqual(state.outcome, Sim.OUTCOMES.LOST_CRATER, 'Lost to crater');
+  assert(state.endReason.includes("Return and charge doesn't avoid craters."),
+    'End reason names Return crater behavior');
+})();
+
+console.log('\n=== Playtest: HUD battery-at-start is recorded on the tick ===');
+(() => {
+  const state = Sim.createInitialState(['distance', 'dust', 'spectral'], [
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } }
+  ]);
+  const r = Sim.runTick(state, null);
+  assertEqual(r.tickRecord.batteryAtStart, 20, 'Tick 1 battery-at-start is 20');
+  assertEqual(r.tickRecord.battery, 19, 'Tick 1 battery after move is 19');
+  assertEqual(r.tickRecord.readings.battery, 20, 'Readings battery is start-of-turn');
+})();
+
 // === SUMMARY ===
 console.log('\n=== SUMMARY ===');
 console.log(`Passed: ${passed}`);

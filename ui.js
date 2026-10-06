@@ -40,6 +40,69 @@ let pendingAutoPause = null;
 let pendingStuck = null;
 let animatingMove = false;
 let lastTickResult = null;
+let autoPauseMode = loadAutoPauseMode();
+let autoPauseKindsSeen = new Set();
+let shownReturnCraterWarning = false;
+
+const AUTO_PAUSE_STORAGE = 'far-rover-autopause-mode';
+
+function loadAutoPauseMode() {
+  try {
+    const v = localStorage.getItem('far-rover-autopause-mode');
+    if (v === 'off' || v === 'first' || v === 'always') return v;
+  } catch {
+    // ignore
+  }
+  return 'first';
+}
+
+function saveAutoPauseMode(mode) {
+  autoPauseMode = mode;
+  try {
+    localStorage.setItem('far-rover-autopause-mode', mode);
+  } catch {
+    // ignore
+  }
+}
+
+function hazardKind(h) {
+  if (h.sensor === 'Distance sensor') return 'distance-crater';
+  if (h.sensor === 'Dust sensor') return 'dust-on-tile';
+  if (h.sensor === 'Camera' && h.type === 'dust') return 'camera-dust';
+  if (h.sensor === 'Camera') return 'camera-crater';
+  return h.type || 'other';
+}
+
+function shouldPauseForHazards(autoPause) {
+  if (!autoPause) return false;
+  if (autoPauseMode === 'off') return false;
+  const hazards = autoPause.hazards || [];
+  if (autoPauseMode === 'always') return true;
+  const newKinds = [];
+  for (const h of hazards) {
+    const kind = hazardKind(h);
+    if (!autoPauseKindsSeen.has(kind)) newKinds.push(kind);
+  }
+  if (newKinds.length === 0) return false;
+  for (const k of newKinds) autoPauseKindsSeen.add(k);
+  return true;
+}
+
+function displayedBattery() {
+  const rec = lastTickResult?.tickRecord;
+  if (rec?.readings && rec.readings.battery != null) return rec.readings.battery;
+  return gameState?.battery ?? 20;
+}
+
+function uplinkBlocked() {
+  if (!gameState) return true;
+  if (gameState.uplink.used) return true;
+  if (!isPaused) return true;
+  if (gameState.tick < 1) return true;
+  if (gameState.outcome) return true;
+  if (pendingStuck) return true;
+  return false;
+}
 
 // Renderer
 let renderer = null;
@@ -124,7 +187,7 @@ export function showBuildScreen() {
       
       <div class="build-content">
         <div class="sensors-section glass-panel">
-          <h3>Sensors <span class="sensor-count">(Pick exactly 3)</span></h3>
+          <h3>Sensors <span class="sensor-count">(Pick 3 of 4 optional sensors)</span></h3>
           <div class="sensor-list">
             <div class="sensor-item always-on">
               <span class="sensor-check">✓</span>
@@ -154,14 +217,14 @@ export function showBuildScreen() {
             <label class="sensor-item selectable">
               <input type="checkbox" data-sensor="camera" ${selectedSensors.includes(Sim.SENSORS.CAMERA) ? 'checked' : ''}>
               <span class="sensor-name">Camera (OV2640)</span>
-              <span class="sensor-desc">Scans 3×3 area</span>
+              <span class="sensor-desc">Scans 3×3 (dust alerts fire even without Dust)</span>
             </label>
           </div>
         </div>
         
         <div class="rules-section glass-panel">
           <div class="rules-header">
-            <h3>Rules <span class="rule-note">(First match wins)</span></h3>
+            <h3>Rules <span class="rule-note">(Checked top to bottom; first true wins)</span></h3>
             <button id="starter-preset-btn" class="preset-btn" title="Load starter program">
               ⚡ Starter
             </button>
@@ -169,6 +232,7 @@ export function showBuildScreen() {
           <div class="rules-list" id="rules-list">
             ${renderRuleSlots()}
           </div>
+          <div class="build-warnings" id="build-warnings"></div>
         </div>
         
         <div class="reference-section glass-panel">
@@ -191,10 +255,10 @@ export function showBuildScreen() {
               <ul>
                 <li><strong>Explore:</strong> move toward nearest hidden tile</li>
                 <li><strong>Return and charge:</strong> go to lander and charge (3 ticks)</li>
-                <li><strong>Sidestep:</strong> move right or left, keep facing</li>
-                <li><strong>Go to ore:</strong> move to adjacent ore (needs Spectral)</li>
+                <li><strong>Go to ore:</strong> move onto adjacent ore and drill it (costs 3)</li>
                 <li><strong>Drill:</strong> drill ore on current tile (costs 2)</li>
                 <li><strong>Wait:</strong> do nothing this tick</li>
+                <li><strong>Sidestep:</strong> move to the rover's right if valid, otherwise left; facing stays the same</li>
               </ul>
             </div>
           </div>
@@ -222,6 +286,7 @@ export function showBuildScreen() {
   document.getElementById('starter-preset-btn').addEventListener('click', loadStarterPreset);
   
   updateLaunchButton();
+  refreshBuildWarnings();
 }
 
 function loadStarterPreset() {
@@ -340,6 +405,7 @@ function handleSensorChange(e) {
   document.getElementById('rules-list').innerHTML = renderRuleSlots();
   wireRuleControls();
   updateLaunchButton();
+  refreshBuildWarnings();
 }
 
 function handleConditionChange(e) {
@@ -362,6 +428,7 @@ function handleConditionChange(e) {
   document.getElementById('rules-list').innerHTML = renderRuleSlots();
   wireRuleControls();
   updateLaunchButton();
+  refreshBuildWarnings();
 }
 
 function handleActionChange(e) {
@@ -378,6 +445,7 @@ function handleActionChange(e) {
   }
   
   updateLaunchButton();
+  refreshBuildWarnings();
 }
 
 function handleBatteryNChange(e) {
@@ -394,6 +462,7 @@ function handleMoveUp(e) {
     [rules[slot - 1], rules[slot]] = [rules[slot], rules[slot - 1]];
     document.getElementById('rules-list').innerHTML = renderRuleSlots();
     wireRuleControls();
+    refreshBuildWarnings();
   }
 }
 
@@ -403,7 +472,49 @@ function handleMoveDown(e) {
     [rules[slot], rules[slot + 1]] = [rules[slot + 1], rules[slot]];
     document.getElementById('rules-list').innerHTML = renderRuleSlots();
     wireRuleControls();
+    refreshBuildWarnings();
   }
+}
+
+function refreshBuildWarnings() {
+  const el = document.getElementById('build-warnings');
+  if (!el) return;
+  const warnings = [];
+
+  let lastFilled = -1;
+  let alwaysIdx = -1;
+  for (let i = 0; i < rules.length; i++) {
+    if (rules[i]?.condition && rules[i]?.action) {
+      lastFilled = i;
+      if (rules[i].condition.type === Sim.CONDITIONS.ALWAYS) alwaysIdx = i;
+    }
+  }
+  if (alwaysIdx >= 0 && alwaysIdx < lastFilled) {
+    warnings.push('Always is not last, so rules below it can never fire.');
+  }
+
+  const landerReadings = {
+    battery: 20,
+    goalMet: false,
+    craterInFront: { detected: false, cell: null },
+    onDust: false,
+    oreNextTo: { detected: false, directions: [] },
+    onOre: false
+  };
+  let anyTrueOnPad = false;
+  for (const r of rules) {
+    if (!r?.condition || !r?.action) continue;
+    if (!Sim.isRuleLegal(r, selectedSensors)) continue;
+    if (Sim.evaluateCondition(r.condition, { sensors: selectedSensors }, landerReadings)) {
+      anyTrueOnPad = true;
+      break;
+    }
+  }
+  if (!anyTrueOnPad) {
+    warnings.push('No rule is true at full battery on the lander, so the rover will never leave.');
+  }
+
+  el.innerHTML = warnings.map(w => `<div class="build-warning">⚠ ${w}</div>`).join('');
 }
 
 function updateLaunchButton() {
@@ -449,11 +560,15 @@ function showOperateView() {
           <div class="battery-gauge">
             <div class="battery-fill" id="battery-fill" style="width: ${gameState.battery * 5}%"></div>
           </div>
-          <span class="hud-value" id="hud-battery">${gameState.battery}</span>
+          <span class="hud-value" id="hud-battery">${displayedBattery()}</span>
         </div>
         <div class="hud-section hud-ore">
           <span class="hud-icon">💎</span>
-          <span class="hud-value" id="hud-ore">${gameState.cargo}</span>
+          <span class="hud-value" id="hud-ore">${gameState.cargo} (goal 3)</span>
+        </div>
+        <div class="hud-section hud-facing">
+          <span class="hud-label">Facing</span>
+          <span class="hud-value" id="hud-facing">${Sim.FACING_LABELS[gameState.facing] || gameState.facing}</span>
         </div>
         <div class="hud-section hud-tiles">
           <span class="hud-icon">🗺️</span>
@@ -488,20 +603,30 @@ function showOperateView() {
             <button class="speed-btn ${!isPaused && currentSpeed === 16 ? 'active' : ''}" data-speed="16">16×</button>
           </div>
           <button class="step-btn ${isPaused ? '' : 'hidden'}" id="step-btn">Step</button>
-          <button class="uplink-btn ${gameState.uplink.used ? 'used' : ''}" id="uplink-btn" ${gameState.uplink.used || !isPaused ? 'disabled' : ''}>
+          <button class="uplink-btn ${gameState.uplink.used ? 'used' : ''}" id="uplink-btn" ${uplinkBlocked() ? 'disabled' : ''}>
             ${gameState.uplink.used ? '📡 Uplink Used' : '📡 Uplink'}
           </button>
+          <label class="autopause-mode">
+            Auto-pause
+            <select id="autopause-mode">
+              <option value="off" ${autoPauseMode === 'off' ? 'selected' : ''}>Off</option>
+              <option value="first" ${autoPauseMode === 'first' ? 'selected' : ''}>First time each kind</option>
+              <option value="always" ${autoPauseMode === 'always' ? 'selected' : ''}>Always</option>
+            </select>
+          </label>
           <button class="end-run-btn" id="end-run-btn">End Run</button>
         </div>
       </div>
       
       <!-- Bottom Left: Minimap -->
       <div class="minimap glass-panel" id="minimap">
+        <div class="minimap-label">Minimap</div>
         <canvas id="minimap-canvas" width="108" height="117"></canvas>
       </div>
       
       ${pendingAutoPause && !pendingAutoPause.resumed ? renderAutoPauseToast() : ''}
       ${pendingStuck ? renderStuckToast() : ''}
+      ${shownReturnCraterWarning ? '<div class="return-crater-note">Return and charge doesn\'t avoid craters.</div>' : ''}
     </div>
   `;
   
@@ -543,7 +668,6 @@ function renderStuckToast() {
         <span class="toast-text">Stuck: ${pendingStuck.reason}</span>
       </div>
       <div class="toast-actions">
-        ${!gameState.uplink.used ? '<button class="uplink-toast-btn" id="uplink-stuck-btn">Uplink</button>' : ''}
         <button class="end-toast-btn" id="end-stuck-btn">End Run</button>
       </div>
     </div>
@@ -595,7 +719,16 @@ function renderSensorReadings() {
   // Battery (always)
   html += `<div class="sensor-reading">
     <span class="sensor-label">Battery:</span>
-    <span class="sensor-value">${readings.battery ?? gameState.battery} pts</span>
+    <span class="sensor-value">${displayedBattery()} pts</span>
+  </div>`;
+  html += `<div class="sensor-reading">
+    <span class="sensor-label">Facing:</span>
+    <span class="sensor-value">${Sim.FACING_LABELS[gameState.facing] || gameState.facing}</span>
+  </div>`;
+  const sides = Sim.sidestepDirections(gameState.facing);
+  html += `<div class="sensor-reading">
+    <span class="sensor-label">Sidestep:</span>
+    <span class="sensor-value">right → ${Sim.FACING_LABELS[sides.right]}, else left → ${Sim.FACING_LABELS[sides.left]}</span>
   </div>`;
   
   // Distance
@@ -655,10 +788,12 @@ function wireOperateControls() {
   document.getElementById('pause-btn')?.addEventListener('click', togglePause);
   document.getElementById('uplink-btn')?.addEventListener('click', showUplinkDialog);
   document.getElementById('uplink-banner-btn')?.addEventListener('click', showUplinkDialog);
-  document.getElementById('uplink-stuck-btn')?.addEventListener('click', showUplinkDialog);
   document.getElementById('end-run-btn')?.addEventListener('click', abortRun);
   document.getElementById('resume-btn')?.addEventListener('click', resumeFromAutoPause);
   document.getElementById('end-stuck-btn')?.addEventListener('click', endFromStuck);
+  document.getElementById('autopause-mode')?.addEventListener('change', (e) => {
+    saveAutoPauseMode(e.target.value);
+  });
 }
 
 function updateOperateView() {
@@ -667,19 +802,22 @@ function updateOperateView() {
   if (hudTick) hudTick.textContent = `Tick ${gameState.tick}`;
   
   const hudBattery = document.getElementById('hud-battery');
-  if (hudBattery) hudBattery.textContent = gameState.battery;
+  if (hudBattery) hudBattery.textContent = displayedBattery();
   
   const batteryFill = document.getElementById('battery-fill');
-  if (batteryFill) batteryFill.style.width = `${gameState.battery * 5}%`;
+  if (batteryFill) batteryFill.style.width = `${displayedBattery() * 5}%`;
   
   const hudOre = document.getElementById('hud-ore');
-  if (hudOre) hudOre.textContent = gameState.cargo;
+  if (hudOre) hudOre.textContent = `${gameState.cargo} (goal 3)`;
   
   const hudTiles = document.getElementById('hud-tiles');
   if (hudTiles) hudTiles.textContent = `${gameState.tilesScanned}/25`;
   
   const hudUplink = document.getElementById('hud-uplink');
   if (hudUplink) hudUplink.textContent = gameState.uplink.used ? 'Used' : 'Ready';
+
+  const hudFacing = document.getElementById('hud-facing');
+  if (hudFacing) hudFacing.textContent = Sim.FACING_LABELS[gameState.facing] || gameState.facing;
   
   // Update button states
   document.querySelectorAll('.speed-btn').forEach(btn => {
@@ -698,8 +836,9 @@ function updateOperateView() {
   
   const uplinkBtn = document.getElementById('uplink-btn');
   if (uplinkBtn) {
-    uplinkBtn.disabled = gameState.uplink.used || !isPaused;
+    uplinkBtn.disabled = uplinkBlocked();
     uplinkBtn.classList.toggle('used', gameState.uplink.used);
+    uplinkBtn.textContent = gameState.uplink.used ? '📡 Uplink Used' : '📡 Uplink';
   }
   
   // Update renderer
@@ -711,12 +850,45 @@ function updateOperateView() {
   renderRuleDisplay();
   renderSensorReadings();
   renderMinimap();
+
+  const leftoverToast = document.querySelector('.auto-pause-toast:not(.stuck)');
+  if (leftoverToast && (!pendingAutoPause || pendingAutoPause.resumed)) {
+    leftoverToast.remove();
+  }
+  const operate = document.querySelector('.operate-view');
+  if (operate && shownReturnCraterWarning && !operate.querySelector('.return-crater-note')) {
+    const note = document.createElement('div');
+    note.className = 'return-crater-note';
+    note.textContent = "Return and charge doesn't avoid craters.";
+    operate.appendChild(note);
+  }
 }
 
 // === UPLINK DIALOG ===
 
+function fillUplinkFromSlot(slot) {
+  const rule = gameState.rules[slot];
+  const condEl = document.getElementById('uplink-condition');
+  const actEl = document.getElementById('uplink-action');
+  const nEl = document.getElementById('uplink-battery-n');
+  if (!condEl || !actEl || !nEl) return;
+  condEl.value = rule?.condition?.type || '';
+  actEl.value = rule?.action?.type || '';
+  if (rule?.condition?.type === Sim.CONDITIONS.BATTERY_BELOW) {
+    nEl.value = Sim.clampBatteryN(rule.condition.n);
+    nEl.classList.remove('hidden');
+  } else {
+    nEl.classList.add('hidden');
+  }
+}
+
 function showUplinkDialog() {
-  if (gameState.uplink.used) return;
+  if (gameState.uplink.used || gameState.outcome || pendingStuck) return;
+  if (gameState.tick < 1) {
+    alert('Uplink is available after the first turn.');
+    return;
+  }
+  if (!Sim.canUseUplink(gameState)) return;
   
   const dialog = document.createElement('div');
   dialog.className = 'uplink-dialog-overlay';
@@ -738,13 +910,13 @@ function showUplinkDialog() {
       <div class="uplink-rule-edit">
         <label>Condition:</label>
         <select id="uplink-condition">
-          ${renderConditionOptions(null)}
+          ${renderConditionOptions(gameState.rules[0]?.condition)}
         </select>
-        <input type="number" id="uplink-battery-n" class="battery-n hidden" min="1" max="20" value="8">
+        <input type="number" id="uplink-battery-n" class="battery-n ${gameState.rules[0]?.condition?.type === Sim.CONDITIONS.BATTERY_BELOW ? '' : 'hidden'}" min="1" max="20" value="${Sim.clampBatteryN(gameState.rules[0]?.condition?.n || 8)}">
         
         <label>Action:</label>
         <select id="uplink-action">
-          ${renderActionOptions(null)}
+          ${renderActionOptions(gameState.rules[0]?.action)}
         </select>
       </div>
       
@@ -757,19 +929,10 @@ function showUplinkDialog() {
   
   document.body.appendChild(dialog);
   
-  // Pre-fill with current rule
   const slotSelect = document.getElementById('uplink-slot');
+  fillUplinkFromSlot(0);
   slotSelect.addEventListener('change', () => {
-    const slot = parseInt(slotSelect.value);
-    const rule = gameState.rules[slot];
-    document.getElementById('uplink-condition').value = rule?.condition?.type || '';
-    document.getElementById('uplink-action').value = rule?.action?.type || '';
-    if (rule?.condition?.type === Sim.CONDITIONS.BATTERY_BELOW) {
-      document.getElementById('uplink-battery-n').value = rule.condition.n || 8;
-      document.getElementById('uplink-battery-n').classList.remove('hidden');
-    } else {
-      document.getElementById('uplink-battery-n').classList.add('hidden');
-    }
+    fillUplinkFromSlot(parseInt(slotSelect.value));
   });
   
   document.getElementById('uplink-condition').addEventListener('change', (e) => {
@@ -797,7 +960,7 @@ function showUplinkDialog() {
     
     let condition = { type: condType };
     if (condType === Sim.CONDITIONS.BATTERY_BELOW) {
-      condition.n = parseInt(document.getElementById('uplink-battery-n').value) || 8;
+      condition.n = Sim.clampBatteryN(document.getElementById('uplink-battery-n').value);
     }
     const action = { type: actType };
     
@@ -807,12 +970,16 @@ function showUplinkDialog() {
       return;
     }
     
-    Sim.applyUplink(gameState, slot, condition, action);
-    rules[slot] = { condition, action };
+    if (!Sim.applyUplink(gameState, slot, condition, action)) {
+      alert('Uplink is not available right now.');
+      return;
+    }
     
     dialog.remove();
-    pendingAutoPause = null;
-    pendingStuck = null;
+    // Keep pendingAutoPause so the current tick continues (no phantom tick).
+    if (pendingAutoPause) {
+      pendingAutoPause.resumed = true;
+    }
     showOperateView();
   });
 }
@@ -827,6 +994,8 @@ function launch() {
   pendingAutoPause = null;
   pendingStuck = null;
   lastTickResult = null;
+  autoPauseKindsSeen = new Set();
+  shownReturnCraterWarning = false;
   
   // Deep copy rules
   const rulesCopy = rules.map(r => r ? { 
@@ -954,7 +1123,6 @@ function doTick() {
   const prevCol = gameState.col;
   const prevRow = gameState.row;
   
-  // If we had a pending auto-pause that needs to continue from step 4
   let result;
   if (pendingAutoPause && pendingAutoPause.continueFromStep4) {
     const tickRecord = pendingAutoPause.tickRecord;
@@ -966,19 +1134,27 @@ function doTick() {
   }
   
   lastTickResult = result;
-  previouslyRevealed = result.newlyRevealed;
+  previouslyRevealed = result.newlyRevealed ?? previouslyRevealed;
   
-  // Handle auto-pause
-  if (result.autoPause) {
-    autoPauseCount++;
-    pendingAutoPause = { ...result.autoPause, continueFromStep4: result.continueFromStep4, tickRecord: result.tickRecord };
-    isPaused = true;
-    stopTicking();
-    showOperateView();
-    return;
+  // Auto-pause may be skipped based on mode (off / first kind / always)
+  if (result.autoPause && result.continueFromStep4) {
+    if (shouldPauseForHazards(result.autoPause)) {
+      autoPauseCount++;
+      pendingAutoPause = { ...result.autoPause, continueFromStep4: result.continueFromStep4, tickRecord: result.tickRecord };
+      isPaused = true;
+      stopTicking();
+      showOperateView();
+      return;
+    }
+    result = Sim.continueTickFromStep4(gameState, result.tickRecord, gameState.readings);
+    lastTickResult = result;
+    previouslyRevealed = result.newlyRevealed ?? previouslyRevealed;
   }
   
-  // Handle stuck condition
+  if (result.tickRecord?.returnCraterWarning) {
+    shownReturnCraterWarning = true;
+  }
+  
   if (result.stuckCondition) {
     pendingStuck = result.stuckCondition;
     isPaused = true;
@@ -987,7 +1163,6 @@ function doTick() {
     return;
   }
   
-  // Handle end condition
   if (result.endCondition) {
     gameState.outcome = result.endCondition.outcome;
     gameState.endReason = result.endCondition.reason;
@@ -996,7 +1171,6 @@ function doTick() {
     return;
   }
   
-  // Animate movement if needed
   const shouldAnimate = currentSpeed <= 4 && result.tickRecord?.actionResult?.moved;
   if (shouldAnimate && renderer) {
     animatingMove = true;
@@ -1015,8 +1189,9 @@ function resumeFromAutoPause() {
   if (pendingAutoPause) {
     pendingAutoPause.resumed = true;
   }
-  showOperateView();
-  if (!isPaused) {
+  isPaused = false;
+  doTick();
+  if (!gameState?.outcome && !pendingStuck && !(pendingAutoPause && !pendingAutoPause.resumed)) {
     startTicking();
   }
 }
@@ -1101,7 +1276,7 @@ function showEndScreen() {
         </div>
         <div class="stat-item glass-panel">
           <span class="stat-label">Cargo:</span>
-          <span class="stat-value">${gameState.cargo}/3</span>
+          <span class="stat-value">${gameState.cargo} (goal 3)</span>
         </div>
         <div class="stat-item glass-panel">
           <span class="stat-label">Battery:</span>
@@ -1155,7 +1330,7 @@ function renderTrace(showAll = false) {
     <div class="trace-item">
       <span class="trace-tick">Tick ${t.tick}</span>
       <span class="trace-pos">${Sim.formatCell(t.positionAfter.col, t.positionAfter.row)} facing ${t.facingAfter}</span>
-      <span class="trace-battery">Battery: ${t.battery}</span>
+      <span class="trace-battery">Battery: ${t.batteryAtStart ?? t.readings?.battery ?? t.battery}</span>
       <span class="trace-reason">${t.ruleReason || ''}</span>
     </div>
   `).join('');
@@ -1369,8 +1544,11 @@ function downloadJSON() {
 
 function setupKeyboardShortcuts() {
   document.addEventListener('keydown', (e) => {
-    // Only in operate view
     if (!gameState || gameState.outcome) return;
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target?.isContentEditable) {
+      return;
+    }
     
     switch (e.key) {
       case ' ':
@@ -1387,11 +1565,11 @@ function setupKeyboardShortcuts() {
         break;
       case '2':
         e.preventDefault();
-        setSpeed(1);
+        setSpeed(4);
         break;
       case '3':
         e.preventDefault();
-        setSpeed(4);
+        setSpeed(16);
         break;
       case '4':
         e.preventDefault();
