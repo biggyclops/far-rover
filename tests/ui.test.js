@@ -3,6 +3,49 @@ import { test, expect } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:8080';
 
+async function dismissAutoPause(page) {
+  const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
+  if (!(await autoPauseToast.isVisible())) return false;
+  // Step continues the paused tick without starting 1× play (Resume now restarts play).
+  const stepBtn = page.locator('#step-btn');
+  if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+    await stepBtn.click();
+    return true;
+  }
+  await page.click('#resume-btn');
+  if (await page.locator('.end-screen').isVisible()) return true;
+  const pauseBtn = page.locator('#pause-btn');
+  if (await pauseBtn.isVisible()) {
+    const label = (await pauseBtn.textContent()) || '';
+    if (label.trim() === 'Pause') {
+      await page.click('#pause-btn');
+    }
+  }
+  return true;
+}
+
+async function completeRun(page, maxIter = 120) {
+  for (let i = 0; i < maxIter; i++) {
+    if (await page.locator('.end-screen').isVisible()) break;
+    if (await dismissAutoPause(page)) {
+      await page.waitForTimeout(30);
+      continue;
+    }
+    const stuckToast = page.locator('.auto-pause-toast.stuck');
+    if (await stuckToast.isVisible()) {
+      await page.click('#end-stuck-btn');
+      await page.waitForTimeout(50);
+      break;
+    }
+    const stepBtn = page.locator('#step-btn');
+    if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
+      await page.click('#step-btn');
+      await page.waitForTimeout(30);
+    }
+  }
+  await expect(page.locator('.end-screen')).toBeVisible({ timeout: 15000 });
+}
+
 test.describe('Far Rover UI Tests', () => {
   test.beforeEach(async ({ page }) => {
     // Clear localStorage before each test
@@ -187,41 +230,7 @@ test.describe('Far Rover UI Tests', () => {
     await page.selectOption('.condition-select[data-slot="0"]', 'always');
     await page.selectOption('.action-select[data-slot="0"]', 'explore');
     await page.click('#launch-btn');
-    
-    // Step through manually to avoid timing issues with auto-pause
-    // v3.2: Scenario A runs 25 ticks (lost battery), so allow more iterations
-    for (let i = 0; i < 50; i++) {
-      // Check for end screen first
-      if (await page.locator('.end-screen').isVisible()) {
-        break;
-      }
-      
-      // Check for auto-pause banner and resume
-      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
-      if (await autoPauseToast.isVisible()) {
-        await page.click('#resume-btn');
-        await page.waitForTimeout(100);
-        continue;
-      }
-      
-      // Check for stuck toast
-      const stuckToast = page.locator('.auto-pause-toast.stuck');
-      if (await stuckToast.isVisible()) {
-        await page.click('#end-stuck-btn');
-        await page.waitForTimeout(100);
-        break;
-      }
-      
-      // Step if possible
-      const stepBtn = page.locator('#step-btn');
-      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
-        await page.click('#step-btn');
-        await page.waitForTimeout(50);
-      }
-    }
-    
-    // Should be on end screen
-    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    await completeRun(page);
     await expect(page.locator('.trace-list')).toBeVisible();
   });
 
@@ -237,32 +246,7 @@ test.describe('Far Rover UI Tests', () => {
     await page.selectOption('.action-select[data-slot="0"]', 'explore');
     await page.click('#launch-btn');
     
-    // Step through to end screen manually (v3.2: allow more iterations)
-    for (let i = 0; i < 50; i++) {
-      if (await page.locator('.end-screen').isVisible()) break;
-      
-      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
-      if (await autoPauseToast.isVisible()) {
-        await page.click('#resume-btn');
-        await page.waitForTimeout(100);
-        continue;
-      }
-      
-      const stuckToast = page.locator('.auto-pause-toast.stuck');
-      if (await stuckToast.isVisible()) {
-        await page.click('#end-stuck-btn');
-        await page.waitForTimeout(100);
-        break;
-      }
-      
-      const stepBtn = page.locator('#step-btn');
-      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
-        await page.click('#step-btn');
-        await page.waitForTimeout(50);
-      }
-    }
-    
-    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    await completeRun(page);
     await page.click('#rerun-btn');
     
     // Should be back on build screen with sensors selected
@@ -316,31 +300,7 @@ test.describe('Far Rover UI Tests', () => {
     await page.selectOption('.action-select[data-slot="0"]', 'explore');
     await page.click('#launch-btn');
     
-    // Complete the run by stepping through
-    for (let i = 0; i < 50; i++) {
-      if (await page.locator('.end-screen').isVisible()) break;
-      
-      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
-      if (await autoPauseToast.isVisible()) {
-        await page.click('#resume-btn');
-        await page.waitForTimeout(100);
-        continue;
-      }
-      
-      const stuckToast = page.locator('.auto-pause-toast.stuck');
-      if (await stuckToast.isVisible()) {
-        await page.click('#end-stuck-btn');
-        await page.waitForTimeout(100);
-        break;
-      }
-      
-      const stepBtn = page.locator('#step-btn');
-      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
-        await page.click('#step-btn');
-        await page.waitForTimeout(50);
-      }
-    }
-    
+    await completeRun(page);
     // Wait for end screen and click rerun to save the run
     await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
     await page.click('#rerun-btn');
@@ -426,34 +386,6 @@ test.describe('Far Rover UI Tests', () => {
     await page.goto(BASE_URL);
     await page.click('#start-btn');
     
-    // Helper to complete a run
-    async function completeRun() {
-      for (let i = 0; i < 50; i++) {
-        if (await page.locator('.end-screen').isVisible()) break;
-        
-        const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
-        if (await autoPauseToast.isVisible()) {
-          await page.click('#resume-btn');
-          await page.waitForTimeout(100);
-          continue;
-        }
-        
-        const stuckToast = page.locator('.auto-pause-toast.stuck');
-        if (await stuckToast.isVisible()) {
-          await page.click('#end-stuck-btn');
-          await page.waitForTimeout(100);
-          break;
-        }
-        
-        const stepBtn = page.locator('#step-btn');
-        if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
-          await page.click('#step-btn');
-          await page.waitForTimeout(50);
-        }
-      }
-      await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
-    }
-    
     // Run 1: Initial setup
     await page.click('input[data-sensor="distance"]');
     await page.click('input[data-sensor="spectral"]');
@@ -461,19 +393,19 @@ test.describe('Far Rover UI Tests', () => {
     await page.selectOption('.condition-select[data-slot="0"]', 'always');
     await page.selectOption('.action-select[data-slot="0"]', 'explore');
     await page.click('#launch-btn');
-    await completeRun();
+    await completeRun(page);
     await page.click('#rerun-btn');
     
     // Run 2: Rerun WITH a change (add rule 2) - should count as voluntary
     await page.selectOption('.condition-select[data-slot="1"]', 'crater_in_front');
     await page.selectOption('.action-select[data-slot="1"]', 'sidestep');
     await page.click('#launch-btn');
-    await completeRun();
+    await completeRun(page);
     await page.click('#rerun-btn');
     
     // Run 3: Rerun WITHOUT a change (same rules) - should NOT count as voluntary
     await page.click('#launch-btn');
-    await completeRun();
+    await completeRun(page);
     await page.click('#rerun-btn');
     
     // Run 4: Rerun WITH a change - will mark as prompted AFTER
@@ -481,7 +413,7 @@ test.describe('Far Rover UI Tests', () => {
     await page.selectOption('.condition-select[data-slot="2"]', 'on_ore');
     await page.selectOption('.action-select[data-slot="2"]', 'drill');
     await page.click('#launch-btn');
-    await completeRun();
+    await completeRun(page);
     
     // Go to log and mark Run 4 as prompted
     await page.click('#view-log-end-btn');
@@ -523,32 +455,7 @@ test.describe('Far Rover UI Tests', () => {
     await page.selectOption('.action-select[data-slot="0"]', 'explore');
     await page.click('#launch-btn');
     
-    // Complete the run
-    for (let i = 0; i < 50; i++) {
-      if (await page.locator('.end-screen').isVisible()) break;
-      
-      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
-      if (await autoPauseToast.isVisible()) {
-        await page.click('#resume-btn');
-        await page.waitForTimeout(100);
-        continue;
-      }
-      
-      const stuckToast = page.locator('.auto-pause-toast.stuck');
-      if (await stuckToast.isVisible()) {
-        await page.click('#end-stuck-btn');
-        await page.waitForTimeout(100);
-        break;
-      }
-      
-      const stepBtn = page.locator('#step-btn');
-      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
-        await page.click('#step-btn');
-        await page.waitForTimeout(50);
-      }
-    }
-    
-    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    await completeRun(page);
     await page.click('#view-log-end-btn');
     
     // Get the generated CSV by calling generateCSV
@@ -602,32 +509,7 @@ test.describe('Far Rover UI Tests', () => {
     await page.selectOption('.action-select[data-slot="0"]', 'explore');
     await page.click('#launch-btn');
     
-    // Complete the run
-    for (let i = 0; i < 50; i++) {
-      if (await page.locator('.end-screen').isVisible()) break;
-      
-      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
-      if (await autoPauseToast.isVisible()) {
-        await page.click('#resume-btn');
-        await page.waitForTimeout(100);
-        continue;
-      }
-      
-      const stuckToast = page.locator('.auto-pause-toast.stuck');
-      if (await stuckToast.isVisible()) {
-        await page.click('#end-stuck-btn');
-        await page.waitForTimeout(100);
-        break;
-      }
-      
-      const stepBtn = page.locator('#step-btn');
-      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
-        await page.click('#step-btn');
-        await page.waitForTimeout(50);
-      }
-    }
-    
-    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    await completeRun(page);
     await page.click('#view-log-end-btn');
     
     // Get the session JSON from localStorage
@@ -705,36 +587,7 @@ test.describe('Far Rover UI Tests', () => {
     await page.selectOption('.action-select[data-slot="0"]', 'explore');
     await page.click('#launch-btn');
     
-    // Run through the scenario handling auto-pauses
-    for (let i = 0; i < 30; i++) {
-      if (await page.locator('.end-screen').isVisible()) break;
-      
-      // Handle auto-pause (hazard detection)
-      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
-      if (await autoPauseToast.isVisible()) {
-        await page.click('#resume-btn');
-        await page.waitForTimeout(100);
-        continue;
-      }
-      
-      // Handle stuck condition
-      const stuckToast = page.locator('.auto-pause-toast.stuck');
-      if (await stuckToast.isVisible()) {
-        await page.click('#end-stuck-btn');
-        await page.waitForTimeout(100);
-        break;
-      }
-      
-      // Step one tick
-      const stepBtn = page.locator('#step-btn');
-      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
-        await page.click('#step-btn');
-        await page.waitForTimeout(100);
-      }
-    }
-    
-    // Should be on end screen
-    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    await completeRun(page);
     
     // Get the final tick count from the end screen stats
     // The first stat is "Ticks: N"
@@ -793,33 +646,7 @@ test.describe('Far Rover UI Tests', () => {
     
     await page.click('#launch-btn');
     
-    // Run through the game, handling auto-pauses
-    for (let i = 0; i < 100; i++) {
-      if (await page.locator('.end-screen').isVisible()) break;
-      
-      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
-      if (await autoPauseToast.isVisible()) {
-        await page.click('#resume-btn');
-        await page.waitForTimeout(50);
-        continue;
-      }
-      
-      const stuckToast = page.locator('.auto-pause-toast.stuck');
-      if (await stuckToast.isVisible()) {
-        await page.click('#end-stuck-btn');
-        await page.waitForTimeout(50);
-        break;
-      }
-      
-      const stepBtn = page.locator('#step-btn');
-      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
-        await page.click('#step-btn');
-        await page.waitForTimeout(30);
-      }
-    }
-    
-    // Should be on end screen
-    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    await completeRun(page);
     
     // Get the final tick count from the end screen
     const ticksStat = await page.locator('.stat-value').first().textContent();
@@ -868,33 +695,7 @@ test.describe('Far Rover UI Tests', () => {
     await page.selectOption('.action-select[data-slot="0"]', 'explore');
     await page.click('#launch-btn');
     
-    // Run through handling auto-pauses
-    for (let i = 0; i < 30; i++) {
-      if (await page.locator('.end-screen').isVisible()) break;
-      
-      const autoPauseToast = page.locator('.auto-pause-toast:not(.stuck)');
-      if (await autoPauseToast.isVisible()) {
-        await page.click('#resume-btn');
-        await page.waitForTimeout(100);
-        continue;
-      }
-      
-      const stuckToast = page.locator('.auto-pause-toast.stuck');
-      if (await stuckToast.isVisible()) {
-        await page.click('#end-stuck-btn');
-        await page.waitForTimeout(100);
-        break;
-      }
-      
-      const stepBtn = page.locator('#step-btn');
-      if (await stepBtn.isVisible() && await stepBtn.isEnabled()) {
-        await page.click('#step-btn');
-        await page.waitForTimeout(100);
-      }
-    }
-    
-    // Should be on end screen
-    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    await completeRun(page);
     
     // Click "Show more..." to see all trace entries if available
     const showMoreBtn = page.locator('#show-more-trace');
@@ -920,4 +721,137 @@ test.describe('Far Rover UI Tests', () => {
     const finalTick = parseInt(ticksStat);
     expect(tickNumbers[tickNumbers.length - 1]).toBe(finalTick);
   });
+
+  test('Uplink is disabled at tick 0 and pre-fills the selected slot', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('#starter-preset-btn');
+    await page.click('#launch-btn');
+    await expect(page.locator('#uplink-btn')).toBeDisabled();
+    await page.click('#step-btn');
+    await expect(page.locator('#uplink-btn')).toBeEnabled();
+    await page.click('#uplink-btn');
+    await expect(page.locator('.uplink-dialog')).toBeVisible();
+    await expect(page.locator('#uplink-condition')).toHaveValue('crater_in_front');
+    await expect(page.locator('#uplink-action')).toHaveValue('sidestep');
+    await page.selectOption('#uplink-slot', { value: '1' });
+    await expect(page.locator('#uplink-condition')).toHaveValue('battery_below');
+    await expect(page.locator('#uplink-battery-n')).toHaveValue('12');
+    await expect(page.locator('#uplink-action')).toHaveValue('return_charge');
+  });
+
+  test('Uplink battery N is clamped to 1-20', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('#starter-preset-btn');
+    await page.click('#launch-btn');
+    await page.click('#step-btn');
+    await page.click('#uplink-btn');
+    await page.selectOption('#uplink-slot', { value: '1' });
+    await page.fill('#uplink-battery-n', '99');
+    await page.click('#uplink-apply');
+    await expect(page.locator('#uplink-btn')).toContainText('Used');
+    await expect(page.locator('.rule-text').nth(1)).toContainText('Battery below 20');
+  });
+
+  test('Keyboard shortcuts ignore focused inputs and map 2 to 4x', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    await page.click('#step-btn');
+    await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
+    await page.click('#uplink-btn');
+    await page.selectOption('#uplink-condition', 'battery_below');
+    await page.locator('#uplink-battery-n').click();
+    await page.locator('#uplink-battery-n').fill('1');
+    await page.keyboard.press('1');
+    await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
+    await page.click('#uplink-cancel');
+    await page.keyboard.press('2');
+    await expect(page.locator('.speed-btn[data-speed="4"]')).toHaveClass(/active/);
+    await page.click('.speed-btn[data-speed="pause"]');
+  });
+
+  test('Build screen warns about Always placement and never-leave programs', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await expect(page.locator('#build-warnings')).toContainText('never leave');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.selectOption('.condition-select[data-slot="1"]', 'crater_in_front');
+    await page.selectOption('.action-select[data-slot="1"]', 'sidestep');
+    await expect(page.locator('#build-warnings')).toContainText('Always is not last');
+  });
+
+  test('Auto-pause toggle is visible and Resume restarts play', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="dust"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    await expect(page.locator('#autopause-mode')).toBeVisible();
+    await expect(page.locator('#autopause-mode')).toHaveValue('first');
+    for (let i = 0; i < 6; i++) {
+      if (await page.locator('.auto-pause-toast:not(.stuck)').isVisible()) break;
+      await page.click('#step-btn');
+      await page.waitForTimeout(50);
+    }
+    await expect(page.locator('.auto-pause-toast:not(.stuck)')).toBeVisible();
+    await page.click('#resume-btn');
+    await expect(page.locator('#pause-btn')).toContainText('Pause', { timeout: 3000 });
+    await page.click('#pause-btn');
+  });
+
+  test('Stuck toast has no doubled prefix and cargo uses goal copy', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'battery_below');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    await expect(page.locator('#hud-ore')).toContainText('goal 3');
+    for (let i = 0; i < 6; i++) {
+      if (await page.locator('.auto-pause-toast.stuck').isVisible()) break;
+      const stepBtn = page.locator('#step-btn');
+      if (await stepBtn.isVisible()) await page.click('#step-btn');
+      await page.waitForTimeout(40);
+    }
+    await expect(page.locator('.auto-pause-toast.stuck .toast-text')).toContainText('No rule was true, so the rover never moved.');
+    await expect(page.locator('.auto-pause-toast.stuck .toast-text')).not.toContainText('Stuck: stuck:');
+    await expect(page.locator('#uplink-stuck-btn')).toHaveCount(0);
+  });
+
+  test('Uplink during auto-pause does not add a phantom tick', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('#starter-preset-btn');
+    await page.click('#launch-btn');
+    for (let i = 0; i < 10; i++) {
+      if (await page.locator('.auto-pause-toast:not(.stuck)').isVisible()) break;
+      await page.click('#step-btn');
+      await page.waitForTimeout(40);
+    }
+    await expect(page.locator('.auto-pause-toast:not(.stuck)')).toBeVisible();
+    await page.click('#uplink-banner-btn');
+    await page.selectOption('#uplink-slot', { value: '3' });
+    await expect(page.locator('#uplink-condition')).toHaveValue('always');
+    await page.click('#uplink-apply');
+    await completeRun(page);
+    const ticksStat = await page.locator('.stat-item').first().locator('.stat-value').textContent();
+    expect(parseInt(ticksStat)).toBe(46);
+  });
+
 });

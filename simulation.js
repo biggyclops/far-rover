@@ -14,6 +14,13 @@ export const TERRAIN = {
   DUST: 'dust'
 };
 
+export const FACING_LABELS = {
+  north: 'north',
+  east: 'east',
+  south: 'south',
+  west: 'west'
+};
+
 export const DIRECTIONS = {
   NORTH: 'north',
   EAST: 'east',
@@ -194,7 +201,7 @@ function isOnGrid(col, row) {
   return col >= 0 && col < 12 && row >= 0 && row < 12;
 }
 
-function isOnLander(col, row) {
+export function isOnLander(col, row) {
   return col === 5 && row === 12;
 }
 
@@ -464,6 +471,7 @@ function executeReturnAndCharge(state) {
   if (isValidNeighbor(fc, fr, state.col, state.row)) {
     const frontDist = distanceToLander(fc, fr);
     if (frontDist < currentDist) {
+      const intoKnownCrater = isKnownCrater(state, fc, fr);
       const cost = isOnLander(fc, fr) ? 1 : getMoveCost(state, fc, fr);
       state.battery = Math.max(0, state.battery - cost);
       const from = formatCell(state.col, state.row);
@@ -472,7 +480,7 @@ function executeReturnAndCharge(state) {
       if (!isOnLander(fc, fr)) {
         state.leftLanderSinceCharge = true;
       }
-      return { moved: true, turned: false, to: formatCell(fc, fr), from, cost };
+      return { moved: true, turned: false, to: formatCell(fc, fr), from, cost, intoKnownCrater };
     }
   }
   
@@ -747,7 +755,25 @@ export function checkEndConditions(state) {
 }
 
 // v3.2: Exact stuck rules
-export function checkStuckConditions(state, didMove, didTurn, madeProgress) {
+// Charging turns (including the charge-start turn) skip idle: they neither count nor reset.
+// Double-charge is still checked on the charge-start turn. Circling is skipped while charging.
+export function checkStuckConditions(state, didMove, didTurn, madeProgress, options = {}) {
+  const isChargingTurn = !!options.isChargingTurn;
+  const noRuleMatched = !!options.noRuleMatched;
+
+  // 2. Double charge: charging twice without leaving lander
+  // Checked first so a charge-start that is also a double-charge still ends the run.
+  if (state.chargeWithoutLeaving) {
+    return { 
+      outcome: OUTCOMES.STUCK_CHARGE, 
+      reason: `started charging without leaving lander since last charge` 
+    };
+  }
+
+  if (isChargingTurn) {
+    return null;
+  }
+  
   // Update no-move counter
   // v3.2: Turning in place counts as not moving
   if (didMove) {
@@ -758,17 +784,13 @@ export function checkStuckConditions(state, didMove, didTurn, madeProgress) {
   
   // 1. Idle: 3 turns without moving (turning in place counts as not moving)
   if (state.noMoveCount >= 3) {
+    const onLander = isOnLander(state.col, state.row);
+    const reason = (onLander && noRuleMatched)
+      ? 'No rule was true, so the rover never moved.'
+      : `no movement for 3 ticks at ${formatCell(state.col, state.row)}`;
     return { 
       outcome: OUTCOMES.STUCK_NO_MOVE, 
-      reason: `stuck: no movement for 3 ticks at ${formatCell(state.col, state.row)}` 
-    };
-  }
-  
-  // 2. Double charge: charging twice without leaving lander
-  if (state.chargeWithoutLeaving) {
-    return { 
-      outcome: OUTCOMES.STUCK_CHARGE, 
-      reason: `stuck: started charging without leaving lander since last charge` 
+      reason
     };
   }
   
@@ -787,13 +809,65 @@ export function checkStuckConditions(state, didMove, didTurn, madeProgress) {
     if (matches.length >= 2) {
       return { 
         outcome: OUTCOMES.STUCK_LOOP, 
-        reason: `stuck: loop detected at ${formatCell(state.col, state.row)} facing ${state.facing}` 
+        reason: `loop detected at ${formatCell(state.col, state.row)} facing ${state.facing}` 
       };
     }
     state.circlingMemory.push(key);
   }
   
   return null;
+}
+
+// True if greedy Return-and-charge from here would step onto a face-up crater before the lander.
+export function returnPathHasKnownCrater(state) {
+  let col = state.col;
+  let row = state.row;
+  let facing = state.facing;
+  const seen = new Set();
+  for (let step = 0; step < 40; step++) {
+    if (isOnLander(col, row)) return false;
+    const key = `${col},${row},${facing}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    const currentDist = distanceToLander(col, row);
+    const [fc, fr] = getNeighbor(col, row, facing);
+    if (isValidNeighbor(fc, fr, col, row)) {
+      const frontDist = distanceToLander(fc, fr);
+      if (frontDist < currentDist) {
+        if (isKnownCrater(state, fc, fr)) return true;
+        col = fc;
+        row = fr;
+        continue;
+      }
+    }
+    const turns = RELATIVE_TURNS[facing];
+    let turned = false;
+    for (const rel of ['right', 'left', 'back']) {
+      const dir = turns[rel];
+      const [nc, nr] = getNeighbor(col, row, dir);
+      if (isValidNeighbor(nc, nr, col, row)) {
+        const neighborDist = distanceToLander(nc, nr);
+        if (neighborDist < currentDist) {
+          facing = dir;
+          turned = true;
+          break;
+        }
+      }
+    }
+    if (!turned) return false;
+  }
+  return false;
+}
+
+export function sidestepDirections(facing) {
+  const turns = RELATIVE_TURNS[facing];
+  return { right: turns.right, left: turns.left };
+}
+
+export function clampBatteryN(n) {
+  const parsed = Number.parseInt(n, 10);
+  if (!Number.isFinite(parsed)) return 8;
+  return Math.max(1, Math.min(20, parsed));
 }
 
 // === HAZARD DETECTION FOR AUTO-PAUSE ===
@@ -882,6 +956,7 @@ export function runTick(state, previouslyRevealed = null) {
     ruleReason: null,
     actionResult: null,
     battery: null,
+    batteryAtStart: state.battery,
     tilesScanned: null,
     cargo: null
   };
@@ -975,6 +1050,17 @@ export function continueTickFromStep4(state, tickRecord, readings) {
     const condStr = formatCondition(matchedRule.condition, readings);
     const actStr = formatActionResult(matchedRule.action, actionResult);
     tickRecord.ruleReason = `Rule ${matchedIndex + 1}: ${condStr} → ${actStr}`;
+    if (matchedRule.action.type === ACTIONS.RETURN_CHARGE) {
+      const fromBefore = {
+        ...state,
+        col: tickRecord.positionBefore.col,
+        row: tickRecord.positionBefore.row,
+        facing: tickRecord.facingBefore
+      };
+      tickRecord.returnCraterWarning = !!(actionResult.intoKnownCrater ||
+        returnPathHasKnownCrater(fromBefore) ||
+        returnPathHasKnownCrater(state));
+    }
   } else {
     tickRecord.ruleFired = 0;
     tickRecord.ruleReason = 'No rule matched: rover did nothing';
@@ -1012,6 +1098,10 @@ export function continueTickFromStep4(state, tickRecord, readings) {
   // Step 7: End checks
   const endCondition = checkEndConditions(state);
   if (endCondition) {
+    if (endCondition.outcome === OUTCOMES.LOST_CRATER &&
+        matchedRule?.action?.type === ACTIONS.RETURN_CHARGE) {
+      endCondition.reason += '. Return and charge doesn\'t avoid craters.';
+    }
     state.outcome = endCondition.outcome;
     state.endReason = endCondition.reason;
     state.trace.push(tickRecord);
@@ -1024,8 +1114,11 @@ export function continueTickFromStep4(state, tickRecord, readings) {
     };
   }
   
-  // Stuck checks (ignore charging ticks)
-  const stuckCondition = checkStuckConditions(state, didMove, didTurn, madeProgress);
+  // Stuck checks: charging turns (including charge-start) skip idle and circling
+  const stuckCondition = checkStuckConditions(state, didMove, didTurn, madeProgress, {
+    isChargingTurn: !!(actionResult && actionResult.charging),
+    noRuleMatched: !matchedRule
+  });
   if (stuckCondition) {
     state.outcome = stuckCondition.outcome;
     state.endReason = stuckCondition.reason;
@@ -1126,8 +1219,10 @@ export function isRuleLegal(rule, sensors) {
 // v3.2: Can't be used before the first tick (between turns, not before first turn)
 
 export function canUseUplink(state) {
+  if (!state) return false;
   if (state.uplink.used) return false;
   if (state.tick < 1) return false; // v3.2: not before first tick
+  if (state.outcome) return false; // run has ended (including stuck)
   return true;
 }
 
@@ -1135,19 +1230,22 @@ export function applyUplink(state, slot, newCondition, newAction) {
   if (!canUseUplink(state)) return false;
   
   const oldRule = state.rules[slot] ? { ...state.rules[slot] } : null;
+  const condition = { ...newCondition };
+  if (condition.type === CONDITIONS.BATTERY_BELOW) {
+    condition.n = clampBatteryN(condition.n);
+  }
+  const action = { ...newAction };
   
   state.uplink.used = true;
   state.uplink.tick = state.tick;
   state.uplink.slot = slot;
   state.uplink.before = oldRule;
-  state.uplink.after = { condition: newCondition, action: newAction };
+  state.uplink.after = { condition, action };
   
-  state.rules[slot] = { condition: newCondition, action: newAction };
+  state.rules[slot] = { condition, action };
   
-  // Clear stuck counters
-  state.noMoveCount = 0;
-  state.chargeWithoutLeaving = false;
-  state.circlingMemory = [];
+  // Spec does not reset idle / double-charge / circling on uplink.
+  // Those counters carry on across the edit.
   
   return true;
 }

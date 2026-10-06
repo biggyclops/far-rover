@@ -95,7 +95,7 @@ const COLORS = {
   dust: '#c47a4a',
   crater: '#4a2315',
   hidden: 'rgba(70, 32, 14, 0.18)',
-  cameraSeen: 'rgba(190, 110, 55, 0.10)',
+  cameraSeen: 'rgba(40, 70, 110, 0.28)',
   fog: 'rgba(180, 95, 45, 0.12)',
   track: 'rgba(90, 50, 28, 0.28)',
   revealedWash: 'rgba(255, 186, 110, 0.14)'
@@ -478,8 +478,8 @@ export class GameRenderer {
     const baseTile = getTile('ground', variant);
     this.drawTexturedQuad(ctx, baseTile, quad);
     
-    // Draw special terrain on top if revealed
-    if (isRevealed) {
+    // Draw special terrain on top if revealed OR camera-seen (seen but unscanned)
+    if (isRevealed || isCameraSeen) {
       let tileType = null;
       switch (terrain) {
         case 'crater': tileType = 'crater'; break;
@@ -781,17 +781,24 @@ export class MinimapRenderer {
         const y = row * cs;
         
         const isRevealed = state.revealed[row]?.[col];
+        const isCameraSeen = state.cameraSeen?.[row]?.[col];
         const terrain = state.terrain[row]?.[col];
         
-        if (!isRevealed) {
-          ctx.fillStyle = '#1a1510';
-        } else {
+        if (isRevealed) {
           switch (terrain) {
             case 'crater': ctx.fillStyle = '#6b2010'; break;
             case 'ore': ctx.fillStyle = state.drilled[row]?.[col] ? '#5a3810' : '#d4a020'; break;
             case 'dust': ctx.fillStyle = '#8a5530'; break;
             default: ctx.fillStyle = '#785038'; break;
           }
+        } else if (isCameraSeen) {
+          switch (terrain) {
+            case 'ore': ctx.fillStyle = '#8a7020'; break;
+            case 'dust': ctx.fillStyle = '#5a4030'; break;
+            default: ctx.fillStyle = '#4a3828'; break;
+          }
+        } else {
+          ctx.fillStyle = '#1a1510';
         }
         ctx.fillRect(x, y, cs - 1, cs - 1);
       }
