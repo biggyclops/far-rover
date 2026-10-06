@@ -48,10 +48,26 @@ function cellCenter(col, row) {
   return new THREE.Vector3(col - (GRID_COLS - 1) / 2, 0, row - (GRID_COLS - 1) / 2);
 }
 
+function tileKnown(state, col, row) {
+  return !!(state?.revealed?.[row]?.[col] || state?.cameraSeen?.[row]?.[col]);
+}
+
+function parseCraterCell(state) {
+  const cell = state?.readings?.craterInFront;
+  if (!cell?.detected || !cell.cell || cell.cell === 'Lander') return null;
+  const s = String(cell.cell);
+  const col = s.charCodeAt(0) - 65;
+  const row = parseInt(s.slice(1), 10) - 1;
+  if (col < 0 || col > 11 || row < 0 || row > 11 || Number.isNaN(row)) return null;
+  return { col, row };
+}
+
 function knownCrater(state, col, row) {
   if (!state?.terrain) return false;
   if (state.terrain[row]?.[col] !== 'crater') return false;
-  return !!(state.revealed?.[row]?.[col] || state.cameraSeen?.[row]?.[col]);
+  if (tileKnown(state, col, row)) return true;
+  const ahead = parseCraterCell(state);
+  return !!(ahead && ahead.col === col && ahead.row === row);
 }
 
 function heightAt(x, z, state) {
@@ -147,10 +163,13 @@ function createCloudMaterial(coverageTex, noiseTex, layer) {
         if (cov < 0.04) discard;
         float hidden = smoothstep(0.62, 0.92, cov);
         float cam = (1.0 - hidden) * smoothstep(0.06, 0.5, cov);
-        float a = hidden * 0.95 + cam * 0.44;
+        float a = hidden * 0.88 + cam * 0.40;
         a *= mix(1.0, 0.72, uLayer * 0.5);
         a *= 0.84 + 0.16 * puff;
-        vec3 col = mix(vec3(0.86, 0.82, 0.78), vec3(0.70, 0.68, 0.66), puff);
+        float edge = smoothstep(0.0, 0.06, vUv.x) * smoothstep(0.0, 0.06, vUv.y)
+          * smoothstep(0.0, 0.06, 1.0 - vUv.x) * smoothstep(0.0, 0.06, 1.0 - vUv.y);
+        a *= edge;
+        vec3 col = mix(vec3(0.78, 0.70, 0.64), vec3(0.58, 0.54, 0.50), puff);
         gl_FragColor = vec4(col, a);
       }
     `
@@ -343,15 +362,21 @@ export class GameRenderer3D {
     this.disposed = false;
     this.lite = isLiteGL();
 
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xc48a5a);
-    this.scene.fog = new THREE.FogExp2(0xc9a07a, 0.018);
+    this.sensorLayers = { camera: true, lidar: false, thermal: false, spectral: false };
+    this.layerKey = '';
 
-    this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 180);
-    this.camTarget = new THREE.Vector3(0, 0.15, 0.85);
-    this.camSpherical = new THREE.Spherical(17.2, 0.95, 0.42);
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0xb56a3e);
+    this.scene.fog = new THREE.FogExp2(0xb56e44, 0.024);
+
+    this.camera = new THREE.PerspectiveCamera(44, 1, 0.2, 220);
+    this.camTarget = new THREE.Vector3(0, 0.02, 0.35);
+    this.camSpherical = new THREE.Spherical(16.8, 0.20, 0.0);
     this.camDefault = this.camSpherical.clone();
     this._applyCamera();
+    this.camera.layers.enable(0);
+    this.camera.layers.enable(1);
+    this.camera.layers.enable(2);
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: !this.lite,
@@ -361,7 +386,7 @@ export class GameRenderer3D {
     this.renderer.setPixelRatio(this.lite ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.08;
+    this.renderer.toneMappingExposure = 0.96;
     this.renderer.shadowMap.enabled = !this.lite;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.canvas = this.renderer.domElement;
@@ -392,6 +417,17 @@ export class GameRenderer3D {
     this.scene.add(this.gridHelper);
     this.craterRings = new THREE.Group();
     this.scene.add(this.craterRings);
+    this.lidarGroup = new THREE.Group();
+    this.lidarGroup.visible = false;
+    this.scene.add(this.lidarGroup);
+    this.thermalGroup = new THREE.Group();
+    this.thermalGroup.visible = false;
+    this.scene.add(this.thermalGroup);
+    this.spectralGroup = new THREE.Group();
+    this.spectralGroup.visible = false;
+    this.scene.add(this.spectralGroup);
+    this.reticle = this._makeReticle();
+    this.scene.add(this.reticle);
     this.rocks = createRockInstancer(this.lite ? 40 : 180);
     this.scene.add(this.rocks);
     this.oreMarks = new THREE.Group();
@@ -400,10 +436,11 @@ export class GameRenderer3D {
     this.cloudLayers = [];
     for (let i = 0; i < 3; i++) {
       const mat = createCloudMaterial(this.coverageTex, this.noiseTex, i);
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(12.6, 12.6), mat);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(13.8, 13.8), mat);
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.set(0, 1.15 + i * 0.42, 0);
       mesh.renderOrder = 10 + i;
+      mesh.layers.set(2);
       this.scene.add(mesh);
       this.cloudLayers.push(mesh);
     }
@@ -412,6 +449,7 @@ export class GameRenderer3D {
     this.lander = createLander();
     this.scene.add(this.rover);
     this.scene.add(this.lander);
+    this._initRoverCam();
 
     this.trackCanvas = document.createElement('canvas');
     this.trackCanvas.width = this.trackCanvas.height = 512;
@@ -432,20 +470,23 @@ export class GameRenderer3D {
     this.scene.add(this.trackPlane);
 
     this.dust = this._makeDust();
+    this.dust.layers.set(2);
     this.scene.add(this.dust);
     this._makePuffs();
+    this.puffPts.layers.set(2);
 
     this._loadArt();
     this.syncCloudTargets(true);
     this._placeActors(true);
+    this._syncSensorOverlays(true);
     this._bindInput();
   }
 
   _lights() {
     const hemi = new THREE.HemisphereLight(0x9ec4e6, 0x6a3a22, 0.48);
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffe1b5, 2.2);
-    sun.position.set(-14, 12, -10);
+    const sun = new THREE.DirectionalLight(0xffd4a0, 2.05);
+    sun.position.set(-22, 6.2, -14);
     sun.castShadow = !this.lite;
     sun.shadow.mapSize.set(this.lite ? 512 : 1024, this.lite ? 512 : 1024);
     sun.shadow.camera.near = 2;
@@ -457,7 +498,7 @@ export class GameRenderer3D {
     sun.shadow.bias = -0.0004;
     this.scene.add(sun);
     this.sun = sun;
-    this.sunDefault = 2.2;
+    this.sunDefault = 2.05;
     this.scene.add(new THREE.AmbientLight(0xffc8a0, 0.16));
   }
 
@@ -481,16 +522,6 @@ export class GameRenderer3D {
         }`
     });
     this.scene.add(new THREE.Mesh(skyGeo, skyMat));
-    const loader = new THREE.TextureLoader();
-    loader.load('assets/art/bg-horizon.png', (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const backdrop = new THREE.Mesh(
-        new THREE.PlaneGeometry(110, 48),
-        new THREE.MeshBasicMaterial({ map: tex, fog: true, depthWrite: false })
-      );
-      backdrop.position.set(0, 8, -28);
-      this.scene.add(backdrop);
-    });
   }
 
   _makeTerrain() {
@@ -589,10 +620,209 @@ export class GameRenderer3D {
     const g = new THREE.GridHelper(12, 12, 0xffffff, 0xffffff);
     g.position.y = 0.045;
     g.material.transparent = true;
-    g.material.opacity = 0.12;
+    g.material.opacity = 0.10;
     g.material.depthWrite = false;
     g.visible = false;
+    g.layers.set(2);
     return g;
+  }
+
+  _makeReticle() {
+    const g = new THREE.Group();
+    g.name = 'reticle';
+    const mat = new THREE.LineBasicMaterial({
+      color: 0xe8e4dc,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false
+    });
+    const s = 0.40;
+    const len = 0.15;
+    const corners = [
+      [[-s, -s], [-s + len, -s], [-s, -s], [-s, -s + len]],
+      [[s, -s], [s - len, -s], [s, -s], [s, -s + len]],
+      [[-s, s], [-s + len, s], [-s, s], [-s, s - len]],
+      [[s, s], [s - len, s], [s, s], [s, s - len]]
+    ];
+    corners.forEach((pair) => {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(pair[0][0], 0, pair[0][1]),
+        new THREE.Vector3(pair[1][0], 0, pair[1][1]),
+        new THREE.Vector3(pair[2][0], 0, pair[2][1]),
+        new THREE.Vector3(pair[3][0], 0, pair[3][1])
+      ]);
+      const line = new THREE.LineSegments(geo, mat);
+      g.add(line);
+    });
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.055, 0.07, 20),
+      new THREE.MeshBasicMaterial({
+        color: 0xe8e4dc,
+        transparent: true,
+        opacity: 0.55,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    g.add(ring);
+    g.layers.set(2);
+    g.traverse(o => o.layers.set(2));
+    g.visible = false;
+    return g;
+  }
+
+  _initRoverCam() {
+    this.roverCam = new THREE.PerspectiveCamera(58, 4 / 3, 0.08, 32);
+    this.roverCam.layers.enable(0);
+    this.roverCam.layers.disable(2);
+    const host = document.getElementById('rover-cam-canvas');
+    this.roverCamCanvas = host || document.createElement('canvas');
+    if (host) host.dataset.engine = 'rover-cam';
+    this.roverCamCanvas.width = this.lite ? 160 : 320;
+    this.roverCamCanvas.height = this.lite ? 120 : 240;
+    try {
+      this.roverCamRenderer = new THREE.WebGLRenderer({
+        canvas: this.roverCamCanvas,
+        antialias: false,
+        alpha: false,
+        powerPreference: 'low-power'
+      });
+      this.roverCamRenderer.setPixelRatio(1);
+      this.roverCamRenderer.setSize(this.roverCamCanvas.width, this.roverCamCanvas.height, false);
+      this.roverCamRenderer.outputColorSpace = THREE.SRGBColorSpace;
+      this.roverCamRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.roverCamRenderer.toneMappingExposure = 0.92;
+      this.roverCamRenderer.shadowMap.enabled = false;
+    } catch {
+      this.roverCamRenderer = null;
+    }
+  }
+
+  setSensorLayer(name, on) {
+    if (!(name in this.sensorLayers)) return;
+    this.sensorLayers[name] = !!on;
+    this._syncSensorOverlays(true);
+  }
+
+  _clearGroup(group) {
+    if (!group) return;
+    while (group.children.length) {
+      const ch = group.children[0];
+      group.remove(ch);
+      ch.geometry?.dispose();
+      if (ch.material) {
+        if (Array.isArray(ch.material)) ch.material.forEach(m => m.dispose());
+        else ch.material.dispose();
+      }
+    }
+  }
+
+  _syncSensorOverlays(force) {
+    const state = this.gameState;
+    const key = [
+      this._craterKey(state),
+      this._visKey(state),
+      (state?.sensors || []).join(','),
+      JSON.stringify(this.sensorLayers),
+      state?.readings?.craterInFront?.cell || '',
+      state?.readings?.craterInFront?.detected ? '1' : '0'
+    ].join('|');
+    if (!force && key === this.layerKey) return;
+    this.layerKey = key;
+    this._rebuildLidar();
+    this._rebuildThermal();
+    this._rebuildSpectral();
+  }
+
+  _rebuildLidar() {
+    this._clearGroup(this.lidarGroup);
+    const state = this.gameState;
+    const installed = !!state?.sensors?.includes('distance');
+    this.lidarGroup.visible = installed && this.sensorLayers.lidar;
+    if (!this.lidarGroup.visible) return;
+    const ahead = parseCraterCell(state);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x4be4ff,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false
+    });
+    const pulse = new THREE.MeshBasicMaterial({
+      color: 0x9ff6ff,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false
+    });
+    for (let row = 0; row < 12; row++) {
+      for (let col = 0; col < 12; col++) {
+        const known = knownCrater(state, col, row);
+        if (!known) continue;
+        const isAhead = ahead && ahead.col === col && ahead.row === row;
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.01, 6, 36), isAhead ? pulse : mat);
+        ring.rotation.x = Math.PI / 2;
+        const p = cellCenter(col, row);
+        ring.position.set(p.x, 0.07, p.z);
+        this.lidarGroup.add(ring);
+        const inner = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.006, 5, 28), mat);
+        inner.rotation.x = Math.PI / 2;
+        inner.position.set(p.x, 0.09, p.z);
+        this.lidarGroup.add(inner);
+      }
+    }
+  }
+
+  _rebuildThermal() {
+    this._clearGroup(this.thermalGroup);
+    const state = this.gameState;
+    const installed = !!state?.sensors?.includes('dust');
+    this.thermalGroup.visible = installed && this.sensorLayers.thermal;
+    if (!this.thermalGroup.visible) return;
+    const geo = new THREE.PlaneGeometry(0.92, 0.92);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xff6a28,
+      transparent: true,
+      opacity: 0.30,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    for (let row = 0; row < 12; row++) {
+      for (let col = 0; col < 12; col++) {
+        if (state.terrain[row][col] !== 'dust') continue;
+        if (!tileKnown(state, col, row)) continue;
+        const m = new THREE.Mesh(geo, mat);
+        m.rotation.x = -Math.PI / 2;
+        const p = cellCenter(col, row);
+        m.position.set(p.x, 0.055, p.z);
+        this.thermalGroup.add(m);
+      }
+    }
+  }
+
+  _rebuildSpectral() {
+    this._clearGroup(this.spectralGroup);
+    const state = this.gameState;
+    const installed = !!state?.sensors?.includes('spectral');
+    this.spectralGroup.visible = installed && this.sensorLayers.spectral;
+    if (!this.spectralGroup.visible) return;
+    const geo = new THREE.IcosahedronGeometry(0.11, 0);
+    for (let row = 0; row < 12; row++) {
+      for (let col = 0; col < 12; col++) {
+        if (state.terrain[row][col] !== 'ore') continue;
+        if (!tileKnown(state, col, row)) continue;
+        if (state.drilled?.[row]?.[col]) continue;
+        const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+          color: 0x14524a,
+          roughness: 0.28,
+          metalness: 0.72,
+          emissive: 0x1ee6c4,
+          emissiveIntensity: 0.85
+        }));
+        const p = cellCenter(col, row);
+        m.position.set(p.x, heightAt(p.x, p.z, state) + 0.14, p.z);
+        this.spectralGroup.add(m);
+      }
+    }
   }
 
   _rebuildCraterRings() {
@@ -774,8 +1004,8 @@ export class GameRenderer3D {
       prev.x = e.clientX;
       prev.y = e.clientY;
       if (this._pointers.size === 1) {
-        this.camSpherical.theta -= dx * 0.005;
-        this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi + dy * 0.004, 0.55, 1.15);
+        this.camSpherical.theta -= dx * 0.0035;
+        this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi + dy * 0.003, 0.14, 0.48);
         this._clampCam();
       } else if (this._pointers.size === 2) {
         const pts = [...this._pointers.values()];
@@ -806,9 +1036,9 @@ export class GameRenderer3D {
   }
 
   _clampCam() {
-    this.camSpherical.radius = THREE.MathUtils.clamp(this.camSpherical.radius, 10, 24);
-    this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi, 0.55, 1.15);
-    const span = 0.95;
+    this.camSpherical.radius = THREE.MathUtils.clamp(this.camSpherical.radius, 14, 21.5);
+    this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi, 0.14, 0.48);
+    const span = 0.42;
     this.camSpherical.theta = THREE.MathUtils.clamp(this.camSpherical.theta, this.camDefault.theta - span, this.camDefault.theta + span);
   }
 
@@ -863,6 +1093,7 @@ export class GameRenderer3D {
       el.removeEventListener('wheel', this._onWheel);
     }
     this.renderer?.dispose();
+    this.roverCamRenderer?.dispose();
     this.coverageTex?.dispose();
     this.splatTex?.dispose();
     this.noiseTex?.dispose();
@@ -920,6 +1151,7 @@ export class GameRenderer3D {
     if (gameState.outcome === 'lost-crater') this._craterLoss();
     if (gameState.outcome === 'lost-battery') this.sun.intensity = 0.45;
     else this.sun.intensity = this.sunDefault;
+    this._syncSensorOverlays(false);
   }
 
   startAnimation(fromCol, fromRow, toCol, toRow, duration = 120) {
@@ -1216,6 +1448,9 @@ export class GameRenderer3D {
     }
     this._fadeTracks();
     this._statusLight();
+    this._updateReticle();
+    this._updateRoverCam();
+    if (this.craterRings) this.craterRings.visible = !this.sensorLayers.lidar;
     const busy = this.cloudFading || this.anim.active || this.craterLossing ||
       this.particles.length > 0 || this.drillT > 0 || (this._pointers && this._pointers.size > 0);
     const interval = this.lite ? (busy ? 50 : 250) : (this.pausedHint && !busy ? 80 : 0);
@@ -1229,11 +1464,56 @@ export class GameRenderer3D {
       if (typeof window !== 'undefined') window.__farRoverFps = this.fps;
     }
     this.renderer.render(this.scene, this.camera);
+    this._renderRoverCam(now);
+  }
+
+  _updateReticle() {
+    if (!this.reticle) return;
+    const s = this.gameState;
+    const onGrid = s && s.row >= 0 && s.row < 12 && s.col >= 0 && s.col < 12;
+    this.reticle.visible = !!onGrid;
+    if (!onGrid) return;
+    const p = this.rover.position;
+    this.reticle.position.set(p.x, 0.08, p.z);
+    this.reticle.children.forEach((ch, i) => {
+      if (ch.material && ch.material.opacity !== undefined && i === 4) {
+        ch.material.opacity = 0.45 + Math.sin(performance.now() / 420) * 0.12;
+      }
+    });
+  }
+
+  _updateRoverCam() {
+    if (!this.roverCam || !this.rover) return;
+    this.rover.updateMatrixWorld(true);
+    const eye = new THREE.Vector3(0, 0.52, 0.08);
+    const ahead = new THREE.Vector3(0, -0.12, -3.1);
+    eye.applyMatrix4(this.rover.matrixWorld);
+    ahead.applyMatrix4(this.rover.matrixWorld);
+    this.roverCam.position.copy(eye);
+    this.roverCam.up.set(0, 1, 0);
+    this.roverCam.lookAt(ahead);
+  }
+
+  _renderRoverCam(now) {
+    if (this.disposed || !this.roverCamRenderer) return;
+    const interval = this.lite ? 180 : 0;
+    if (interval && now - (this._lastPip || 0) < interval) return;
+    this._lastPip = now;
+    const roverWas = this.rover.visible;
+    this.rover.visible = false;
+    try {
+      this.roverCamRenderer.render(this.scene, this.roverCam);
+    } catch {
+      // keep orbital feed even if the PiP context drops
+    }
+    this.rover.visible = roverWas;
   }
 
   render() {
     if (this.disposed) return;
     this.renderer.render(this.scene, this.camera);
+    this._updateRoverCam();
+    this._renderRoverCam(performance.now());
   }
 
   getCellFromClick(clientX, clientY) {

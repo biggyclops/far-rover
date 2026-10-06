@@ -145,6 +145,12 @@ test.describe('Far Rover UI Tests', () => {
     await expect(page.locator('#sensor-readings')).toContainText('Camera');
     await expect(page.locator('#sensor-readings')).toContainText('shows 3×3');
     await expect(page.locator('#sensor-readings')).not.toContainText('scanning');
+    await expect(page.locator('#rover-cam')).toBeVisible();
+    await expect(page.locator('#rover-cam')).toContainText('ROVER CAM FORWARD');
+    await expect(page.locator('#layer-camera')).toBeVisible();
+    await expect(page.locator('#layer-lidar')).toBeVisible();
+    await expect(page.locator('#layer-spectral')).toBeVisible();
+    await expect(page.locator('#layer-thermal')).toHaveCount(0);
   });
 
   test('Step button advances one tick', async ({ page }) => {
@@ -870,6 +876,27 @@ test.describe('Far Rover UI Tests', () => {
     await page.click('#launch-btn');
     await expect(page.locator('#map-grid')).toHaveAttribute('data-renderer', '2d');
     await expect(page.locator('.game-canvas')).toBeVisible();
+    await expect(page.locator('#rover-cam')).toBeVisible();
+    await expect(page.locator('#rover-cam')).toContainText('ROVER CAM FORWARD');
+    await page.click('#step-btn');
+    await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
+  });
+
+  test('Instrument layer toggles do not advance ticks', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    await expect(page.locator('.tick-indicator')).toContainText('Tick 0');
+    await page.click('#layer-lidar');
+    await expect(page.locator('#layer-lidar')).toHaveAttribute('aria-pressed', 'true');
+    await page.click('#layer-spectral');
+    await expect(page.locator('#layer-spectral')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.tick-indicator')).toContainText('Tick 0');
     await page.click('#step-btn');
     await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
   });

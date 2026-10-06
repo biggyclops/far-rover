@@ -564,13 +564,22 @@ function createBoardRenderer(container, state) {
 
 function showOperateView() {
   clearScreen();
+  sensorLayers = {
+    camera: !!(gameState.sensors || []).includes(Sim.SENSORS.CAMERA),
+    lidar: false,
+    thermal: false,
+    spectral: false
+  };
   
   const container = document.getElementById('game-container');
   container.innerHTML = `
-    <div class="operate-view">
+    <div class="operate-view orbital-ops">
       <!-- Top HUD Bar -->
       <div class="hud-bar">
+        <span class="hud-brand">FAR ROVER</span>
+        <span class="hud-feed">ORBITAL FEED</span>
         <span class="run-indicator">Run ${runNumber}</span>
+        <span class="hud-live" id="hud-live"><span class="live-dot"></span>LIVE</span>
         <div class="hud-section hud-sol">
           <span class="hud-label">Sol</span>
           <span class="hud-value tick-indicator" id="hud-tick">Tick ${gameState.tick}</span>
@@ -598,17 +607,30 @@ function showOperateView() {
           <span class="hud-icon">🗺️</span>
           <span class="hud-value" id="hud-tiles">${gameState.tilesScanned}/25</span>
         </div>
+        <div class="hud-compass" aria-hidden="true">
+          <span>N</span>
+        </div>
       </div>
       
-      <!-- Left Panel: Rules -->
+      <!-- Left Panel: Instruments + Rules -->
       <div class="rules-panel glass-panel">
+        <div class="instrument-stack" id="instrument-stack"></div>
         <h3>Rover Rules</h3>
         <div class="rule-display" id="rule-display"></div>
       </div>
       
       <!-- Center: Mars Grid -->
       <div class="map-container" id="map-container">
-        <div class="map-grid" id="map-grid"></div>
+        <div class="map-grid" id="map-grid">
+          <div class="orbital-grain" aria-hidden="true"></div>
+          <div class="orbital-scanlines" aria-hidden="true"></div>
+          <div class="orbital-vignette" aria-hidden="true"></div>
+          <div class="rover-cam" id="rover-cam">
+            <div class="rover-cam-head"><span class="live-dot"></span>ROVER CAM FORWARD</div>
+            <canvas id="rover-cam-canvas" width="320" height="240"></canvas>
+            <div class="rover-cam-meta"><span>FOV 60°</span><span>RES 320×240</span></div>
+          </div>
+        </div>
       </div>
       
       <!-- Right Panel: Controls + Sensors -->
@@ -648,7 +670,7 @@ function showOperateView() {
       
       <!-- Bottom Left: Minimap -->
       <div class="minimap glass-panel" id="minimap">
-        <div class="minimap-label">Minimap</div>
+        <div class="minimap-label">Surface map</div>
         <canvas id="minimap-canvas" width="108" height="117"></canvas>
       </div>
       
@@ -668,8 +690,10 @@ function showOperateView() {
   
   renderRuleDisplay();
   renderSensorReadings();
+  renderInstrumentStack();
   renderMinimap();
   wireOperateControls();
+  wireRoverCamDrag();
 }
 
 function renderAutoPauseToast() {
@@ -734,6 +758,79 @@ function formatConditionForDisplay(condition) {
     return `Battery below ${condition.n}`;
   }
   return Sim.CONDITION_NAMES[condition.type] || condition.type;
+}
+
+const SENSOR_LAYER_SPEC = [
+  { id: 'camera', label: 'Camera', sensor: Sim.SENSORS.CAMERA },
+  { id: 'lidar', label: 'Lidar', note: 'Distance', sensor: Sim.SENSORS.DISTANCE },
+  { id: 'thermal', label: 'Thermal', note: 'Dust', sensor: Sim.SENSORS.DUST },
+  { id: 'spectral', label: 'Spectral', sensor: Sim.SENSORS.SPECTRAL }
+];
+
+let sensorLayers = { camera: true, lidar: false, thermal: false, spectral: false };
+
+function renderInstrumentStack() {
+  const el = document.getElementById('instrument-stack');
+  if (!el || !gameState) return;
+  const sensors = gameState.sensors || [];
+  let html = '<div class="instrument-label">Instruments</div>';
+  for (const spec of SENSOR_LAYER_SPEC) {
+    const installed = sensors.includes(spec.sensor);
+    if (!installed) continue;
+    const on = !!sensorLayers[spec.id];
+    html += `<button type="button" class="instrument-toggle${on ? ' active' : ''}"
+      id="layer-${spec.id}" data-layer="${spec.id}" aria-pressed="${on}">
+      <span class="instrument-dot"></span>
+      <span class="instrument-name">${spec.label}</span>
+      ${spec.note ? `<span class="instrument-note">${spec.note}</span>` : ''}
+    </button>`;
+  }
+  el.innerHTML = html;
+  el.querySelectorAll('.instrument-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.layer;
+      sensorLayers[id] = !sensorLayers[id];
+      renderer?.setSensorLayer?.(id, sensorLayers[id]);
+      renderInstrumentStack();
+    });
+  });
+  applySensorLayers();
+}
+
+function applySensorLayers() {
+  if (!renderer?.setSensorLayer) return;
+  for (const spec of SENSOR_LAYER_SPEC) {
+    renderer.setSensorLayer(spec.id, !!sensorLayers[spec.id]);
+  }
+  const grid = document.getElementById('map-grid');
+  if (grid) grid.classList.toggle('optical-on', !!sensorLayers.camera);
+}
+
+function wireRoverCamDrag() {
+  const el = document.getElementById('rover-cam');
+  if (!el) return;
+  let drag = null;
+  el.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    const rect = el.getBoundingClientRect();
+    drag = { ox: e.clientX - rect.left, oy: e.clientY - rect.top };
+    el.classList.add('dragging');
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const parent = el.parentElement?.getBoundingClientRect();
+    if (!parent) return;
+    const x = e.clientX - parent.left - drag.ox;
+    const y = e.clientY - parent.top - drag.oy;
+    el.style.left = Math.max(6, Math.min(parent.width - el.offsetWidth - 6, x)) + 'px';
+    el.style.top = Math.max(6, Math.min(parent.height - el.offsetHeight - 6, y)) + 'px';
+    el.style.right = 'auto';
+    el.style.bottom = 'auto';
+  });
+  const end = () => { drag = null; el.classList.remove('dragging'); };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
 }
 
 function renderSensorReadings() {
