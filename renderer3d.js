@@ -163,10 +163,13 @@ function createCloudMaterial(coverageTex, noiseTex, layer) {
         if (cov < 0.04) discard;
         float hidden = smoothstep(0.62, 0.92, cov);
         float cam = (1.0 - hidden) * smoothstep(0.06, 0.5, cov);
-        float a = hidden * 0.95 + cam * 0.44;
+        float a = hidden * 0.88 + cam * 0.40;
         a *= mix(1.0, 0.72, uLayer * 0.5);
         a *= 0.84 + 0.16 * puff;
-        vec3 col = mix(vec3(0.86, 0.82, 0.78), vec3(0.70, 0.68, 0.66), puff);
+        float edge = smoothstep(0.0, 0.06, vUv.x) * smoothstep(0.0, 0.06, vUv.y)
+          * smoothstep(0.0, 0.06, 1.0 - vUv.x) * smoothstep(0.0, 0.06, 1.0 - vUv.y);
+        a *= edge;
+        vec3 col = mix(vec3(0.78, 0.70, 0.64), vec3(0.58, 0.54, 0.50), puff);
         gl_FragColor = vec4(col, a);
       }
     `
@@ -364,11 +367,11 @@ export class GameRenderer3D {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xb56a3e);
-    this.scene.fog = new THREE.FogExp2(0xb56e44, 0.011);
+    this.scene.fog = new THREE.FogExp2(0xb56e44, 0.024);
 
-    this.camera = new THREE.PerspectiveCamera(46, 1, 0.2, 220);
-    this.camTarget = new THREE.Vector3(0, 0.04, 0.42);
-    this.camSpherical = new THREE.Spherical(17.6, 0.26, 0.05);
+    this.camera = new THREE.PerspectiveCamera(44, 1, 0.2, 220);
+    this.camTarget = new THREE.Vector3(0, 0.02, 0.35);
+    this.camSpherical = new THREE.Spherical(16.8, 0.20, 0.0);
     this.camDefault = this.camSpherical.clone();
     this._applyCamera();
     this.camera.layers.enable(0);
@@ -433,7 +436,7 @@ export class GameRenderer3D {
     this.cloudLayers = [];
     for (let i = 0; i < 3; i++) {
       const mat = createCloudMaterial(this.coverageTex, this.noiseTex, i);
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(12.6, 12.6), mat);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(13.8, 13.8), mat);
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.set(0, 1.15 + i * 0.42, 0);
       mesh.renderOrder = 10 + i;
@@ -467,8 +470,10 @@ export class GameRenderer3D {
     this.scene.add(this.trackPlane);
 
     this.dust = this._makeDust();
+    this.dust.layers.set(2);
     this.scene.add(this.dust);
     this._makePuffs();
+    this.puffPts.layers.set(2);
 
     this._loadArt();
     this.syncCloudTargets(true);
@@ -517,16 +522,6 @@ export class GameRenderer3D {
         }`
     });
     this.scene.add(new THREE.Mesh(skyGeo, skyMat));
-    const loader = new THREE.TextureLoader();
-    loader.load('assets/art/bg-horizon.png', (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const backdrop = new THREE.Mesh(
-        new THREE.PlaneGeometry(110, 48),
-        new THREE.MeshBasicMaterial({ map: tex, fog: true, depthWrite: false })
-      );
-      backdrop.position.set(0, 8, -28);
-      this.scene.add(backdrop);
-    });
   }
 
   _makeTerrain() {
@@ -1490,8 +1485,8 @@ export class GameRenderer3D {
   _updateRoverCam() {
     if (!this.roverCam || !this.rover) return;
     this.rover.updateMatrixWorld(true);
-    const eye = new THREE.Vector3(0, 0.46, 0.02);
-    const ahead = new THREE.Vector3(0, 0.28, -4.4);
+    const eye = new THREE.Vector3(0, 0.52, 0.08);
+    const ahead = new THREE.Vector3(0, -0.12, -3.1);
     eye.applyMatrix4(this.rover.matrixWorld);
     ahead.applyMatrix4(this.rover.matrixWorld);
     this.roverCam.position.copy(eye);
