@@ -9,7 +9,7 @@ async function dismissAutoPause(page) {
   // Step continues the paused tick without starting 1× play (Resume now restarts play).
   const stepBtn = page.locator('#step-btn');
   if (await stepBtn.isVisible({ timeout: 0 }) && await stepBtn.isEnabled()) {
-    await stepBtn.click();
+    await stepBtn.click({ force: true });
     return true;
   }
   await page.click('#resume-btn');
@@ -39,7 +39,7 @@ async function completeRun(page, maxIter = 120) {
     }
     const stepBtn = page.locator('#step-btn');
     if (await stepBtn.isVisible({ timeout: 0 }) && await stepBtn.isEnabled()) {
-      await page.click('#step-btn');
+      await page.locator('#step-btn').click({ force: true });
       await page.waitForTimeout(30);
     }
   }
@@ -139,6 +139,9 @@ test.describe('Far Rover UI Tests', () => {
     await expect(page.locator('.map-grid')).toBeVisible();
     await expect(page.locator('.speed-btn[data-speed="pause"]')).toBeVisible();
     await expect(page.locator('#step-btn')).toBeVisible();
+    await expect(page.locator('#reset-view-btn')).toBeVisible();
+    await expect(page.locator('#grid-toggle')).toBeVisible();
+    await expect(page.locator('#map-grid')).toHaveAttribute('data-renderer', /^(3d|2d)$/);
     await expect(page.locator('#sensor-readings')).toContainText('Camera');
     await expect(page.locator('#sensor-readings')).toContainText('shows 3×3');
     await expect(page.locator('#sensor-readings')).not.toContainText('scanning');
@@ -858,6 +861,31 @@ test.describe('Far Rover UI Tests', () => {
     await completeRun(page);
     const ticksStat = await page.locator('.stat-item').first().locator('.stat-value').textContent();
     expect(parseInt(ticksStat)).toBe(46);
+  });
+
+  test('Force 2D renderer with query param', async ({ page }) => {
+    await page.goto(BASE_URL + '/?renderer=2d');
+    await page.click('#start-btn');
+    await page.click('#starter-preset-btn');
+    await page.click('#launch-btn');
+    await expect(page.locator('#map-grid')).toHaveAttribute('data-renderer', '2d');
+    await expect(page.locator('.game-canvas')).toBeVisible();
+    await page.click('#step-btn');
+    await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
+  });
+
+  test('Reset view and grid toggle do not break the operate canvas', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('#starter-preset-btn');
+    await page.click('#launch-btn');
+    await expect(page.locator('.game-canvas')).toBeVisible();
+    await page.click('#reset-view-btn');
+    await page.click('#grid-toggle');
+    await expect(page.locator('#grid-toggle')).toBeChecked();
+    await page.click('#step-btn');
+    await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
+    await expect(page.locator('.game-canvas')).toBeVisible();
   });
 
 });

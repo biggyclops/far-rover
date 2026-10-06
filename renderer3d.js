@@ -1,0 +1,1253 @@
+// Far Rover WebGL board renderer (three.js r170, vendored).
+// Visual only: reads sim state, never writes rules or ticks.
+
+import * as THREE from './vendor/three.module.js';
+import {
+  tileCloudTarget,
+  cloudFadeDuration,
+  prefersReducedMotion,
+  CLOUD_HIDDEN,
+  CLOUD_CAMERA
+} from './renderer.js';
+
+const GRID_COLS = 12;
+const GRID_ROWS = 12;
+const LANDER_COL = 5;
+const LANDER_ROW = 12;
+const WORLD = 48;
+const SEGMENTS = 96;
+const COV = 64;
+
+const FACE_Y = { north: 0, east: Math.PI / 2, south: Math.PI, west: -Math.PI / 2 };
+
+export function webglAvailable() {
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    return !!gl;
+  } catch {
+    return false;
+  }
+}
+
+export function shouldUse3D() {
+  if (typeof location === 'undefined') return false;
+  const q = new URLSearchParams(location.search).get('renderer');
+  if (q === '2d') return false;
+  return webglAvailable();
+}
+
+function hash2(ix, iy, seed) {
+  const n = Math.sin(ix * 127.1 + iy * 311.7 + seed * 19.19) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function cellCenter(col, row) {
+  return new THREE.Vector3(col - (GRID_COLS - 1) / 2, 0, row - (GRID_COLS - 1) / 2);
+}
+
+function knownCrater(state, col, row) {
+  if (!state?.terrain) return false;
+  if (state.terrain[row]?.[col] !== 'crater') return false;
+  return !!(state.revealed?.[row]?.[col] || state.cameraSeen?.[row]?.[col]);
+}
+
+function heightAt(x, z, state) {
+  let y = (hash2(Math.floor(x * 3), Math.floor(z * 3), 1.7) - 0.5) * 0.08;
+  y += (hash2(Math.floor(x * 8), Math.floor(z * 8), 4.1) - 0.5) * 0.03;
+  const col = x + (GRID_COLS - 1) / 2;
+  const row = z + (GRID_ROWS - 1) / 2;
+  if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) {
+    const c = Math.min(11, Math.max(0, Math.floor(col)));
+    const r = Math.min(11, Math.max(0, Math.floor(row)));
+    if (knownCrater(state, c, r)) {
+      const dx = col - c - 0.5;
+      const dz = row - r - 0.5;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      if (d < 0.42) y -= (1 - d / 0.42) * 0.42;
+      else if (d < 0.55) y += (1 - Math.abs(d - 0.48) / 0.07) * 0.08;
+    }
+  }
+  return y;
+}
+
+function loadTexture(path) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const tex = new THREE.Texture(img);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.anisotropy = 4;
+      tex.needsUpdate = true;
+      resolve(tex);
+    };
+    img.onerror = () => resolve(null);
+    img.src = path;
+  });
+}
+
+function makeNoiseTexture() {
+  const size = 256;
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const n = hash2(x, y, 3.2);
+      const n2 = hash2(x, y, 9.1);
+      const i = (y * size + x) * 4;
+      data[i] = n * 255;
+      data[i + 1] = n2 * 255;
+      data[i + 2] = ((n + n2) * 0.5) * 255;
+      data[i + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, size, size);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function createCloudMaterial(coverageTex, noiseTex, layer) {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    fog: false,
+    uniforms: {
+      uCoverage: { value: coverageTex },
+      uNoise: { value: noiseTex },
+      uTime: { value: 0 },
+      uLayer: { value: layer }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D uCoverage;
+      uniform sampler2D uNoise;
+      uniform float uTime;
+      uniform float uLayer;
+      varying vec2 vUv;
+      void main() {
+        float t = uTime * (0.012 + uLayer * 0.004);
+        vec2 n = texture2D(uNoise, vUv * 2.4 + vec2(t, t * 0.35 + uLayer * 0.1)).rg - 0.5;
+        vec2 cuv = clamp(vUv + n * 0.08, 0.0, 1.0);
+        float cov = texture2D(uCoverage, cuv).r;
+        float puff = texture2D(uNoise, vUv * 3.1 - vec2(t * 0.6, uLayer)).r;
+        float ragged = texture2D(uNoise, vUv * 7.0 + vec2(uLayer * 0.2, -t * 0.2)).g;
+        cov = clamp(cov + (ragged - 0.5) * 0.18 * step(0.04, cov), 0.0, 1.0);
+        if (cov < 0.04) discard;
+        float hidden = smoothstep(0.62, 0.92, cov);
+        float cam = (1.0 - hidden) * smoothstep(0.06, 0.5, cov);
+        float a = hidden * 0.95 + cam * 0.44;
+        a *= mix(1.0, 0.72, uLayer * 0.5);
+        a *= 0.84 + 0.16 * puff;
+        vec3 col = mix(vec3(0.86, 0.82, 0.78), vec3(0.70, 0.68, 0.66), puff);
+        gl_FragColor = vec4(col, a);
+      }
+    `
+  });
+}
+
+function addBox(parent, w, h, d, color, x, y, z, rx = 0, rz = 0, opts = {}) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, d),
+    new THREE.MeshStandardMaterial({
+      color,
+      roughness: opts.roughness ?? 0.72,
+      metalness: opts.metalness ?? 0.18,
+      emissive: opts.emissive ?? 0x000000,
+      emissiveIntensity: opts.emissiveIntensity ?? 1
+    })
+  );
+  mesh.position.set(x, y, z);
+  mesh.rotation.x = rx;
+  mesh.rotation.z = rz;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+function createRover() {
+  const g = new THREE.Group();
+  g.name = 'rover';
+  addBox(g, 0.50, 0.14, 0.36, 0xb4bac2, 0, 0.22, 0);
+  addBox(g, 0.44, 0.02, 0.30, 0x1b3a5c, 0, 0.30, 0, 0, 0, { roughness: 0.35, metalness: 0.4 });
+  const mast = addBox(g, 0.03, 0.32, 0.03, 0xb8bec6, 0.08, 0.48, -0.04);
+  addBox(mast, 0.11, 0.055, 0.07, 0x4b5563, 0, 0.18, -0.03);
+  addBox(mast, 0.04, 0.04, 0.03, 0x111827, 0, 0.18, -0.07, 0, 0, { emissive: 0x112233, emissiveIntensity: 0.4 });
+  const antenna = addBox(g, 0.012, 0.28, 0.012, 0xc5cad0, -0.14, 0.46, 0.08);
+  addBox(antenna, 0.04, 0.01, 0.04, 0xdfe3e8, 0, 0.15, 0);
+  const drill = addBox(g, 0.04, 0.18, 0.04, 0x6b7280, 0.18, 0.22, 0.02);
+  const bit = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.015, 0.01, 0.16, 8),
+    new THREE.MeshStandardMaterial({ color: 0x9ca3af, metalness: 0.6, roughness: 0.3 })
+  );
+  bit.position.set(0, -0.14, 0);
+  drill.add(bit);
+  g.userData.drill = drill;
+  g.userData.drillBit = bit;
+
+  const light = new THREE.Mesh(
+    new THREE.SphereGeometry(0.04, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0x88ffcc, emissive: 0x226644, roughness: 0.35 })
+  );
+  light.position.set(0, 0.24, -0.20);
+  light.name = 'statusLight';
+  g.add(light);
+  const head = new THREE.PointLight(0xffe6c8, 0.35, 3.2, 2);
+  head.position.set(0, 0.26, -0.22);
+  g.add(head);
+
+  const wheels = [];
+  const wheelGeo = new THREE.CylinderGeometry(0.095, 0.095, 0.07, 12);
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1f2430, roughness: 0.9 });
+  [[-0.20, -0.17], [-0.20, 0], [-0.20, 0.17], [0.20, -0.17], [0.20, 0], [0.20, 0.17]].forEach(([x, z]) => {
+    const w = new THREE.Mesh(wheelGeo, wheelMat.clone());
+    w.rotation.z = Math.PI / 2;
+    w.position.set(x, 0.095, z);
+    w.castShadow = true;
+    g.add(w);
+    wheels.push(w);
+  });
+  g.userData.wheels = wheels;
+  g.userData.light = light;
+  g.scale.setScalar(1.4);
+  return g;
+}
+
+function createLander() {
+  const g = new THREE.Group();
+  g.name = 'lander';
+  addBox(g, 0.78, 0.30, 0.78, 0x9aa3ad, 0, 0.44, 0);
+  addBox(g, 0.52, 0.04, 0.52, 0xc9a227, 0, 0.61, 0, 0, 0, { metalness: 0.45, roughness: 0.4 });
+  [[-1, 0], [1, 0]].forEach(([sx]) => {
+    const panel = addBox(g, 0.72, 0.02, 0.34, 0x1e3a5f, sx * 0.62, 0.52, 0, 0, sx * 0.18, {
+      metalness: 0.35,
+      roughness: 0.28,
+      emissive: 0x061018
+    });
+    panel.castShadow = true;
+  });
+  const dish = new THREE.Mesh(
+    new THREE.SphereGeometry(0.24, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.45),
+    new THREE.MeshStandardMaterial({ color: 0xd7dbe2, roughness: 0.35, metalness: 0.4, side: THREE.DoubleSide })
+  );
+  dish.position.set(0.12, 0.86, -0.08);
+  dish.rotation.x = 0.5;
+  dish.castShadow = true;
+  g.add(dish);
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x6b7280, roughness: 0.6, metalness: 0.3 });
+  [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.055, 0.72, 6), legMat);
+    leg.position.set(sx * 0.40, 0.22, sz * 0.40);
+    leg.rotation.x = sz * 0.28;
+    leg.rotation.z = -sx * 0.28;
+    leg.castShadow = true;
+    g.add(leg);
+  });
+  const glow = new THREE.PointLight(0x66ddff, 0, 3.8, 2);
+  glow.position.set(0, 0.55, 0);
+  glow.name = 'chargeGlow';
+  g.add(glow);
+  const halo = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 12, 8),
+    new THREE.MeshBasicMaterial({ color: 0x66ddff, transparent: true, opacity: 0, depthWrite: false })
+  );
+  halo.position.set(0, 0.48, 0);
+  halo.name = 'chargeHalo';
+  g.add(halo);
+  return g;
+}
+
+function createRockInstancer(count) {
+  const geo = new THREE.DodecahedronGeometry(0.12, 0);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x7a4a32, roughness: 0.92, metalness: 0.05 });
+  const mesh = new THREE.InstancedMesh(geo, mat, count);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  const dummy = new THREE.Object3D();
+  let placed = 0;
+  let guard = 0;
+  while (placed < count && guard < count * 8) {
+    guard++;
+    const x = (hash2(guard, 2, 1.1) - 0.5) * WORLD * 0.92;
+    const z = (hash2(guard, 4, 2.2) - 0.5) * WORLD * 0.92;
+    const onBoard = Math.abs(x) < 6.6 && Math.abs(z) < 7.2;
+    if (onBoard) continue;
+    dummy.position.set(x, 0.04, z);
+    dummy.rotation.set(hash2(guard, 8, 1) * 2, hash2(guard, 9, 1) * 6, hash2(guard, 10, 1));
+    dummy.scale.setScalar(0.6 + hash2(guard, 11, 1) * 1.8);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(placed, dummy.matrix);
+    placed++;
+  }
+  mesh.count = placed;
+  mesh.instanceMatrix.needsUpdate = true;
+  return mesh;
+}
+
+function isLiteGL() {
+  if (typeof navigator !== 'undefined' && navigator.webdriver) return true;
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    if (!gl) return true;
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    const gpu = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL) || '') : '';
+    return /swiftshader|llvmpipe|softpipe|microsoft basic render|cpu/i.test(gpu);
+  } catch {
+    return true;
+  }
+}
+
+export class GameRenderer3D {
+  constructor(container, gameState) {
+    if (!webglAvailable()) throw new Error('WebGL unavailable');
+    this.container = container;
+    this.gameState = gameState;
+    this.playbackSpeed = 1;
+    this.reduceMotion = prefersReducedMotion();
+    this.gridForced = false;
+    this.hovering = false;
+    this.pausedHint = true;
+    this.cloudDisplay = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(CLOUD_HIDDEN));
+    this.cloudTarget = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(CLOUD_HIDDEN));
+    this.cloudFadeFrom = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(CLOUD_HIDDEN));
+    this.cloudFading = false;
+    this.cloudInitialized = false;
+    this.cloudFadeStart = 0;
+    this.knownCraterKey = '';
+    this.visKey = '';
+    this.lastCargo = gameState?.cargo || 0;
+    this.lastDrilled = 0;
+    this.lastFacing = gameState?.facing || 'north';
+    this.anim = { active: false };
+    this.tracks = [];
+    this.particles = [];
+    this.drillT = 0;
+    this.craterLossing = false;
+    this.fps = 0;
+    this._frames = 0;
+    this._fpsT = 0;
+    this.clock = new THREE.Clock();
+    this.disposed = false;
+    this.lite = isLiteGL();
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0xc48a5a);
+    this.scene.fog = new THREE.FogExp2(0xc9a07a, 0.018);
+
+    this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 180);
+    this.camTarget = new THREE.Vector3(0, 0.15, 0.85);
+    this.camSpherical = new THREE.Spherical(17.2, 0.95, 0.42);
+    this.camDefault = this.camSpherical.clone();
+    this._applyCamera();
+
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: !this.lite,
+      alpha: false,
+      powerPreference: this.lite ? 'low-power' : 'high-performance'
+    });
+    this.renderer.setPixelRatio(this.lite ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.08;
+    this.renderer.shadowMap.enabled = !this.lite;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.canvas = this.renderer.domElement;
+    this.canvas.className = 'game-canvas';
+    this.canvas.dataset.engine = 'webgl';
+
+    this._lights();
+    this._sky();
+    this.coverageData = new Uint8Array(COV * COV * 4);
+    this.coverageTex = new THREE.DataTexture(this.coverageData, COV, COV, THREE.RGBAFormat);
+    this.coverageTex.magFilter = THREE.LinearFilter;
+    this.coverageTex.minFilter = THREE.LinearFilter;
+    this.coverageTex.flipY = false;
+    this.coverageTex.generateMipmaps = false;
+    this.coverageTex.needsUpdate = true;
+    this.noiseTex = makeNoiseTexture();
+
+    this.splatData = new Uint8Array(GRID_COLS * GRID_ROWS * 4);
+    this.splatTex = new THREE.DataTexture(this.splatData, GRID_COLS, GRID_ROWS, THREE.RGBAFormat);
+    this.splatTex.magFilter = THREE.LinearFilter;
+    this.splatTex.minFilter = THREE.LinearFilter;
+    this.splatTex.flipY = false;
+    this.splatTex.needsUpdate = true;
+
+    this.terrain = this._makeTerrain();
+    this.scene.add(this.terrain);
+    this.gridHelper = this._makeGrid();
+    this.scene.add(this.gridHelper);
+    this.craterRings = new THREE.Group();
+    this.scene.add(this.craterRings);
+    this.rocks = createRockInstancer(this.lite ? 40 : 180);
+    this.scene.add(this.rocks);
+    this.oreMarks = new THREE.Group();
+    this.scene.add(this.oreMarks);
+
+    this.cloudLayers = [];
+    for (let i = 0; i < 3; i++) {
+      const mat = createCloudMaterial(this.coverageTex, this.noiseTex, i);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(12.6, 12.6), mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(0, 1.15 + i * 0.42, 0);
+      mesh.renderOrder = 10 + i;
+      this.scene.add(mesh);
+      this.cloudLayers.push(mesh);
+    }
+
+    this.rover = createRover();
+    this.lander = createLander();
+    this.scene.add(this.rover);
+    this.scene.add(this.lander);
+
+    this.trackCanvas = document.createElement('canvas');
+    this.trackCanvas.width = this.trackCanvas.height = 512;
+    this.trackCtx = this.trackCanvas.getContext('2d');
+    this.trackTex = new THREE.CanvasTexture(this.trackCanvas);
+    this.trackTex.colorSpace = THREE.SRGBColorSpace;
+    this.trackTex.flipY = true;
+    const trackMat = new THREE.MeshBasicMaterial({
+      map: this.trackTex,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0.9
+    });
+    this.trackPlane = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), trackMat);
+    this.trackPlane.rotation.x = -Math.PI / 2;
+    this.trackPlane.position.y = 0.035;
+    this.trackPlane.renderOrder = 2;
+    this.scene.add(this.trackPlane);
+
+    this.dust = this._makeDust();
+    this.scene.add(this.dust);
+    this._makePuffs();
+
+    this._loadArt();
+    this.syncCloudTargets(true);
+    this._placeActors(true);
+    this._bindInput();
+  }
+
+  _lights() {
+    const hemi = new THREE.HemisphereLight(0x9ec4e6, 0x6a3a22, 0.48);
+    this.scene.add(hemi);
+    const sun = new THREE.DirectionalLight(0xffe1b5, 2.2);
+    sun.position.set(-14, 12, -10);
+    sun.castShadow = !this.lite;
+    sun.shadow.mapSize.set(this.lite ? 512 : 1024, this.lite ? 512 : 1024);
+    sun.shadow.camera.near = 2;
+    sun.shadow.camera.far = 48;
+    sun.shadow.camera.left = -16;
+    sun.shadow.camera.right = 16;
+    sun.shadow.camera.top = 16;
+    sun.shadow.camera.bottom = -16;
+    sun.shadow.bias = -0.0004;
+    this.scene.add(sun);
+    this.sun = sun;
+    this.sunDefault = 2.2;
+    this.scene.add(new THREE.AmbientLight(0xffc8a0, 0.16));
+  }
+
+  _sky() {
+    const skyGeo = new THREE.SphereGeometry(90, 24, 16);
+    const skyMat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      fog: false,
+      uniforms: {
+        top: { value: new THREE.Color(0xe8c7a0) },
+        mid: { value: new THREE.Color(0xd08958) },
+        bot: { value: new THREE.Color(0x8a4a2a) }
+      },
+      vertexShader: `varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader: `uniform vec3 top; uniform vec3 mid; uniform vec3 bot; varying vec3 vP;
+        void main(){
+          float h = normalize(vP).y;
+          vec3 c = mix(bot, mid, smoothstep(-0.15, 0.08, h));
+          c = mix(c, top, smoothstep(0.08, 0.55, h));
+          gl_FragColor = vec4(c, 1.0);
+        }`
+    });
+    this.scene.add(new THREE.Mesh(skyGeo, skyMat));
+    const loader = new THREE.TextureLoader();
+    loader.load('assets/art/bg-horizon.png', (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const backdrop = new THREE.Mesh(
+        new THREE.PlaneGeometry(110, 48),
+        new THREE.MeshBasicMaterial({ map: tex, fog: true, depthWrite: false })
+      );
+      backdrop.position.set(0, 8, -28);
+      this.scene.add(backdrop);
+    });
+  }
+
+  _makeTerrain() {
+    const geo = new THREE.PlaneGeometry(WORLD, WORLD, SEGMENTS, SEGMENTS);
+    geo.rotateX(-Math.PI / 2);
+    this._applyHeights(geo, this.gameState);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xc56a3d,
+      roughness: 0.93,
+      metalness: 0.04,
+      vertexColors: true
+    });
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uSplat = { value: this.splatTex };
+      shader.uniforms.uDustTex = { value: this.maps?.dust || this.splatTex };
+      shader.uniforms.uOreTex = { value: this.maps?.ore || this.splatTex };
+      shader.uniforms.uCraterTex = { value: this.maps?.crater || this.splatTex };
+      this._terrainShader = shader;
+      shader.vertexShader = `
+        varying vec3 vWorldPos;
+      ` + shader.vertexShader.replace(
+        '#include <worldpos_vertex>',
+        `#include <worldpos_vertex>
+         vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+      );
+      shader.fragmentShader = `
+        uniform sampler2D uSplat;
+        uniform sampler2D uDustTex;
+        uniform sampler2D uOreTex;
+        uniform sampler2D uCraterTex;
+        varying vec3 vWorldPos;
+      ` + shader.fragmentShader.replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+         vec2 buv = vec2(vWorldPos.x + 6.0, vWorldPos.z + 6.0) / 12.0;
+         float onB = step(0.0, buv.x) * step(0.0, buv.y) * step(buv.x, 1.0) * step(buv.y, 1.0);
+         vec4 sp = texture2D(uSplat, buv);
+         vec2 ruv = vWorldPos.xz * 0.42;
+         vec3 dustC = texture2D(uDustTex, ruv).rgb;
+         vec3 oreC = texture2D(uOreTex, ruv).rgb;
+         vec3 crC = texture2D(uCraterTex, ruv).rgb;
+         diffuseColor.rgb = mix(diffuseColor.rgb, dustC, sp.r * onB);
+         diffuseColor.rgb = mix(diffuseColor.rgb, oreC, sp.g * onB);
+         diffuseColor.rgb = mix(diffuseColor.rgb, crC, sp.b * onB);
+        `
+      );
+    };
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    mesh.castShadow = true;
+    mesh.name = 'terrain';
+    return mesh;
+  }
+
+  _applyHeights(geo, state) {
+    const pos = geo.attributes.position;
+    const colors = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const z = pos.getZ(i);
+      const y = heightAt(x, z, state);
+      pos.setY(i, y);
+      const ao = 0.72 + Math.max(0, y) * 1.5 + (y < 0 ? y * 0.85 : 0);
+      const warm = 0.62 + ao * 0.25;
+      colors[i * 3] = warm;
+      colors[i * 3 + 1] = warm * 0.62;
+      colors[i * 3 + 2] = warm * 0.38;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+  }
+
+  _craterKey(state) {
+    if (!state) return '';
+    let k = '';
+    for (let r = 0; r < 12; r++) for (let c = 0; c < 12; c++) if (knownCrater(state, c, r)) k += `${c},${r};`;
+    return k;
+  }
+
+  _visKey(state) {
+    if (!state) return '';
+    let k = '';
+    for (let r = 0; r < 12; r++) {
+      for (let c = 0; c < 12; c++) {
+        const rev = state.revealed?.[r]?.[c] ? '1' : '0';
+        const cam = state.cameraSeen?.[r]?.[c] ? '1' : '0';
+        const dr = state.drilled?.[r]?.[c] ? '1' : '0';
+        if (rev !== '0' || cam !== '0' || dr !== '0') k += `${c}${r}${rev}${cam}${dr}`;
+      }
+    }
+    return k;
+  }
+
+  _makeGrid() {
+    const g = new THREE.GridHelper(12, 12, 0xffffff, 0xffffff);
+    g.position.y = 0.045;
+    g.material.transparent = true;
+    g.material.opacity = 0.12;
+    g.material.depthWrite = false;
+    g.visible = false;
+    return g;
+  }
+
+  _rebuildCraterRings() {
+    while (this.craterRings.children.length) {
+      const ch = this.craterRings.children[0];
+      this.craterRings.remove(ch);
+      ch.geometry?.dispose();
+      ch.material?.dispose();
+    }
+    const state = this.gameState;
+    if (!state) return;
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xc45a3a,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false
+    });
+    for (let row = 0; row < 12; row++) {
+      for (let col = 0; col < 12; col++) {
+        if (!knownCrater(state, col, row)) continue;
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.012, 6, 28), mat);
+        ring.rotation.x = Math.PI / 2;
+        const p = cellCenter(col, row);
+        ring.position.set(p.x, 0.06, p.z);
+        this.craterRings.add(ring);
+      }
+    }
+  }
+
+  _makeDust() {
+    const n = 140;
+    const pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 22;
+      pos[i * 3 + 1] = 0.2 + Math.random() * 3.5;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 22;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0xe0c09a,
+      size: 0.08,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    return pts;
+  }
+
+  _makePuffs() {
+    this.puffPos = new Float32Array(96 * 3);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this.puffPos, 3));
+    geo.setDrawRange(0, 0);
+    const mat = new THREE.PointsMaterial({
+      color: 0xd4b48a,
+      size: 0.11,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false
+    });
+    this.puffPts = new THREE.Points(geo, mat);
+    this.puffPts.frustumCulled = false;
+    this.scene.add(this.puffPts);
+  }
+
+  async _loadArt() {
+    const [g1, g2, g3, dust, ore, crater] = await Promise.all([
+      loadTexture('assets/art/tile-ground-1.png'),
+      loadTexture('assets/art/tile-ground-2.png'),
+      loadTexture('assets/art/tile-ground-3.png'),
+      loadTexture('assets/art/tile-dust.png'),
+      loadTexture('assets/art/tile-ore.png'),
+      loadTexture('assets/art/tile-crater.png')
+    ]);
+    if (this.disposed) return;
+    this.maps = { g1, g2, g3, dust, ore, crater };
+    this._makeGroundMap();
+    this._updateSplat();
+    if (this._terrainShader) {
+      this._terrainShader.uniforms.uDustTex.value = dust || this.splatTex;
+      this._terrainShader.uniforms.uOreTex.value = ore || this.splatTex;
+      this._terrainShader.uniforms.uCraterTex.value = crater || this.splatTex;
+    }
+  }
+
+  _makeGroundMap() {
+    if (!this.maps?.g1) return;
+    const size = 512;
+    const cnv = document.createElement('canvas');
+    cnv.width = cnv.height = size;
+    const ctx = cnv.getContext('2d');
+    const imgs = [this.maps.g1, this.maps.g2, this.maps.g3].map(t => t?.image).filter(Boolean);
+    if (!imgs.length) return;
+    for (let y = 0; y < size; y += 128) {
+      for (let x = 0; x < size; x += 128) {
+        ctx.drawImage(imgs[(x / 128 + y / 128) % imgs.length], x, y, 128, 128);
+      }
+    }
+    if (this.groundTex) this.groundTex.dispose();
+    this.groundTex = new THREE.CanvasTexture(cnv);
+    this.groundTex.colorSpace = THREE.SRGBColorSpace;
+    this.groundTex.wrapS = this.groundTex.wrapT = THREE.RepeatWrapping;
+    this.groundTex.repeat.set(WORLD / 4, WORLD / 4);
+    this.groundTex.anisotropy = 4;
+    this.terrain.material.map = this.groundTex;
+    this.terrain.material.needsUpdate = true;
+  }
+
+  _updateSplat() {
+    const state = this.gameState;
+    const data = this.splatData;
+    data.fill(0);
+    if (state) {
+      for (let row = 0; row < 12; row++) {
+        for (let col = 0; col < 12; col++) {
+          const known = !!(state.revealed?.[row]?.[col] || state.cameraSeen?.[row]?.[col]);
+          if (!known) continue;
+          const i = (row * 12 + col) * 4;
+          const t = state.terrain[row][col];
+          if (t === 'dust') data[i] = 220;
+          if (t === 'ore' && !state.drilled?.[row]?.[col]) data[i + 1] = 230;
+          if (t === 'crater' && knownCrater(state, col, row)) data[i + 2] = 240;
+          data[i + 3] = 255;
+        }
+      }
+    }
+    this.splatTex.needsUpdate = true;
+    this._refreshOreMarks();
+  }
+
+  _refreshOreMarks() {
+    while (this.oreMarks.children.length) {
+      const ch = this.oreMarks.children[0];
+      this.oreMarks.remove(ch);
+      ch.geometry?.dispose();
+      ch.material?.dispose();
+    }
+    const state = this.gameState;
+    if (!state) return;
+    const geo = new THREE.IcosahedronGeometry(0.09, 0);
+    for (let row = 0; row < 12; row++) {
+      for (let col = 0; col < 12; col++) {
+        if (state.terrain[row][col] !== 'ore') continue;
+        if (!(state.revealed?.[row]?.[col] || state.cameraSeen?.[row]?.[col])) continue;
+        if (state.drilled?.[row]?.[col]) continue;
+        const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+          color: 0x2a1a10,
+          roughness: 0.22,
+          metalness: 0.88,
+          emissive: 0x332200,
+          emissiveIntensity: 0.55
+        }));
+        const p = cellCenter(col, row);
+        m.position.set(p.x, heightAt(p.x, p.z, state) + 0.12, p.z);
+        m.castShadow = true;
+        this.oreMarks.add(m);
+      }
+    }
+  }
+
+  _bindInput() {
+    this._pointers = new Map();
+    this._lastPinch = 0;
+    const el = this.canvas;
+    el.style.touchAction = 'none';
+    this._onPointerDown = (e) => {
+      this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      el.setPointerCapture(e.pointerId);
+    };
+    this._onPointerMove = (e) => {
+      this.hovering = true;
+      if (!this._pointers.has(e.pointerId)) return;
+      const prev = this._pointers.get(e.pointerId);
+      const dx = e.clientX - prev.x;
+      const dy = e.clientY - prev.y;
+      prev.x = e.clientX;
+      prev.y = e.clientY;
+      if (this._pointers.size === 1) {
+        this.camSpherical.theta -= dx * 0.005;
+        this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi + dy * 0.004, 0.55, 1.15);
+        this._clampCam();
+      } else if (this._pointers.size === 2) {
+        const pts = [...this._pointers.values()];
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        if (this._lastPinch) {
+          this.camSpherical.radius *= this._lastPinch / dist;
+          this._clampCam();
+        }
+        this._lastPinch = dist;
+      }
+    };
+    this._onPointerUp = (e) => {
+      this._pointers.delete(e.pointerId);
+      if (this._pointers.size < 2) this._lastPinch = 0;
+    };
+    this._onPointerLeave = () => { this.hovering = false; };
+    this._onWheel = (e) => {
+      e.preventDefault();
+      this.camSpherical.radius *= (1 + Math.sign(e.deltaY) * 0.08);
+      this._clampCam();
+    };
+    el.addEventListener('pointerdown', this._onPointerDown);
+    el.addEventListener('pointermove', this._onPointerMove);
+    el.addEventListener('pointerup', this._onPointerUp);
+    el.addEventListener('pointercancel', this._onPointerUp);
+    el.addEventListener('pointerleave', this._onPointerLeave);
+    el.addEventListener('wheel', this._onWheel, { passive: false });
+  }
+
+  _clampCam() {
+    this.camSpherical.radius = THREE.MathUtils.clamp(this.camSpherical.radius, 10, 24);
+    this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi, 0.55, 1.15);
+    const span = 0.95;
+    this.camSpherical.theta = THREE.MathUtils.clamp(this.camSpherical.theta, this.camDefault.theta - span, this.camDefault.theta + span);
+  }
+
+  _applyCamera() {
+    const offset = new THREE.Vector3().setFromSpherical(this.camSpherical);
+    this.camera.position.copy(this.camTarget).add(offset);
+    this.camera.lookAt(this.camTarget);
+    this.camera.up.set(0, 1, 0);
+  }
+
+  resetView() {
+    this.camSpherical.copy(this.camDefault);
+    this._applyCamera();
+  }
+
+  setGridForced(on) {
+    this.gridForced = !!on;
+  }
+
+  setPausedHint(paused) {
+    this.pausedHint = !!paused;
+  }
+
+  mount() {
+    this.container.appendChild(this.canvas);
+    this.resize();
+    requestAnimationFrame(() => { if (!this.disposed) this.resize(); });
+    this._onResize = () => this.resize();
+    window.addEventListener('resize', this._onResize);
+    this.running = true;
+    const loop = () => {
+      if (!this.running || this.disposed || !this.canvas.isConnected) return;
+      this._raf = requestAnimationFrame(loop);
+      this._tick(this.clock.getDelta());
+    };
+    this._raf = requestAnimationFrame(loop);
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.running = false;
+    if (this._raf) cancelAnimationFrame(this._raf);
+    window.removeEventListener('resize', this._onResize);
+    const el = this.canvas;
+    if (el) {
+      el.removeEventListener('pointerdown', this._onPointerDown);
+      el.removeEventListener('pointermove', this._onPointerMove);
+      el.removeEventListener('pointerup', this._onPointerUp);
+      el.removeEventListener('pointercancel', this._onPointerUp);
+      el.removeEventListener('pointerleave', this._onPointerLeave);
+      el.removeEventListener('wheel', this._onWheel);
+    }
+    this.renderer?.dispose();
+    this.coverageTex?.dispose();
+    this.splatTex?.dispose();
+    this.noiseTex?.dispose();
+    this.groundTex?.dispose();
+    this.trackTex?.dispose();
+    this.terrain?.geometry?.dispose();
+    this.terrain?.material?.dispose();
+    if (this.canvas?.parentNode) this.canvas.parentNode.removeChild(this.canvas);
+    if (typeof window !== 'undefined' && window.__farRoverFps && this.fps) {
+      // keep last reading
+    }
+  }
+
+  resize() {
+    if (this.disposed) return;
+    const rect = this.container.getBoundingClientRect();
+    const w = Math.max(1, rect.width);
+    const h = Math.max(1, rect.height);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(w, h, false);
+    this.canvas.style.width = w + 'px';
+    this.canvas.style.height = h + 'px';
+  }
+
+  setPlaybackSpeed(speed) {
+    this.playbackSpeed = speed || 1;
+  }
+
+  updateState(gameState) {
+    this.gameState = gameState;
+    this.syncCloudTargets(false);
+    const ck = this._craterKey(gameState);
+    if (ck !== this.knownCraterKey) {
+      this.knownCraterKey = ck;
+      this._applyHeights(this.terrain.geometry, gameState);
+      this._rebuildCraterRings();
+    }
+    const vk = this._visKey(gameState);
+    if (vk !== this.visKey) {
+      this.visKey = vk;
+      this._updateSplat();
+    }
+    if (gameState.cargo > this.lastCargo) this._sparkle();
+    this.lastCargo = gameState.cargo;
+    let drilled = 0;
+    gameState.drilled?.forEach(row => row.forEach(v => { if (v) drilled++; }));
+    if (drilled > this.lastDrilled) this._drillPlume();
+    this.lastDrilled = drilled;
+    if (!this.anim.active) this._placeActors(false);
+    if (gameState.facing !== this.lastFacing && !this.anim.active) {
+      this._tweenFacing(this.lastFacing, gameState.facing);
+    }
+    this.lastFacing = gameState.facing;
+    if (gameState.outcome === 'lost-crater') this._craterLoss();
+    if (gameState.outcome === 'lost-battery') this.sun.intensity = 0.45;
+    else this.sun.intensity = this.sunDefault;
+  }
+
+  startAnimation(fromCol, fromRow, toCol, toRow, duration = 120) {
+    const from = cellCenter(fromCol, fromRow);
+    const to = cellCenter(toCol, toRow);
+    from.y = heightAt(from.x, from.z, this.gameState);
+    to.y = heightAt(to.x, to.z, this.gameState);
+    this.anim = {
+      active: true,
+      start: performance.now(),
+      duration: Math.max(1, duration),
+      from,
+      to,
+      fromY: FACE_Y[this.lastFacing] || 0,
+      toY: FACE_Y[this.gameState?.facing] || 0,
+      dist: from.distanceTo(to)
+    };
+    this._stampTrack(fromCol, fromRow);
+    this._puff(from);
+  }
+
+  _tweenFacing(from, to) {
+    this.anim = {
+      active: true,
+      start: performance.now(),
+      duration: 160,
+      from: this.rover.position.clone(),
+      to: this.rover.position.clone(),
+      fromY: FACE_Y[from] || 0,
+      toY: FACE_Y[to] || 0,
+      dist: 0
+    };
+  }
+
+  _placeActors(snap) {
+    const s = this.gameState;
+    if (!s) return;
+    const rp = cellCenter(s.col, s.row);
+    const groundY = heightAt(rp.x, rp.z, s);
+    if (snap || !this.anim.active) {
+      this.rover.position.set(rp.x, groundY, rp.z);
+      this.rover.rotation.y = FACE_Y[s.facing] || 0;
+    }
+    const lp = cellCenter(LANDER_COL, LANDER_ROW);
+    this.lander.position.set(lp.x, heightAt(lp.x, lp.z, s), lp.z);
+    const glow = this.lander.getObjectByName('chargeGlow');
+    const halo = this.lander.getObjectByName('chargeHalo');
+    if (glow) glow.intensity = s.charging ? 2.6 : 0;
+    if (halo) halo.material.opacity = s.charging ? 0.28 : 0;
+    this._statusLight();
+  }
+
+  _statusLight() {
+    const light = this.rover.userData.light;
+    if (!light) return;
+    const s = this.gameState;
+    let color = 0x88ffcc;
+    let em = 0x226644;
+    if (s?.charging) { color = 0x66e0ff; em = 0x117799; }
+    else if ((s?.battery ?? 20) <= 4) { color = 0xff8844; em = 0x662200; }
+    else if (String(s?.outcome || '').startsWith('stuck')) { color = 0xff3333; em = 0x550000; }
+    light.material.color.setHex(color);
+    light.material.emissive.setHex(em);
+  }
+
+  _stampTrack(col, row) {
+    const ctx = this.trackCtx;
+    const x = ((col + 0.5) / 12) * 512;
+    const y = ((row + 0.5) / 12) * 512;
+    ctx.fillStyle = 'rgba(40, 22, 12, 0.32)';
+    ctx.beginPath();
+    ctx.ellipse(x, y, 6, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    this.trackTex.needsUpdate = true;
+    this.tracks.push({ t: performance.now() });
+  }
+
+  _fadeTracks() {
+    if (this.tracks.length && performance.now() - this.tracks[0].t > 18000) {
+      const ctx = this.trackCtx;
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = 'rgba(0,0,0,0.08)';
+      ctx.fillRect(0, 0, 512, 512);
+      ctx.restore();
+      this.trackTex.needsUpdate = true;
+      this.tracks.shift();
+    }
+  }
+
+  _puff(at) {
+    for (let i = 0; i < 10; i++) {
+      this.particles.push({
+        x: at.x, y: (at.y || 0) + 0.06, z: at.z,
+        vx: (Math.random() - 0.5) * 0.45,
+        vy: 0.35 + Math.random() * 0.45,
+        vz: (Math.random() - 0.5) * 0.45,
+        life: 1,
+        gold: false
+      });
+    }
+  }
+
+  _sparkle() {
+    const p = this.rover.position;
+    for (let i = 0; i < 14; i++) {
+      this.particles.push({
+        x: p.x, y: p.y + 0.2, z: p.z,
+        vx: (Math.random() - 0.5) * 0.6,
+        vy: 0.5 + Math.random() * 0.6,
+        vz: (Math.random() - 0.5) * 0.6,
+        life: 1,
+        gold: true
+      });
+    }
+  }
+
+  _drillPlume() {
+    this.drillT = 1;
+    this._puff(this.rover.position);
+  }
+
+  _craterLoss() {
+    if (this.craterLossing) return;
+    this.craterLossing = true;
+    this.rover.traverse(o => {
+      if (o.material && o.material.opacity !== undefined) {
+        o.material = o.material.clone();
+        o.material.transparent = true;
+      }
+    });
+  }
+
+  syncCloudTargets(init) {
+    const state = this.gameState;
+    if (!state) return;
+    let changed = false;
+    for (let row = 0; row < GRID_ROWS; row++) {
+      for (let col = 0; col < GRID_COLS; col++) {
+        const next = tileCloudTarget(state, col, row);
+        if (this.cloudTarget[row][col] !== next) {
+          this.cloudTarget[row][col] = next;
+          changed = true;
+        }
+      }
+    }
+    if (init || !this.cloudInitialized) {
+      for (let row = 0; row < GRID_ROWS; row++) {
+        for (let col = 0; col < GRID_COLS; col++) {
+          this.cloudDisplay[row][col] = this.cloudTarget[row][col];
+          this.cloudFadeFrom[row][col] = this.cloudTarget[row][col];
+        }
+      }
+      this.cloudInitialized = true;
+      this.cloudFading = false;
+      this._writeCoverage();
+      return;
+    }
+    if (changed) {
+      for (let row = 0; row < GRID_ROWS; row++) {
+        for (let col = 0; col < GRID_COLS; col++) {
+          this.cloudFadeFrom[row][col] = this.cloudDisplay[row][col];
+        }
+      }
+      this.cloudFadeStart = performance.now();
+      this.cloudFading = true;
+    }
+  }
+
+  _stepCloud(now) {
+    if (!this.cloudFading) return;
+    const dur = cloudFadeDuration(this.playbackSpeed);
+    const t = Math.min(1, (now - this.cloudFadeStart) / dur);
+    const e = t * t * (3 - 2 * t);
+    for (let row = 0; row < GRID_ROWS; row++) {
+      for (let col = 0; col < GRID_COLS; col++) {
+        this.cloudDisplay[row][col] = lerp(this.cloudFadeFrom[row][col], this.cloudTarget[row][col], e);
+      }
+    }
+    this._writeCoverage();
+    if (t >= 1) this.cloudFading = false;
+  }
+
+  _writeCoverage() {
+    const data = this.coverageData;
+    for (let y = 0; y < COV; y++) {
+      for (let x = 0; x < COV; x++) {
+        // Cloud plane UV: v=0 is south (high row) after X=-90 rotation.
+        const col = (x + 0.5) / COV * GRID_COLS;
+        const row = GRID_ROWS - (y + 0.5) / COV * GRID_ROWS;
+        const c0 = Math.floor(col);
+        const r0 = Math.floor(row);
+        const fx = col - c0;
+        const fy = row - r0;
+        const sample = (c, r) => {
+          if (c < 0 || r < 0 || c >= 12 || r >= 12) return 0;
+          return this.cloudDisplay[r][c];
+        };
+        const v = lerp(
+          lerp(sample(c0, r0), sample(c0 + 1, r0), fx),
+          lerp(sample(c0, r0 + 1), sample(c0 + 1, r0 + 1), fy),
+          fy
+        );
+        const edge = Math.abs(sample(c0, r0) - sample(c0 + 1, r0)) + Math.abs(sample(c0, r0) - sample(c0, r0 + 1));
+        const n = hash2(x, y, 6.2) - 0.5;
+        const cov = Math.max(0, Math.min(255, (v + n * edge * 0.38) * 255));
+        const i = (y * COV + x) * 4;
+        data[i] = data[i + 1] = data[i + 2] = cov;
+        data[i + 3] = 255;
+      }
+    }
+    this.coverageTex.needsUpdate = true;
+  }
+
+  _tick(dt) {
+    const now = performance.now();
+    this._stepCloud(now);
+    this._applyCamera();
+    this.gridHelper.visible = this.gridForced || this.hovering || this.pausedHint;
+    const t = this.reduceMotion ? 0 : now / 1000;
+    this.cloudLayers.forEach((m, i) => {
+      m.material.uniforms.uTime.value = t;
+      if (!this.reduceMotion) m.position.y = 1.15 + i * 0.42 + Math.sin(t * 0.3 + i) * 0.04;
+    });
+    if (!this.reduceMotion && !this.lite) {
+      const pos = this.dust.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        pos.setX(i, pos.getX(i) + dt * 0.15);
+        pos.setY(i, pos.getY(i) + Math.sin(t + i) * dt * 0.05);
+        if (pos.getX(i) > 12) pos.setX(i, -12);
+      }
+      pos.needsUpdate = true;
+    }
+    if (this.drillT > 0) {
+      this.drillT = Math.max(0, this.drillT - dt * 1.8);
+      const bit = this.rover.userData.drillBit;
+      const drill = this.rover.userData.drill;
+      if (bit) bit.rotation.y += dt * 18;
+      if (drill) drill.position.y = 0.22 - (1 - this.drillT) * 0.08;
+    }
+    if (this.anim.active) {
+      const u = Math.min(1, (now - this.anim.start) / this.anim.duration);
+      const e = 1 - (1 - u) * (1 - u);
+      this.rover.position.lerpVectors(this.anim.from, this.anim.to, e);
+      let a0 = this.anim.fromY;
+      let a1 = this.anim.toY;
+      while (a1 - a0 > Math.PI) a1 -= Math.PI * 2;
+      while (a0 - a1 > Math.PI) a1 += Math.PI * 2;
+      this.rover.rotation.y = lerp(a0, a1, e);
+      this.rover.position.y += Math.sin(e * Math.PI) * 0.03;
+      const dist = this.anim.dist * e * 8;
+      this.rover.userData.wheels.forEach(w => { w.rotation.x = dist; });
+      if (u >= 1) {
+        this.anim.active = false;
+        this._placeActors(true);
+        this._stampTrack(this.gameState.col, this.gameState.row);
+      }
+    } else if (this.gameState?.charging && !this.craterLossing) {
+      const rp = cellCenter(this.gameState.col, this.gameState.row);
+      this.rover.position.y = heightAt(rp.x, rp.z, this.gameState) + Math.sin(now / 400) * 0.01;
+    }
+    if (this.craterLossing) {
+      this.rover.rotation.z = Math.min(0.85, this.rover.rotation.z + dt * 0.7);
+      this.rover.rotation.x = Math.min(0.4, this.rover.rotation.x + dt * 0.35);
+      this.rover.position.y -= dt * 0.22;
+      this.rover.traverse(o => {
+        if (o.material && o.material.opacity !== undefined) {
+          o.material.transparent = true;
+          o.material.opacity = Math.max(0, (o.material.opacity ?? 1) - dt * 0.55);
+        }
+      });
+    }
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.z += p.vz * dt;
+      p.vy -= dt * 0.6;
+      p.life -= dt * 1.4;
+      if (p.life <= 0) this.particles.splice(i, 1);
+    }
+    const n = Math.min(this.particles.length, this.puffPos.length / 3);
+    for (let i = 0; i < n; i++) {
+      const p = this.particles[i];
+      this.puffPos[i * 3] = p.x;
+      this.puffPos[i * 3 + 1] = p.y;
+      this.puffPos[i * 3 + 2] = p.z;
+    }
+    this.puffPts.geometry.attributes.position.needsUpdate = true;
+    this.puffPts.geometry.setDrawRange(0, n);
+    if (this.oreMarks.children.length && !this.reduceMotion) {
+      const pulse = 0.45 + Math.sin(now / 280) * 0.2;
+      this.oreMarks.children.forEach(m => { m.material.emissiveIntensity = pulse; });
+    }
+    this._fadeTracks();
+    this._statusLight();
+    const busy = this.cloudFading || this.anim.active || this.craterLossing ||
+      this.particles.length > 0 || this.drillT > 0 || (this._pointers && this._pointers.size > 0);
+    const interval = this.lite ? (busy ? 50 : 250) : (this.pausedHint && !busy ? 80 : 0);
+    if (interval && now - (this._lastDraw || 0) < interval) return;
+    this._lastDraw = now;
+    this._frames++;
+    if (now - this._fpsT > 500) {
+      this.fps = (this._frames * 1000) / (now - this._fpsT);
+      this._frames = 0;
+      this._fpsT = now;
+      if (typeof window !== 'undefined') window.__farRoverFps = this.fps;
+    }
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  render() {
+    if (this.disposed) return;
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  getCellFromClick(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera({ x, y }, this.camera);
+    const hits = ray.intersectObject(this.terrain);
+    if (!hits.length) return null;
+    const p = hits[0].point;
+    const col = Math.round(p.x + (GRID_COLS - 1) / 2);
+    const row = Math.round(p.z + (GRID_ROWS - 1) / 2);
+    if (col < 0 || col > 11 || row < 0 || row > 12) return null;
+    return { col, row };
+  }
+}

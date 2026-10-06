@@ -102,9 +102,9 @@ const COLORS = {
   minimapCloud: '#8b939c'
 };
 
-const CLOUD_HIDDEN = 1;
-const CLOUD_CAMERA = 0.48;
-const CLOUD_CLEAR = 0;
+export const CLOUD_HIDDEN = 1;
+export const CLOUD_CAMERA = 0.48;
+export const CLOUD_CLEAR = 0;
 const CLOUD_TEX_SIZE = 256;
 
 function fract(n) {
@@ -182,13 +182,13 @@ function getCloudTextures() {
   return [cloudTexA, cloudTexB];
 }
 
-function prefersReducedMotion() {
+export function prefersReducedMotion() {
   return typeof window !== 'undefined' &&
     !!window.matchMedia &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-function tileCloudTarget(state, col, row) {
+export function tileCloudTarget(state, col, row) {
   if (state.cameraSeen?.[row]?.[col]) return CLOUD_CAMERA;
   if (!state.revealed?.[row]?.[col]) return CLOUD_HIDDEN;
   if (state.terrain[row][col] === 'crater' &&
@@ -196,6 +196,13 @@ function tileCloudTarget(state, col, row) {
     return CLOUD_CAMERA;
   }
   return CLOUD_CLEAR;
+}
+
+export function cloudFadeDuration(speed) {
+  const s = speed || 1;
+  if (s >= 16) return 70;
+  if (s >= 4) return 160;
+  return 420;
 }
 
 // Pre-rendered tile cache
@@ -503,6 +510,11 @@ export class GameRenderer {
   setPlaybackSpeed(speed) {
     this.playbackSpeed = speed || 1;
   }
+
+  resetView() {}
+  setGridForced() {}
+  setPausedHint() {}
+  dispose() {}
   
   updateState(gameState) {
     this.gameState = gameState;
@@ -588,13 +600,6 @@ export class GameRenderer {
     ];
   }
   
-  cloudFadeDuration() {
-    const s = this.playbackSpeed || 1;
-    if (s >= 16) return 70;
-    if (s >= 4) return 160;
-    return 420;
-  }
-
   syncCloudTargets() {
     const state = this.gameState;
     if (!state) return;
@@ -634,7 +639,7 @@ export class GameRenderer {
 
   stepCloudFade(now) {
     if (!this.cloudFading) return false;
-    const dur = this.cloudFadeDuration();
+    const dur = cloudFadeDuration(this.playbackSpeed);
     const t = Math.min(1, (now - this.cloudFadeStart) / dur);
     const eased = t * t * (3 - 2 * t);
     for (let row = 0; row < GRID_ROWS; row++) {
