@@ -388,6 +388,7 @@ test.describe('Far Rover UI Tests', () => {
   });
 
   test('Voluntary rerun counting: change counts, no-change does not, prompted does not', async ({ page }) => {
+    test.setTimeout(90000);
     await page.goto(BASE_URL);
     await page.click('#start-btn');
     

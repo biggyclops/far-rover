@@ -1173,7 +1173,7 @@ function doTick() {
     return;
   }
   
-  const shouldAnimate = currentSpeed <= 4 && result.tickRecord?.actionResult?.moved;
+  const shouldAnimate = !isPaused && currentSpeed <= 4 && result.tickRecord?.actionResult?.moved;
   if (shouldAnimate && renderer) {
     animatingMove = true;
     const duration = currentSpeed === 1 ? 120 : currentSpeed === 4 ? 30 : 0;
