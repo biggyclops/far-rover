@@ -75,8 +75,10 @@ test.describe('Far Rover UI Tests', () => {
     await page.goto(BASE_URL);
     await page.click('#start-btn');
     
-    // Should be on build screen
-    await expect(page.locator('h2')).toContainText('Build Your Rover');
+    await expect(page.locator('.sensor-item:has([data-sensor="camera"]) .sensor-desc'))
+      .toContainText('Shows 3×3 (seen, not scanned; dust alerts fire even without Dust)');
+    await expect(page.locator('.sensor-item:has([data-sensor="camera"]) .sensor-desc'))
+      .not.toContainText('Scans');
     
     // Select 3 sensors
     await page.click('input[data-sensor="distance"]');
@@ -137,6 +139,9 @@ test.describe('Far Rover UI Tests', () => {
     await expect(page.locator('.map-grid')).toBeVisible();
     await expect(page.locator('.speed-btn[data-speed="pause"]')).toBeVisible();
     await expect(page.locator('#step-btn')).toBeVisible();
+    await expect(page.locator('#sensor-readings')).toContainText('Camera');
+    await expect(page.locator('#sensor-readings')).toContainText('shows 3×3');
+    await expect(page.locator('#sensor-readings')).not.toContainText('scanning');
   });
 
   test('Step button advances one tick', async ({ page }) => {

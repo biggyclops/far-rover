@@ -217,7 +217,7 @@ export function showBuildScreen() {
             <label class="sensor-item selectable">
               <input type="checkbox" data-sensor="camera" ${selectedSensors.includes(Sim.SENSORS.CAMERA) ? 'checked' : ''}>
               <span class="sensor-name">Camera (OV2640)</span>
-              <span class="sensor-desc">Scans 3×3 (dust alerts fire even without Dust)</span>
+              <span class="sensor-desc">Shows 3×3 (seen, not scanned; dust alerts fire even without Dust)</span>
             </label>
           </div>
         </div>
@@ -633,6 +633,7 @@ function showOperateView() {
   // Initialize renderer
   const mapGrid = document.getElementById('map-grid');
   renderer = new GameRenderer(mapGrid, gameState);
+  renderer.setPlaybackSpeed(currentSpeed || 1);
   renderer.mount();
   
   // Initialize minimap renderer
@@ -765,7 +766,7 @@ function renderSensorReadings() {
   if (gameState.sensors.includes(Sim.SENSORS.CAMERA)) {
     html += `<div class="sensor-reading">
       <span class="sensor-label">Camera:</span>
-      <span class="sensor-value">3×3 scanning</span>
+      <span class="sensor-value">shows 3×3</span>
     </div>`;
   }
   
@@ -1086,6 +1087,7 @@ function pause() {
 function setSpeed(speed) {
   currentSpeed = speed;
   isPaused = false;
+  if (renderer) renderer.setPlaybackSpeed(speed);
   startTicking();
   updateOperateView();
 }
