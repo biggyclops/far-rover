@@ -1222,7 +1222,18 @@ function doTick() {
     gameState.outcome = result.endCondition.outcome;
     gameState.endReason = result.endCondition.reason;
     stopTicking();
-    endRun();
+    if (renderer) {
+      renderer.updateState(gameState);
+      renderer.render();
+    }
+    const delay = (gameState.outcome === Sim.OUTCOMES.LOST_CRATER || gameState.outcome === 'lost-crater') ? 1300
+      : (gameState.outcome === Sim.OUTCOMES.LOST_BATTERY || gameState.outcome === 'lost-battery') ? 700
+      : 0;
+    if (delay && renderer?.canvas?.dataset?.engine === 'webgl') {
+      setTimeout(() => endRun(), delay);
+    } else {
+      endRun();
+    }
     return;
   }
   
