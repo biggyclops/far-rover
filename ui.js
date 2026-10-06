@@ -3,6 +3,7 @@
 
 import * as Sim from './simulation.js';
 import { GameRenderer, MinimapRenderer, loadAssets, hasRealArt, getBackgroundImage, getIcon } from './renderer.js';
+import { GameRenderer3D, shouldUse3D } from './renderer3d.js';
 
 // === LOCAL STORAGE ===
 const STORAGE_KEY = 'far-rover-demo-v1';
@@ -146,8 +147,11 @@ function startNewSession(label = '') {
 // === SCREEN RENDERING ===
 
 function clearScreen() {
-  document.getElementById('game-container').innerHTML = '';
+  if (renderer?.dispose) {
+    try { renderer.dispose(); } catch { /* ignore */ }
+  }
   renderer = null;
+  document.getElementById('game-container').innerHTML = '';
 }
 
 export function showTitleScreen() {
@@ -538,6 +542,26 @@ function updateLaunchButton() {
 // Minimap renderer instance
 let minimapRenderer = null;
 
+function createBoardRenderer(container, state) {
+  if (shouldUse3D()) {
+    try {
+      const r = new GameRenderer3D(container, state);
+      r.setPlaybackSpeed(currentSpeed || 1);
+      r.setPausedHint?.(isPaused);
+      r.mount();
+      container.dataset.renderer = '3d';
+      return r;
+    } catch (err) {
+      console.warn('WebGL renderer failed, using 2D canvas', err);
+    }
+  }
+  const r = new GameRenderer(container, state);
+  r.setPlaybackSpeed(currentSpeed || 1);
+  r.mount();
+  container.dataset.renderer = '2d';
+  return r;
+}
+
 function showOperateView() {
   clearScreen();
   
@@ -603,6 +627,10 @@ function showOperateView() {
             <button class="speed-btn ${!isPaused && currentSpeed === 16 ? 'active' : ''}" data-speed="16">16×</button>
           </div>
           <button class="step-btn ${isPaused ? '' : 'hidden'}" id="step-btn">Step</button>
+          <div class="view-tools">
+            <button type="button" id="reset-view-btn" class="view-tool-btn">Reset view</button>
+            <label class="grid-toggle"><input type="checkbox" id="grid-toggle"> Grid</label>
+          </div>
           <button class="uplink-btn ${gameState.uplink.used ? 'used' : ''}" id="uplink-btn" ${uplinkBlocked() ? 'disabled' : ''}>
             ${gameState.uplink.used ? '📡 Uplink Used' : '📡 Uplink'}
           </button>
@@ -632,9 +660,7 @@ function showOperateView() {
   
   // Initialize renderer
   const mapGrid = document.getElementById('map-grid');
-  renderer = new GameRenderer(mapGrid, gameState);
-  renderer.setPlaybackSpeed(currentSpeed || 1);
-  renderer.mount();
+  renderer = createBoardRenderer(mapGrid, gameState);
   
   // Initialize minimap renderer
   const minimapCanvas = document.getElementById('minimap-canvas');
@@ -792,6 +818,10 @@ function wireOperateControls() {
   document.getElementById('end-run-btn')?.addEventListener('click', abortRun);
   document.getElementById('resume-btn')?.addEventListener('click', resumeFromAutoPause);
   document.getElementById('end-stuck-btn')?.addEventListener('click', endFromStuck);
+  document.getElementById('reset-view-btn')?.addEventListener('click', () => renderer?.resetView?.());
+  document.getElementById('grid-toggle')?.addEventListener('change', (e) => {
+    renderer?.setGridForced?.(e.target.checked);
+  });
   document.getElementById('autopause-mode')?.addEventListener('change', (e) => {
     saveAutoPauseMode(e.target.value);
   });
@@ -845,6 +875,7 @@ function updateOperateView() {
   // Update renderer
   if (renderer) {
     renderer.updateState(gameState);
+    renderer.setPausedHint?.(isPaused);
     renderer.render();
   }
   

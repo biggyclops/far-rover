@@ -564,6 +564,44 @@ button:disabled {
   width: 100%;
   height: 100%;
   border-radius: 4px;
+  display: block;
+  touch-action: none;
+}
+
+.map-grid[data-renderer="3d"] {
+  overflow: hidden;
+  background: transparent;
+}
+
+.view-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+
+.view-tool-btn {
+  flex: 1;
+  font-size: 0.75rem;
+  padding: 6px 8px;
+  background: rgba(30, 25, 20, 0.6);
+  color: var(--text);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.view-tool-btn:hover {
+  background: rgba(50, 40, 30, 0.8);
+}
+
+.grid-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 /* Info Panel (right) */
