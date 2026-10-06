@@ -9,7 +9,7 @@ async function dismissAutoPause(page) {
   // Step continues the paused tick without starting 1× play (Resume now restarts play).
   const stepBtn = page.locator('#step-btn');
   if (await stepBtn.isVisible({ timeout: 0 }) && await stepBtn.isEnabled()) {
-    await stepBtn.click();
+    await stepBtn.click({ force: true });
     return true;
   }
   await page.click('#resume-btn');
@@ -39,7 +39,7 @@ async function completeRun(page, maxIter = 120) {
     }
     const stepBtn = page.locator('#step-btn');
     if (await stepBtn.isVisible({ timeout: 0 }) && await stepBtn.isEnabled()) {
-      await page.click('#step-btn');
+      await page.locator('#step-btn').click({ force: true });
       await page.waitForTimeout(30);
     }
   }

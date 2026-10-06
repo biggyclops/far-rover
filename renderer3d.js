@@ -150,7 +150,7 @@ function createCloudMaterial(coverageTex, noiseTex, layer) {
         float a = hidden * 0.95 + cam * 0.44;
         a *= mix(1.0, 0.72, uLayer * 0.5);
         a *= 0.84 + 0.16 * puff;
-        vec3 col = mix(vec3(0.84, 0.88, 0.92), vec3(0.60, 0.65, 0.72), puff);
+        vec3 col = mix(vec3(0.86, 0.82, 0.78), vec3(0.70, 0.68, 0.66), puff);
         gl_FragColor = vec4(col, a);
       }
     `
@@ -383,7 +383,7 @@ export class GameRenderer3D {
       const mat = createCloudMaterial(this.coverageTex, this.noiseTex, i);
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(12.6, 12.6), mat);
       mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(0, 0.92 + i * 0.48, 0);
+      mesh.position.set(0, 1.15 + i * 0.42, 0);
       mesh.renderOrder = 10 + i;
       this.scene.add(mesh);
       this.cloudLayers.push(mesh);
@@ -1096,7 +1096,7 @@ export class GameRenderer3D {
         const fx = col - c0;
         const fy = row - r0;
         const sample = (c, r) => {
-          if (c < 0 || r < 0 || c >= 12 || r >= 12) return CLOUD_HIDDEN;
+          if (c < 0 || r < 0 || c >= 12 || r >= 12) return 0;
           return this.cloudDisplay[r][c];
         };
         const v = lerp(
@@ -1123,7 +1123,7 @@ export class GameRenderer3D {
     const t = this.reduceMotion ? 0 : now / 1000;
     this.cloudLayers.forEach((m, i) => {
       m.material.uniforms.uTime.value = t;
-      if (!this.reduceMotion) m.position.y = 0.92 + i * 0.48 + Math.sin(t * 0.3 + i) * 0.04;
+      if (!this.reduceMotion) m.position.y = 1.15 + i * 0.42 + Math.sin(t * 0.3 + i) * 0.04;
     });
     if (!this.reduceMotion) {
       const pos = this.dust.geometry.attributes.position;
