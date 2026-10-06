@@ -296,6 +296,20 @@ function createRockInstancer(count) {
   return mesh;
 }
 
+function isLiteGL() {
+  if (typeof navigator !== 'undefined' && navigator.webdriver) return true;
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    if (!gl) return true;
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    const gpu = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL) || '') : '';
+    return /swiftshader|llvmpipe|softpipe|microsoft basic render|cpu/i.test(gpu);
+  } catch {
+    return true;
+  }
+}
+
 export class GameRenderer3D {
   constructor(container, gameState) {
     if (!webglAvailable()) throw new Error('WebGL unavailable');
@@ -327,6 +341,7 @@ export class GameRenderer3D {
     this._fpsT = 0;
     this.clock = new THREE.Clock();
     this.disposed = false;
+    this.lite = isLiteGL();
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xc48a5a);
@@ -338,12 +353,16 @@ export class GameRenderer3D {
     this.camDefault = this.camSpherical.clone();
     this._applyCamera();
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: !this.lite,
+      alpha: false,
+      powerPreference: this.lite ? 'low-power' : 'high-performance'
+    });
+    this.renderer.setPixelRatio(this.lite ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.08;
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = !this.lite;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.canvas = this.renderer.domElement;
     this.canvas.className = 'game-canvas';
@@ -373,7 +392,7 @@ export class GameRenderer3D {
     this.scene.add(this.gridHelper);
     this.craterRings = new THREE.Group();
     this.scene.add(this.craterRings);
-    this.rocks = createRockInstancer(180);
+    this.rocks = createRockInstancer(this.lite ? 40 : 180);
     this.scene.add(this.rocks);
     this.oreMarks = new THREE.Group();
     this.scene.add(this.oreMarks);
@@ -427,8 +446,8 @@ export class GameRenderer3D {
     this.scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xffe1b5, 2.2);
     sun.position.set(-14, 12, -10);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.castShadow = !this.lite;
+    sun.shadow.mapSize.set(this.lite ? 512 : 1024, this.lite ? 512 : 1024);
     sun.shadow.camera.near = 2;
     sun.shadow.camera.far = 48;
     sun.shadow.camera.left = -16;
@@ -1125,7 +1144,7 @@ export class GameRenderer3D {
       m.material.uniforms.uTime.value = t;
       if (!this.reduceMotion) m.position.y = 1.15 + i * 0.42 + Math.sin(t * 0.3 + i) * 0.04;
     });
-    if (!this.reduceMotion) {
+    if (!this.reduceMotion && !this.lite) {
       const pos = this.dust.geometry.attributes.position;
       for (let i = 0; i < pos.count; i++) {
         pos.setX(i, pos.getX(i) + dt * 0.15);
@@ -1197,6 +1216,11 @@ export class GameRenderer3D {
     }
     this._fadeTracks();
     this._statusLight();
+    const busy = this.cloudFading || this.anim.active || this.craterLossing ||
+      this.particles.length > 0 || this.drillT > 0 || (this._pointers && this._pointers.size > 0);
+    const interval = this.lite ? (busy ? 50 : 250) : (this.pausedHint && !busy ? 80 : 0);
+    if (interval && now - (this._lastDraw || 0) < interval) return;
+    this._lastDraw = now;
     this._frames++;
     if (now - this._fpsT > 500) {
       this.fps = (this._frames * 1000) / (now - this._fpsT);
