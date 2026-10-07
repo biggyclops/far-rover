@@ -412,7 +412,7 @@ export class GameRenderer3D {
     this.renderer.setPixelRatio(this.lite ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.08;
+    this.renderer.toneMappingExposure = 1.22;
     this.renderer.setClearColor(0x1a100c, 1);
     this.renderer.shadowMap.enabled = false;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -590,7 +590,7 @@ export class GameRenderer3D {
   _terrainMaterial(clipBoard) {
     const fallback = this.noiseTex;
     const mat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
+      color: 0xd08050,
       roughness: 0.96,
       metalness: 0.0,
       vertexColors: true
@@ -634,30 +634,18 @@ export class GameRenderer3D {
          vec2 cell = vec2(vWorldPos.x + 6.0, vWorldPos.z + 6.0);
          vec2 buv = cell / 12.0;
          float onB = step(0.0, buv.x) * step(0.0, buv.y) * step(buv.x, 1.0) * step(buv.y, 1.0);
-         vec2 tuv = fract(cell);
-         vec3 mapped = diffuseColor.rgb;
-         vec3 gA = texture2D(uG1, tuv).rgb;
-         if (length(gA) > 0.04) {
-           float hsel = fract(sin(dot(floor(cell), vec2(127.1, 311.7))) * 43758.5453);
-           vec3 ground = hsel < 0.34 ? gA : (hsel < 0.67 ? texture2D(uG2, tuv).rgb : texture2D(uG3, tuv).rgb);
-           vec4 sp = texture2D(uSplat, clamp(buv, 0.0, 1.0));
-           ground = mix(ground, texture2D(uDustTex, tuv).rgb, sp.r * onB);
-           ground = mix(ground, texture2D(uOreTex, tuv).rgb, sp.g * onB);
-           ground = mix(ground, texture2D(uCraterTex, tuv).rgb, sp.b * onB);
-           mapped = ground;
-         }
          float bowl = smoothstep(0.04, -0.55, vWorldPos.y);
-         mapped *= mix(1.0, 0.42, bowl);
+         diffuseColor.rgb *= mix(1.0, 0.45, bowl);
          float cov = mix(0.82, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
          float hiddenAmt = smoothstep(0.52, 0.92, cov) * uCoverAmt;
          float camAmt = (1.0 - hiddenAmt) * smoothstep(0.06, 0.52, cov) * uCoverAmt;
          float drivenAmt = (1.0 - hiddenAmt) * (1.0 - camAmt) * onB * uCoverAmt;
-         float luma = dot(mapped, vec3(0.32, 0.50, 0.18));
-         vec3 gray = vec3(luma * 0.55, luma * 0.40, luma * 0.30);
-         vec3 dimmed = mix(mapped, gray, hiddenAmt * 0.62 + camAmt * 0.22);
-         dimmed *= mix(1.0, 0.62, hiddenAmt);
-         dimmed *= mix(1.0, 0.86, camAmt);
-         dimmed *= mix(1.0, 1.32, drivenAmt);
+         float luma = dot(diffuseColor.rgb, vec3(0.30, 0.50, 0.20));
+         vec3 gray = vec3(luma * 0.58, luma * 0.42, luma * 0.32);
+         vec3 dimmed = mix(diffuseColor.rgb, gray, hiddenAmt * 0.55 + camAmt * 0.18);
+         dimmed *= mix(1.0, 0.70, hiddenAmt);
+         dimmed *= mix(1.0, 0.88, camAmt);
+         dimmed *= mix(1.0, 1.28, drivenAmt);
          diffuseColor.rgb = dimmed;
         `
       ).replace(
