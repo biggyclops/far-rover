@@ -633,30 +633,43 @@ button:disabled {
 }
 
 .orbital-grain {
-  opacity: 0.10;
+  opacity: 0.035;
   mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.85'/%3E%3C/svg%3E");
   background-size: 180px 180px;
 }
 
 .map-grid.optical-on .orbital-grain {
-  opacity: 0.18;
+  opacity: 0.055;
 }
 
 .orbital-scanlines {
-  opacity: 0.12;
+  opacity: 0.035;
   mix-blend-mode: multiply;
   background: repeating-linear-gradient(
     to bottom,
-    rgba(20, 10, 6, 0.16) 0px,
-    rgba(20, 10, 6, 0.16) 1px,
+    rgba(20, 10, 6, 0.10) 0px,
+    rgba(20, 10, 6, 0.10) 1px,
     transparent 1px,
-    transparent 3px
+    transparent 4px
   );
 }
 
 .orbital-vignette {
-  background: radial-gradient(ellipse at center, transparent 58%, rgba(12, 6, 4, 0.42) 100%);
+  background: radial-gradient(ellipse at center, transparent 72%, rgba(12, 6, 4, 0.16) 100%);
+}
+
+.rover-tag {
+  position: absolute;
+  z-index: 8;
+  transform: translate(-50%, 0);
+  pointer-events: none;
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  color: #f0ebe4;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
 }
 
 .instrument-stack {

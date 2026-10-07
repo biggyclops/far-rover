@@ -71,8 +71,9 @@ function knownCrater(state, col, row) {
 }
 
 function heightAt(x, z, state) {
-  let y = (hash2(Math.floor(x * 3), Math.floor(z * 3), 1.7) - 0.5) * 0.08;
-  y += (hash2(Math.floor(x * 8), Math.floor(z * 8), 4.1) - 0.5) * 0.03;
+  let y = (hash2(Math.floor(x * 2.1), Math.floor(z * 2.1), 1.7) - 0.5) * 0.22;
+  y += (hash2(Math.floor(x * 6.2), Math.floor(z * 6.2), 4.1) - 0.5) * 0.09;
+  y += (hash2(Math.floor(x * 18), Math.floor(z * 18), 8.8) - 0.5) * 0.03;
   const col = x + (GRID_COLS - 1) / 2;
   const row = z + (GRID_ROWS - 1) / 2;
   if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) {
@@ -82,8 +83,8 @@ function heightAt(x, z, state) {
       const dx = col - c - 0.5;
       const dz = row - r - 0.5;
       const d = Math.sqrt(dx * dx + dz * dz);
-      if (d < 0.42) y -= (1 - d / 0.42) * 0.42;
-      else if (d < 0.55) y += (1 - Math.abs(d - 0.48) / 0.07) * 0.08;
+      if (d < 0.46) y -= (1 - d / 0.46) * 0.58;
+      else if (d < 0.62) y += (1 - Math.abs(d - 0.54) / 0.08) * 0.11;
     }
   }
   return y;
@@ -126,7 +127,7 @@ function makeNoiseTexture() {
   return tex;
 }
 
-function createCloudMaterial(coverageTex, noiseTex, layer) {
+function createHazeMaterial(coverageTex, noiseTex) {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -136,8 +137,7 @@ function createCloudMaterial(coverageTex, noiseTex, layer) {
     uniforms: {
       uCoverage: { value: coverageTex },
       uNoise: { value: noiseTex },
-      uTime: { value: 0 },
-      uLayer: { value: layer }
+      uTime: { value: 0 }
     },
     vertexShader: `
       varying vec2 vUv;
@@ -150,26 +150,16 @@ function createCloudMaterial(coverageTex, noiseTex, layer) {
       uniform sampler2D uCoverage;
       uniform sampler2D uNoise;
       uniform float uTime;
-      uniform float uLayer;
       varying vec2 vUv;
       void main() {
-        float t = uTime * (0.012 + uLayer * 0.004);
-        vec2 n = texture2D(uNoise, vUv * 2.4 + vec2(t, t * 0.35 + uLayer * 0.1)).rg - 0.5;
-        vec2 cuv = clamp(vUv + n * 0.08, 0.0, 1.0);
-        float cov = texture2D(uCoverage, cuv).r;
-        float puff = texture2D(uNoise, vUv * 3.1 - vec2(t * 0.6, uLayer)).r;
-        float ragged = texture2D(uNoise, vUv * 7.0 + vec2(uLayer * 0.2, -t * 0.2)).g;
-        cov = clamp(cov + (ragged - 0.5) * 0.18 * step(0.04, cov), 0.0, 1.0);
-        if (cov < 0.04) discard;
-        float hidden = smoothstep(0.62, 0.92, cov);
-        float cam = (1.0 - hidden) * smoothstep(0.06, 0.5, cov);
-        float a = hidden * 0.88 + cam * 0.40;
-        a *= mix(1.0, 0.72, uLayer * 0.5);
-        a *= 0.84 + 0.16 * puff;
-        float edge = smoothstep(0.0, 0.06, vUv.x) * smoothstep(0.0, 0.06, vUv.y)
-          * smoothstep(0.0, 0.06, 1.0 - vUv.x) * smoothstep(0.0, 0.06, 1.0 - vUv.y);
-        a *= edge;
-        vec3 col = mix(vec3(0.78, 0.70, 0.64), vec3(0.58, 0.54, 0.50), puff);
+        float n = texture2D(uNoise, vUv * 1.15 + vec2(uTime * 0.004, 0.0)).r;
+        float cov = texture2D(uCoverage, vUv).r;
+        float hidden = smoothstep(0.55, 0.92, cov);
+        float cam = (1.0 - hidden) * smoothstep(0.08, 0.55, cov);
+        float a = hidden * 0.22 + cam * 0.10;
+        a *= 0.82 + 0.18 * n;
+        if (a < 0.02) discard;
+        vec3 col = vec3(0.07, 0.045, 0.03);
         gl_FragColor = vec4(col, a);
       }
     `
@@ -223,7 +213,7 @@ function createRover() {
   light.position.set(0, 0.24, -0.20);
   light.name = 'statusLight';
   g.add(light);
-  const head = new THREE.PointLight(0xffe6c8, 0.35, 3.2, 2);
+  const head = new THREE.PointLight(0xffe6c8, 1.1, 6.5, 1.6);
   head.position.set(0, 0.26, -0.22);
   g.add(head);
 
@@ -240,7 +230,7 @@ function createRover() {
   });
   g.userData.wheels = wheels;
   g.userData.light = light;
-  g.scale.setScalar(1.4);
+  g.scale.setScalar(1.9);
   return g;
 }
 
@@ -288,24 +278,40 @@ function createLander() {
   return g;
 }
 
-function createRockInstancer(count) {
+function createRockInstancer(offCount, onCount) {
+  const total = offCount + onCount;
   const geo = new THREE.DodecahedronGeometry(0.12, 0);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x7a4a32, roughness: 0.92, metalness: 0.05 });
-  const mesh = new THREE.InstancedMesh(geo, mat, count);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x6a3a24, roughness: 0.94, metalness: 0.04 });
+  const mesh = new THREE.InstancedMesh(geo, mat, total);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   const dummy = new THREE.Object3D();
   let placed = 0;
   let guard = 0;
-  while (placed < count && guard < count * 8) {
+  while (placed < onCount && guard < onCount * 12) {
+    guard++;
+    const col = hash2(guard, 3, 2.1) * 12;
+    const row = hash2(guard, 5, 3.4) * 12;
+    const x = col - 6 + (hash2(guard, 7, 1.2) - 0.5) * 0.72;
+    const z = row - 6 + (hash2(guard, 8, 1.5) - 0.5) * 0.72;
+    dummy.position.set(x, 0.045, z);
+    dummy.rotation.set(hash2(guard, 8, 1) * 2, hash2(guard, 9, 1) * 6, hash2(guard, 10, 1));
+    dummy.scale.setScalar(0.35 + hash2(guard, 11, 1) * 0.95);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(placed, dummy.matrix);
+    placed++;
+  }
+  guard = 0;
+  const offStart = placed;
+  while (placed < offStart + offCount && guard < offCount * 8) {
     guard++;
     const x = (hash2(guard, 2, 1.1) - 0.5) * WORLD * 0.92;
     const z = (hash2(guard, 4, 2.2) - 0.5) * WORLD * 0.92;
-    const onBoard = Math.abs(x) < 6.6 && Math.abs(z) < 7.2;
+    const onBoard = Math.abs(x) < 6.4 && Math.abs(z) < 6.4;
     if (onBoard) continue;
-    dummy.position.set(x, 0.04, z);
+    dummy.position.set(x, 0.05, z);
     dummy.rotation.set(hash2(guard, 8, 1) * 2, hash2(guard, 9, 1) * 6, hash2(guard, 10, 1));
-    dummy.scale.setScalar(0.6 + hash2(guard, 11, 1) * 1.8);
+    dummy.scale.setScalar(0.7 + hash2(guard, 11, 1) * 2.1);
     dummy.updateMatrix();
     mesh.setMatrixAt(placed, dummy.matrix);
     placed++;
@@ -366,12 +372,15 @@ export class GameRenderer3D {
     this.layerKey = '';
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xb56a3e);
-    this.scene.fog = new THREE.FogExp2(0xb56e44, 0.024);
+    this.scene.background = new THREE.Color(0x24150e);
+    this.scene.fog = null;
+    this.pipBg = new THREE.Color(0xc07a4a);
+    this.orbitalBg = new THREE.Color(0x24150e);
+    this.groundFog = new THREE.Fog(0xc07a4a, 4.5, 22);
 
-    this.camera = new THREE.PerspectiveCamera(44, 1, 0.2, 220);
-    this.camTarget = new THREE.Vector3(0, 0.02, 0.35);
-    this.camSpherical = new THREE.Spherical(16.8, 0.20, 0.0);
+    this.camera = new THREE.PerspectiveCamera(46, 1, 0.15, 220);
+    this.camTarget = new THREE.Vector3(0, 0.02, 0.2);
+    this.camSpherical = new THREE.Spherical(15.4, 0.16, 0.0);
     this.camDefault = this.camSpherical.clone();
     this._applyCamera();
     this.camera.layers.enable(0);
@@ -386,7 +395,7 @@ export class GameRenderer3D {
     this.renderer.setPixelRatio(this.lite ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.96;
+    this.renderer.toneMappingExposure = 1.02;
     this.renderer.shadowMap.enabled = !this.lite;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.canvas = this.renderer.domElement;
@@ -428,18 +437,36 @@ export class GameRenderer3D {
     this.scene.add(this.spectralGroup);
     this.reticle = this._makeReticle();
     this.scene.add(this.reticle);
-    this.rocks = createRockInstancer(this.lite ? 40 : 180);
+    this.rocks = createRockInstancer(this.lite ? 30 : 140, this.lite ? 50 : 110);
+    this.rocks.material.onBeforeCompile = (shader) => {
+      shader.uniforms.uCoverage = { value: this.coverageTex };
+      shader.vertexShader = `varying vec3 vWorldPos;\n` + shader.vertexShader.replace(
+        '#include <worldpos_vertex>',
+        `#include <worldpos_vertex>
+         vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+      );
+      shader.fragmentShader = `uniform sampler2D uCoverage; varying vec3 vWorldPos;\n` + shader.fragmentShader.replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+         vec2 buv = vec2(vWorldPos.x + 6.0, vWorldPos.z + 6.0) / 12.0;
+         float onB = step(0.0, buv.x) * step(0.0, buv.y) * step(buv.x, 1.0) * step(buv.y, 1.0);
+         float cov = mix(1.0, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
+         float hiddenAmt = smoothstep(0.52, 0.92, cov);
+         diffuseColor.rgb *= mix(1.0, 0.18, hiddenAmt);
+        `
+      );
+    };
     this.scene.add(this.rocks);
     this.oreMarks = new THREE.Group();
     this.scene.add(this.oreMarks);
 
     this.cloudLayers = [];
-    for (let i = 0; i < 3; i++) {
-      const mat = createCloudMaterial(this.coverageTex, this.noiseTex, i);
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(13.8, 13.8), mat);
+    {
+      const mat = createHazeMaterial(this.coverageTex, this.noiseTex);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(12.0, 12.0), mat);
       mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(0, 1.15 + i * 0.42, 0);
-      mesh.renderOrder = 10 + i;
+      mesh.position.set(0, 0.55, 0);
+      mesh.renderOrder = 10;
       mesh.layers.set(2);
       this.scene.add(mesh);
       this.cloudLayers.push(mesh);
@@ -483,10 +510,10 @@ export class GameRenderer3D {
   }
 
   _lights() {
-    const hemi = new THREE.HemisphereLight(0x9ec4e6, 0x6a3a22, 0.48);
+    const hemi = new THREE.HemisphereLight(0x8eb4d4, 0x5a2e18, 0.28);
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffd4a0, 2.05);
-    sun.position.set(-22, 6.2, -14);
+    const sun = new THREE.DirectionalLight(0xffd4a0, 2.7);
+    sun.position.set(-20, 6.4, -13);
     sun.castShadow = !this.lite;
     sun.shadow.mapSize.set(this.lite ? 512 : 1024, this.lite ? 512 : 1024);
     sun.shadow.camera.near = 2;
@@ -498,8 +525,8 @@ export class GameRenderer3D {
     sun.shadow.bias = -0.0004;
     this.scene.add(sun);
     this.sun = sun;
-    this.sunDefault = 2.05;
-    this.scene.add(new THREE.AmbientLight(0xffc8a0, 0.16));
+    this.sunDefault = 2.7;
+    this.scene.add(new THREE.AmbientLight(0xffc8a0, 0.10));
   }
 
   _sky() {
@@ -521,7 +548,9 @@ export class GameRenderer3D {
           gl_FragColor = vec4(c, 1.0);
         }`
     });
-    this.scene.add(new THREE.Mesh(skyGeo, skyMat));
+    this.skyMesh = new THREE.Mesh(skyGeo, skyMat);
+    this.skyMesh.layers.set(3);
+    this.scene.add(this.skyMesh);
   }
 
   _makeTerrain() {
@@ -529,9 +558,9 @@ export class GameRenderer3D {
     geo.rotateX(-Math.PI / 2);
     this._applyHeights(geo, this.gameState);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0xc56a3d,
-      roughness: 0.93,
-      metalness: 0.04,
+      color: 0xc45e34,
+      roughness: 0.95,
+      metalness: 0.03,
       vertexColors: true
     });
     mat.onBeforeCompile = (shader) => {
@@ -539,6 +568,7 @@ export class GameRenderer3D {
       shader.uniforms.uDustTex = { value: this.maps?.dust || this.splatTex };
       shader.uniforms.uOreTex = { value: this.maps?.ore || this.splatTex };
       shader.uniforms.uCraterTex = { value: this.maps?.crater || this.splatTex };
+      shader.uniforms.uCoverage = { value: this.coverageTex };
       this._terrainShader = shader;
       shader.vertexShader = `
         varying vec3 vWorldPos;
@@ -552,6 +582,7 @@ export class GameRenderer3D {
         uniform sampler2D uDustTex;
         uniform sampler2D uOreTex;
         uniform sampler2D uCraterTex;
+        uniform sampler2D uCoverage;
         varying vec3 vWorldPos;
       ` + shader.fragmentShader.replace(
         '#include <map_fragment>',
@@ -559,13 +590,22 @@ export class GameRenderer3D {
          vec2 buv = vec2(vWorldPos.x + 6.0, vWorldPos.z + 6.0) / 12.0;
          float onB = step(0.0, buv.x) * step(0.0, buv.y) * step(buv.x, 1.0) * step(buv.y, 1.0);
          vec4 sp = texture2D(uSplat, buv);
-         vec2 ruv = vWorldPos.xz * 0.42;
+         vec2 ruv = vWorldPos.xz * 0.72;
          vec3 dustC = texture2D(uDustTex, ruv).rgb;
          vec3 oreC = texture2D(uOreTex, ruv).rgb;
          vec3 crC = texture2D(uCraterTex, ruv).rgb;
          diffuseColor.rgb = mix(diffuseColor.rgb, dustC, sp.r * onB);
          diffuseColor.rgb = mix(diffuseColor.rgb, oreC, sp.g * onB);
          diffuseColor.rgb = mix(diffuseColor.rgb, crC, sp.b * onB);
+         float cov = mix(1.0, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
+         float hiddenAmt = smoothstep(0.52, 0.92, cov);
+         float camAmt = (1.0 - hiddenAmt) * smoothstep(0.06, 0.52, cov);
+         float luma = dot(diffuseColor.rgb, vec3(0.36, 0.28, 0.16));
+         vec3 gray = vec3(luma * 0.78, luma * 0.48, luma * 0.32);
+         vec3 dimmed = mix(diffuseColor.rgb, gray, hiddenAmt * 0.78 + camAmt * 0.32);
+         dimmed *= mix(1.0, 0.20, hiddenAmt);
+         dimmed *= mix(1.0, 0.58, camAmt);
+         diffuseColor.rgb = dimmed;
         `
       );
     };
@@ -636,8 +676,8 @@ export class GameRenderer3D {
       opacity: 0.82,
       depthWrite: false
     });
-    const s = 0.40;
-    const len = 0.15;
+    const s = 0.52;
+    const len = 0.18;
     const corners = [
       [[-s, -s], [-s + len, -s], [-s, -s], [-s, -s + len]],
       [[s, -s], [s - len, -s], [s, -s], [s, -s + len]],
@@ -666,15 +706,16 @@ export class GameRenderer3D {
     );
     ring.rotation.x = -Math.PI / 2;
     g.add(ring);
-    g.layers.set(2);
-    g.traverse(o => o.layers.set(2));
+    g.layers.set(0);
+    g.traverse(o => o.layers.set(0));
     g.visible = false;
     return g;
   }
 
   _initRoverCam() {
-    this.roverCam = new THREE.PerspectiveCamera(58, 4 / 3, 0.08, 32);
+    this.roverCam = new THREE.PerspectiveCamera(60, 4 / 3, 0.05, 36);
     this.roverCam.layers.enable(0);
+    this.roverCam.layers.enable(3);
     this.roverCam.layers.disable(2);
     const host = document.getElementById('rover-cam-canvas');
     this.roverCamCanvas = host || document.createElement('canvas');
@@ -692,7 +733,7 @@ export class GameRenderer3D {
       this.roverCamRenderer.setSize(this.roverCamCanvas.width, this.roverCamCanvas.height, false);
       this.roverCamRenderer.outputColorSpace = THREE.SRGBColorSpace;
       this.roverCamRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-      this.roverCamRenderer.toneMappingExposure = 0.92;
+      this.roverCamRenderer.toneMappingExposure = 1.05;
       this.roverCamRenderer.shadowMap.enabled = false;
     } catch {
       this.roverCamRenderer = null;
@@ -928,7 +969,7 @@ export class GameRenderer3D {
     this.groundTex = new THREE.CanvasTexture(cnv);
     this.groundTex.colorSpace = THREE.SRGBColorSpace;
     this.groundTex.wrapS = this.groundTex.wrapT = THREE.RepeatWrapping;
-    this.groundTex.repeat.set(WORLD / 4, WORLD / 4);
+    this.groundTex.repeat.set(WORLD / 2.2, WORLD / 2.2);
     this.groundTex.anisotropy = 4;
     this.terrain.material.map = this.groundTex;
     this.terrain.material.needsUpdate = true;
@@ -1005,7 +1046,7 @@ export class GameRenderer3D {
       prev.y = e.clientY;
       if (this._pointers.size === 1) {
         this.camSpherical.theta -= dx * 0.0035;
-        this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi + dy * 0.003, 0.14, 0.48);
+        this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi + dy * 0.003, 0.10, 0.38);
         this._clampCam();
       } else if (this._pointers.size === 2) {
         const pts = [...this._pointers.values()];
@@ -1036,9 +1077,9 @@ export class GameRenderer3D {
   }
 
   _clampCam() {
-    this.camSpherical.radius = THREE.MathUtils.clamp(this.camSpherical.radius, 14, 21.5);
-    this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi, 0.14, 0.48);
-    const span = 0.42;
+    this.camSpherical.radius = THREE.MathUtils.clamp(this.camSpherical.radius, 12.2, 18.5);
+    this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi, 0.10, 0.38);
+    const span = 0.36;
     this.camSpherical.theta = THREE.MathUtils.clamp(this.camSpherical.theta, this.camDefault.theta - span, this.camDefault.theta + span);
   }
 
@@ -1152,6 +1193,7 @@ export class GameRenderer3D {
     if (gameState.outcome === 'lost-battery') this.sun.intensity = 0.45;
     else this.sun.intensity = this.sunDefault;
     this._syncSensorOverlays(false);
+    this._writeCoverage();
   }
 
   startAnimation(fromCol, fromRow, toCol, toRow, duration = 120) {
@@ -1337,6 +1379,7 @@ export class GameRenderer3D {
 
   _writeCoverage() {
     const data = this.coverageData;
+    const ahead = parseCraterCell(this.gameState);
     for (let y = 0; y < COV; y++) {
       for (let x = 0; x < COV; x++) {
         // Cloud plane UV: v=0 is south (high row) after X=-90 rotation.
@@ -1347,8 +1390,10 @@ export class GameRenderer3D {
         const fx = col - c0;
         const fy = row - r0;
         const sample = (c, r) => {
-          if (c < 0 || r < 0 || c >= 12 || r >= 12) return 0;
-          return this.cloudDisplay[r][c];
+          if (c < 0 || r < 0 || c >= 12 || r >= 12) return CLOUD_HIDDEN;
+          let v = this.cloudDisplay[r][c];
+          if (ahead && c === ahead.col && r === ahead.row) v = Math.min(v, CLOUD_CAMERA);
+          return v;
         };
         const v = lerp(
           lerp(sample(c0, r0), sample(c0 + 1, r0), fx),
@@ -1357,7 +1402,7 @@ export class GameRenderer3D {
         );
         const edge = Math.abs(sample(c0, r0) - sample(c0 + 1, r0)) + Math.abs(sample(c0, r0) - sample(c0, r0 + 1));
         const n = hash2(x, y, 6.2) - 0.5;
-        const cov = Math.max(0, Math.min(255, (v + n * edge * 0.38) * 255));
+        const cov = Math.max(0, Math.min(255, (v + n * edge * 0.22) * 255));
         const i = (y * COV + x) * 4;
         data[i] = data[i + 1] = data[i + 2] = cov;
         data[i + 3] = 255;
@@ -1372,9 +1417,8 @@ export class GameRenderer3D {
     this._applyCamera();
     this.gridHelper.visible = this.gridForced || this.hovering || this.pausedHint;
     const t = this.reduceMotion ? 0 : now / 1000;
-    this.cloudLayers.forEach((m, i) => {
+    this.cloudLayers.forEach((m) => {
       m.material.uniforms.uTime.value = t;
-      if (!this.reduceMotion) m.position.y = 1.15 + i * 0.42 + Math.sin(t * 0.3 + i) * 0.04;
     });
     if (!this.reduceMotion && !this.lite) {
       const pos = this.dust.geometry.attributes.position;
@@ -1472,21 +1516,31 @@ export class GameRenderer3D {
     const s = this.gameState;
     const onGrid = s && s.row >= 0 && s.row < 12 && s.col >= 0 && s.col < 12;
     this.reticle.visible = !!onGrid;
-    if (!onGrid) return;
+    const tag = document.getElementById('rover-tag');
+    if (!onGrid) {
+      if (tag) tag.hidden = true;
+      return;
+    }
     const p = this.rover.position;
-    this.reticle.position.set(p.x, 0.08, p.z);
-    this.reticle.children.forEach((ch, i) => {
-      if (ch.material && ch.material.opacity !== undefined && i === 4) {
-        ch.material.opacity = 0.45 + Math.sin(performance.now() / 420) * 0.12;
-      }
-    });
+    this.reticle.position.set(p.x, 0.09, p.z);
+    if (tag && this.camera && this.container) {
+      const v = p.clone();
+      v.y += 0.55;
+      v.project(this.camera);
+      const rect = this.container.getBoundingClientRect();
+      const x = (v.x * 0.5 + 0.5) * rect.width;
+      const y = (-v.y * 0.5 + 0.5) * rect.height;
+      tag.hidden = v.z > 1;
+      tag.style.left = `${x}px`;
+      tag.style.top = `${y + 14}px`;
+    }
   }
 
   _updateRoverCam() {
     if (!this.roverCam || !this.rover) return;
     this.rover.updateMatrixWorld(true);
-    const eye = new THREE.Vector3(0, 0.52, 0.08);
-    const ahead = new THREE.Vector3(0, -0.12, -3.1);
+    const eye = new THREE.Vector3(0, 0.36, 0.16);
+    const ahead = new THREE.Vector3(0, 0.08, -4.6);
     eye.applyMatrix4(this.rover.matrixWorld);
     ahead.applyMatrix4(this.rover.matrixWorld);
     this.roverCam.position.copy(eye);
@@ -1500,13 +1554,22 @@ export class GameRenderer3D {
     if (interval && now - (this._lastPip || 0) < interval) return;
     this._lastPip = now;
     const roverWas = this.rover.visible;
+    const landerHalo = this.lander?.getObjectByName('chargeHalo');
+    const haloWas = landerHalo?.visible;
     this.rover.visible = false;
+    const prevFog = this.scene.fog;
+    const prevBg = this.scene.background;
+    this.scene.fog = this.groundFog;
+    this.scene.background = this.pipBg;
     try {
       this.roverCamRenderer.render(this.scene, this.roverCam);
     } catch {
       // keep orbital feed even if the PiP context drops
     }
+    this.scene.fog = prevFog;
+    this.scene.background = prevBg;
     this.rover.visible = roverWas;
+    if (landerHalo) landerHalo.visible = haloWas;
   }
 
   render() {
