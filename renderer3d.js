@@ -16,7 +16,7 @@ const LANDER_COL = 5;
 const LANDER_ROW = 12;
 const WORLD = 40;
 const COV = 64;
-const BOARD_SPAN = 12;
+const BOARD_SPAN = 13.4;
 
 const FACE_Y = { north: 0, east: Math.PI / 2, south: Math.PI, west: -Math.PI / 2 };
 
@@ -442,6 +442,7 @@ export class GameRenderer3D {
     this._terrainShaders = [];
     this.farTerrain = this._makeTerrain(true);
     this.terrain = this._makeTerrain(false);
+    this.farTerrain.layers.set(3);
     this.scene.add(this.farTerrain);
     this.scene.add(this.terrain);
     this.gridHelper = this._makeGrid();
@@ -459,7 +460,7 @@ export class GameRenderer3D {
     this.scene.add(this.spectralGroup);
     this.reticle = this._makeReticle();
     this.scene.add(this.reticle);
-    this.rocks = createRockInstancer(this.lite ? 70 : 140, this.lite ? 160 : 340);
+    this.rocks = createRockInstancer(this.lite ? 36 : 140, this.lite ? 90 : 340);
     this.rocks.material.onBeforeCompile = (shader) => {
       shader.uniforms.uCoverage = { value: this.coverageTex };
       shader.uniforms.uCoverAmt = { value: 1.0 };
@@ -634,27 +635,29 @@ export class GameRenderer3D {
          vec2 buv = cell / 12.0;
          float onB = step(0.0, buv.x) * step(0.0, buv.y) * step(buv.x, 1.0) * step(buv.y, 1.0);
          vec2 tuv = fract(cell);
-         float hsel = fract(sin(dot(floor(cell), vec2(127.1, 311.7))) * 43758.5453);
+         vec3 mapped = diffuseColor.rgb;
          vec3 gA = texture2D(uG1, tuv).rgb;
-         vec3 gB = texture2D(uG2, tuv).rgb;
-         vec3 gC = texture2D(uG3, tuv).rgb;
-         vec3 ground = hsel < 0.34 ? gA : (hsel < 0.67 ? gB : gC);
-         vec4 sp = texture2D(uSplat, clamp(buv, 0.0, 1.0));
-         ground = mix(ground, texture2D(uDustTex, tuv).rgb, sp.r * onB);
-         ground = mix(ground, texture2D(uOreTex, tuv).rgb, sp.g * onB);
-         ground = mix(ground, texture2D(uCraterTex, tuv).rgb, sp.b * onB);
+         if (length(gA) > 0.04) {
+           float hsel = fract(sin(dot(floor(cell), vec2(127.1, 311.7))) * 43758.5453);
+           vec3 ground = hsel < 0.34 ? gA : (hsel < 0.67 ? texture2D(uG2, tuv).rgb : texture2D(uG3, tuv).rgb);
+           vec4 sp = texture2D(uSplat, clamp(buv, 0.0, 1.0));
+           ground = mix(ground, texture2D(uDustTex, tuv).rgb, sp.r * onB);
+           ground = mix(ground, texture2D(uOreTex, tuv).rgb, sp.g * onB);
+           ground = mix(ground, texture2D(uCraterTex, tuv).rgb, sp.b * onB);
+           mapped = ground;
+         }
          float bowl = smoothstep(0.04, -0.55, vWorldPos.y);
-         ground *= mix(1.0, 0.40, bowl);
+         mapped *= mix(1.0, 0.42, bowl);
          float cov = mix(0.82, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
          float hiddenAmt = smoothstep(0.52, 0.92, cov) * uCoverAmt;
          float camAmt = (1.0 - hiddenAmt) * smoothstep(0.06, 0.52, cov) * uCoverAmt;
          float drivenAmt = (1.0 - hiddenAmt) * (1.0 - camAmt) * onB * uCoverAmt;
-         float luma = dot(ground, vec3(0.32, 0.50, 0.18));
-         vec3 gray = vec3(luma * 0.48, luma * 0.34, luma * 0.26);
-         vec3 dimmed = mix(ground, gray, hiddenAmt * 0.78 + camAmt * 0.32);
-         dimmed *= mix(1.0, 0.58, hiddenAmt);
-         dimmed *= mix(1.0, 0.84, camAmt);
-         dimmed *= mix(1.0, 1.38, drivenAmt);
+         float luma = dot(mapped, vec3(0.32, 0.50, 0.18));
+         vec3 gray = vec3(luma * 0.55, luma * 0.40, luma * 0.30);
+         vec3 dimmed = mix(mapped, gray, hiddenAmt * 0.62 + camAmt * 0.22);
+         dimmed *= mix(1.0, 0.62, hiddenAmt);
+         dimmed *= mix(1.0, 0.86, camAmt);
+         dimmed *= mix(1.0, 1.32, drivenAmt);
          diffuseColor.rgb = dimmed;
         `
       ).replace(
@@ -673,8 +676,8 @@ export class GameRenderer3D {
   _makeTerrain(isFar) {
     const span = isFar ? WORLD : BOARD_SPAN;
     const segs = isFar
-      ? (this.lite ? 32 : 48)
-      : (this.lite ? 52 : 104);
+      ? (this.lite ? 16 : 48)
+      : (this.lite ? 40 : 96);
     const geo = new THREE.PlaneGeometry(span, span, segs, segs);
     geo.rotateX(-Math.PI / 2);
     this._applyHeights(geo, this.gameState);
@@ -1054,7 +1057,7 @@ export class GameRenderer3D {
     }
     const imgs = [maps.g1, maps.g2, maps.g3].map(t => t?.image).filter(Boolean);
     if (imgs.length) {
-      const cell = 128;
+      const cell = this.lite ? 64 : 128;
       const cnv = document.createElement('canvas');
       cnv.width = cnv.height = cell * 12;
       const ctx = cnv.getContext('2d');
@@ -1746,9 +1749,13 @@ export class GameRenderer3D {
 
   _renderRoverCam(now) {
     if (this.disposed || !this.roverCam) return;
-    const interval = this.lite ? 140 : 0;
-    if (interval && now - (this._lastPip || 0) < interval) return;
-    this._lastPip = now;
+    if (this.lite) {
+      const interval = 200;
+      if (now - (this._lastPip || 0) < interval) return;
+      this._lastPip = now;
+      if (this.roverCamCtx) this._paintRoverCam2D();
+      return;
+    }
     const roverWas = this.rover.visible;
     const landerWas = this.lander?.visible;
     const landerHalo = this.lander?.getObjectByName('chargeHalo');
