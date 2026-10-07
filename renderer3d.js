@@ -415,7 +415,7 @@ export class GameRenderer3D {
     this.renderer.setPixelRatio(this.lite ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.95;
+    this.renderer.toneMappingExposure = 1.55;
     this.renderer.setClearColor(0x2a1a10, 1);
     this.renderer.shadowMap.enabled = !this.lite;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -654,17 +654,13 @@ export class GameRenderer3D {
          float off = max(abs(vWorldPos.x), abs(vWorldPos.z));
          float fade = smoothstep(6.05, 9.2, off);
          float bowl = smoothstep(0.02, -0.70, vWorldPos.y);
-         diffuseColor.rgb *= 1.12 * mix(1.0, 0.36, bowl);
+         diffuseColor.rgb *= mix(1.0, 0.42, bowl);
          float cov = mix(1.0, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
          float hiddenAmt = smoothstep(0.55, 0.92, cov) * uCoverAmt;
          float camAmt = (1.0 - hiddenAmt) * smoothstep(0.08, 0.54, cov) * uCoverAmt;
-         float drivenAmt = (1.0 - hiddenAmt) * (1.0 - camAmt) * onB * uCoverAmt;
          float luma = dot(diffuseColor.rgb, vec3(0.28, 0.48, 0.22));
-         vec3 gray = vec3(luma * 0.70, luma * 0.52, luma * 0.38);
-         vec3 dimmed = mix(diffuseColor.rgb, gray, hiddenAmt * 0.40 + camAmt * 0.14);
-         dimmed *= mix(1.0, 0.38, hiddenAmt);
-         dimmed *= mix(1.0, 0.70, camAmt);
-         dimmed *= mix(1.0, 1.12, drivenAmt);
+         vec3 gray = vec3(luma * 0.72, luma * 0.54, luma * 0.40);
+         vec3 dimmed = mix(diffuseColor.rgb, gray, hiddenAmt * 0.22 + camAmt * 0.08);
          dimmed *= mix(1.0, 0.16, fade * uClipBoard);
          diffuseColor.rgb = dimmed;
         `
@@ -677,7 +673,7 @@ export class GameRenderer3D {
     const span = isFar ? WORLD : BOARD_SPAN;
     const segs = isFar
       ? (this.lite ? 16 : 48)
-      : (this.lite ? 40 : 96);
+      : (this.lite ? 48 : 96);
     const geo = new THREE.PlaneGeometry(span, span, segs, segs);
     geo.rotateX(-Math.PI / 2);
     this._applyHeights(geo, this.gameState);
@@ -1124,44 +1120,50 @@ export class GameRenderer3D {
       const s = spots[i];
       const px = ((s.x + BOARD_HALF) / BOARD_SPAN) * size;
       const py = ((s.z + BOARD_HALF) / BOARD_SPAN) * size;
-      const rr = (0.01 + s.scale * 0.016) * size;
-      const g = ctx.createRadialGradient(px + rr * 0.7, py + rr * 0.5, 0, px + rr * 0.85, py + rr * 0.6, rr * 2.1);
-      g.addColorStop(0, 'rgba(16, 6, 3, 0.5)');
+      const rr = (0.006 + s.scale * 0.008) * size;
+      const g = ctx.createRadialGradient(px + rr * 0.9, py + rr * 0.65, 0, px + rr * 1.1, py + rr * 0.8, rr * 1.6);
+      g.addColorStop(0, 'rgba(18, 7, 3, 0.38)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g;
-      ctx.fillRect(px - rr, py - rr, rr * 4.2, rr * 4.2);
+      ctx.fillRect(px - rr, py - rr, rr * 3.2, rr * 3.2);
     }
     const imgd = ctx.getImageData(0, 0, size, size);
     const pix = imgd.data;
     const e = BOARD_SPAN / size;
+    const step = this.lite ? 2 : 1;
     const sx = -0.741;
     const sy = 0.426;
     const sz = -0.519;
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
+    for (let y = 0; y < size; y += step) {
+      for (let x = 0; x < size; x += step) {
         const wx = (x / size) * BOARD_SPAN - BOARD_HALF;
         const wz = (y / size) * BOARD_SPAN - BOARD_HALF;
         const hL = heightAt(wx - e, wz, null);
         const hR = heightAt(wx + e, wz, null);
         const hD = heightAt(wx, wz - e, null);
         const hU = heightAt(wx, wz + e, null);
-        let nx = (hL - hR) * 4.2;
-        let nz = (hD - hU) * 4.2;
+        let nx = (hL - hR) * 1.8;
+        let nz = (hD - hU) * 1.8;
         let ny = 1;
         const inv = 1 / Math.hypot(nx, ny, nz);
         nx *= inv;
         ny *= inv;
         nz *= inv;
         const ndl = nx * sx + ny * sy + nz * sz;
-        const t = Math.max(0, Math.min(1, (ndl + 0.12) / 0.8));
-        const lit = 0.62 + 0.72 * t * t * (3 - 2 * t);
+        const t = Math.max(0, Math.min(1, (ndl + 0.05) / 0.7));
+        const lit = 0.90 + 0.22 * t * t * (3 - 2 * t);
         const off = Math.max(Math.abs(wx), Math.abs(wz));
-        const fade = Math.max(0, Math.min(1, (off - 6.3) / 3.0));
-        const mul = lit * (1 - fade * 0.88);
-        const i = (y * size + x) * 4;
-        pix[i] = Math.min(255, pix[i] * mul * 1.18);
-        pix[i + 1] = Math.min(255, pix[i + 1] * mul * 1.08);
-        pix[i + 2] = Math.min(255, pix[i + 2] * mul * 0.95);
+        const fade = Math.max(0, Math.min(1, (off - 6.4) / 2.8));
+        const mul = lit * (1 - fade * 0.9);
+        for (let dy = 0; dy < step; dy++) {
+          for (let dx = 0; dx < step; dx++) {
+            if (x + dx >= size || y + dy >= size) continue;
+            const i = ((y + dy) * size + (x + dx)) * 4;
+            pix[i] = Math.min(255, pix[i] * mul * 1.12);
+            pix[i + 1] = Math.min(255, pix[i + 1] * mul * 1.04);
+            pix[i + 2] = Math.min(255, pix[i + 2] * mul * 0.96);
+          }
+        }
       }
     }
     ctx.putImageData(imgd, 0, 0);
@@ -1212,17 +1214,27 @@ export class GameRenderer3D {
     ctx.drawImage(this._mosaicBase, 0, 0);
     const unit = img.width / BOARD_SPAN;
     const cell = unit;
-    const feather = cell * 0.22;
+    ctx.save();
+    ctx.filter = `blur(${Math.max(2, Math.round(cell * 0.12))}px)`;
     for (let row = 0; row < 12; row++) {
       for (let col = 0; col < 12; col++) {
         const driven = !!state.revealed?.[row]?.[col];
         const cam = !driven && !!state.cameraSeen?.[row]?.[col];
         const x = (col + 2) * unit;
         const y = (row + 2) * unit;
-        if (driven || cam) {
-          ctx.fillStyle = driven ? 'rgba(255, 200, 132, 0.26)' : 'rgba(210, 150, 96, 0.12)';
-          ctx.fillRect(x, y, cell, cell);
-        }
+        if (!driven && !cam) ctx.fillStyle = 'rgba(28, 12, 6, 0.58)';
+        else if (cam) ctx.fillStyle = 'rgba(28, 12, 6, 0.28)';
+        else ctx.fillStyle = 'rgba(255, 204, 140, 0.10)';
+        ctx.fillRect(x, y, cell, cell);
+      }
+    }
+    ctx.restore();
+    for (let row = 0; row < 12; row++) {
+      for (let col = 0; col < 12; col++) {
+        const driven = !!state.revealed?.[row]?.[col];
+        const cam = !driven && !!state.cameraSeen?.[row]?.[col];
+        const x = (col + 2) * unit;
+        const y = (row + 2) * unit;
         let overlay = null;
         if ((driven || cam) && state.terrain[row][col] === 'dust') overlay = this.maps.dust?.image;
         if ((driven || cam) && state.terrain[row][col] === 'ore' && !state.drilled?.[row]?.[col]) overlay = this.maps.ore?.image;
