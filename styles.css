@@ -615,12 +615,14 @@ button:disabled {
   align-items: center;
   justify-content: center;
   position: relative;
+  overflow: hidden;
 }
 
 .map-grid {
   position: relative;
   width: 100%;
   height: 100%;
+  background: #2a1a12;
 }
 
 .orbital-grain,
@@ -633,30 +635,43 @@ button:disabled {
 }
 
 .orbital-grain {
-  opacity: 0.10;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.85'/%3E%3C/svg%3E");
-  background-size: 180px 180px;
+  opacity: 0.012;
+  mix-blend-mode: normal;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  background-size: 220px 220px;
 }
 
 .map-grid.optical-on .orbital-grain {
-  opacity: 0.18;
+  opacity: 0.016;
 }
 
 .orbital-scanlines {
-  opacity: 0.12;
-  mix-blend-mode: multiply;
+  opacity: 0.01;
+  mix-blend-mode: normal;
   background: repeating-linear-gradient(
     to bottom,
-    rgba(20, 10, 6, 0.16) 0px,
-    rgba(20, 10, 6, 0.16) 1px,
+    rgba(20, 10, 6, 0.10) 0px,
+    rgba(20, 10, 6, 0.10) 1px,
     transparent 1px,
-    transparent 3px
+    transparent 4px
   );
 }
 
 .orbital-vignette {
-  background: radial-gradient(ellipse at center, transparent 58%, rgba(12, 6, 4, 0.42) 100%);
+  background: radial-gradient(ellipse at center, transparent 80%, rgba(12, 6, 4, 0.10) 100%);
+}
+
+.rover-tag {
+  position: absolute;
+  z-index: 8;
+  transform: translate(-50%, 0);
+  pointer-events: none;
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  color: #f0ebe4;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
 }
 
 .instrument-stack {
@@ -724,7 +739,7 @@ button:disabled {
   bottom: 12px;
   width: 220px;
   z-index: 12;
-  background: rgba(8, 10, 12, 0.82);
+  background: transparent;
   border: 1px solid rgba(220, 230, 230, 0.16);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   cursor: grab;
@@ -744,13 +759,14 @@ button:disabled {
   letter-spacing: 0.12em;
   color: #e8e0d4;
   padding: 5px 7px 3px;
+  background: rgba(8, 10, 12, 0.82);
 }
 
 #rover-cam-canvas {
   display: block;
   width: 100%;
   height: 154px;
-  background: #2a1810;
+  background: transparent;
 }
 
 .rover-cam-meta {
@@ -760,6 +776,7 @@ button:disabled {
   font-size: 0.55rem;
   letter-spacing: 0.06em;
   color: #8a8074;
+  background: rgba(8, 10, 12, 0.82);
 }
 
 .game-canvas {
@@ -775,7 +792,7 @@ button:disabled {
 .map-grid[data-renderer="3d"] {
   position: relative;
   overflow: hidden;
-  background: transparent;
+  background: #2a1a12;
 }
 
 .map-grid[data-renderer="3d"] .game-canvas {

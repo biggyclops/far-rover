@@ -153,11 +153,11 @@ function createCloudTexture(seed) {
       let n = n1 * 0.5 + n2 * 0.32 + n3 * 0.18;
       n = Math.pow(Math.max(0, n), 1.65);
       const i = (y * size + x) * 4;
-      const shade = 168 + n * 72;
-      data[i] = shade;
-      data[i + 1] = shade + 3;
-      data[i + 2] = Math.min(255, shade + 12);
-      data[i + 3] = Math.min(255, 70 + n * 185);
+      const shade = 22 + n * 18;
+      data[i] = shade + 6;
+      data[i + 1] = shade;
+      data[i + 2] = Math.max(0, shade - 4);
+      data[i + 3] = Math.min(255, 36 + n * 70);
     }
   }
   sctx.putImageData(img, 0, 0);
@@ -736,6 +736,30 @@ export class GameRenderer {
     // Always draw base terrain texture (ground) first - even for hidden tiles
     const baseTile = getTile('ground', variant);
     this.drawTexturedQuad(ctx, baseTile, quad);
+
+    if (!isRevealed && !isCameraSeen) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(quad[0].x, quad[0].y);
+      ctx.lineTo(quad[1].x, quad[1].y);
+      ctx.lineTo(quad[2].x, quad[2].y);
+      ctx.lineTo(quad[3].x, quad[3].y);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(10, 6, 4, 0.48)';
+      ctx.fill();
+      ctx.restore();
+    } else if (isCameraSeen) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(quad[0].x, quad[0].y);
+      ctx.lineTo(quad[1].x, quad[1].y);
+      ctx.lineTo(quad[2].x, quad[2].y);
+      ctx.lineTo(quad[3].x, quad[3].y);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(28, 16, 10, 0.22)';
+      ctx.fill();
+      ctx.restore();
+    }
     
     // Draw special terrain on top if revealed OR camera-seen (seen but unscanned)
     if (isRevealed || isCameraSeen) {
@@ -963,7 +987,7 @@ export class GameRenderer {
     const layer = this.cloudLayerCtx;
     layer.clearRect(0, 0, w, h);
     layer.globalCompositeOperation = 'source-over';
-    layer.fillStyle = 'rgb(170, 178, 190)';
+    layer.fillStyle = 'rgb(22, 12, 8)';
     layer.fillRect(0, 0, w, h);
 
     const now = performance.now();
@@ -971,9 +995,9 @@ export class GameRenderer {
     const scale = Math.max(w, h) / CLOUD_TEX_SIZE * 1.45;
 
     layer.globalCompositeOperation = 'source-over';
-    layer.globalAlpha = 0.72;
+    layer.globalAlpha = 0.28;
     this.tileCloud(layer, texA, t * 16, t * 7, w, h, scale);
-    layer.globalAlpha = 0.48;
+    layer.globalAlpha = 0.16;
     this.tileCloud(layer, texB, -t * 10, t * 13, w, h, scale * 0.78);
     layer.globalAlpha = 1;
     layer.globalCompositeOperation = 'destination-in';
@@ -1199,15 +1223,40 @@ export class GameRenderer {
     const ahead = this._aheadCell();
     const craterAhead = !!(ahead && ahead.col === fc && ahead.row === fr);
 
-    ctx.fillStyle = '#c48a5a';
-    ctx.fillRect(0, 0, w, h);
-    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.46);
-    sky.addColorStop(0, '#e8c7a0');
-    sky.addColorStop(1, '#c07040');
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, w, h * 0.46);
-    ctx.fillStyle = '#b45a32';
-    ctx.fillRect(0, h * 0.46, w, h * 0.54);
+    const horizonImg = getBackgroundImage();
+    if (horizonImg) {
+      ctx.drawImage(horizonImg, 0, 0, w, h);
+    } else {
+      ctx.fillStyle = '#d4a078';
+      ctx.fillRect(0, 0, w, h);
+      const sky = ctx.createLinearGradient(0, 0, 0, h * 0.38);
+      sky.addColorStop(0, '#f0d0b0');
+      sky.addColorStop(0.55, '#d49260');
+      sky.addColorStop(1, '#c07848');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, w, h * 0.38);
+      const ground = ctx.createLinearGradient(0, h * 0.38, 0, h);
+      ground.addColorStop(0, '#7a4028');
+      ground.addColorStop(0.45, '#b06038');
+      ground.addColorStop(1, '#c4683a');
+      ctx.fillStyle = ground;
+      ctx.fillRect(0, h * 0.38, w, h * 0.62);
+      const gnd = getTile('ground', 1);
+      if (gnd) {
+        ctx.globalAlpha = 0.9;
+        ctx.drawImage(gnd, 0, h * 0.38, w, h * 0.62);
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.fillStyle = 'rgba(40, 18, 10, 0.28)';
+    for (let i = 0; i < 14; i++) {
+      const rx = (i * 47 + 13) % w;
+      const ry = h * 0.46 + (i * 31) % (h * 0.48);
+      const rw = 4 + (i % 5) * 2.5;
+      ctx.beginPath();
+      ctx.ellipse(rx, ry, rw, rw * 0.42, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     const drawBillboard = (img, x, y, tw, th) => {
       if (!img) return;
@@ -1218,14 +1267,19 @@ export class GameRenderer {
       if ((known || craterAhead) && terrain === 'crater') tile = getTile('crater', 1);
       else if (known && terrain === 'dust') tile = getTile('dust', 1);
       else if (known && terrain === 'ore') tile = getTile('ore', 1);
-      drawBillboard(tile, w * 0.12, h * 0.42, w * 0.76, h * 0.5);
+      drawBillboard(tile, w * 0.08, h * 0.36, w * 0.84, h * 0.56);
     }
 
     if (craterAhead || (known && terrain === 'crater')) {
-      ctx.fillStyle = 'rgba(30, 12, 8, 0.7)';
+      ctx.fillStyle = 'rgba(22, 8, 4, 0.72)';
       ctx.beginPath();
-      ctx.ellipse(w * 0.5, h * 0.68, w * 0.22, h * 0.1, 0, 0, Math.PI * 2);
+      ctx.ellipse(w * 0.5, h * 0.68, w * 0.30, h * 0.14, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.strokeStyle = this.sensorLayers.lidar ? '#4be4ff' : 'rgba(180, 80, 40, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(w * 0.5, h * 0.68, w * 0.30, h * 0.14, 0, 0, Math.PI * 2);
+      ctx.stroke();
     }
     if (this.sensorLayers.thermal && known && terrain === 'dust') {
       ctx.fillStyle = 'rgba(255, 90, 30, 0.28)';
@@ -1236,16 +1290,13 @@ export class GameRenderer {
       ctx.fillRect(w * 0.3, h * 0.55, w * 0.4, h * 0.2);
     }
 
-    ctx.strokeStyle = 'rgba(232, 228, 220, 0.35)';
+    ctx.strokeStyle = 'rgba(232, 228, 220, 0.22)';
     ctx.beginPath();
-    ctx.moveTo(w * 0.5, h * 0.18);
-    ctx.lineTo(w * 0.5, h * 0.82);
-    ctx.moveTo(w * 0.22, h * 0.5);
-    ctx.lineTo(w * 0.78, h * 0.5);
+    ctx.moveTo(w * 0.5, h * 0.22);
+    ctx.lineTo(w * 0.5, h * 0.78);
+    ctx.moveTo(w * 0.24, h * 0.52);
+    ctx.lineTo(w * 0.76, h * 0.52);
     ctx.stroke();
-
-    ctx.fillStyle = 'rgba(20, 10, 6, 0.12)';
-    for (let y = 0; y < h; y += 3) ctx.fillRect(0, y, w, 1);
   }
   
   // Get cell from click position
