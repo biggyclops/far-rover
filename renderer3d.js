@@ -1127,46 +1127,12 @@ export class GameRenderer3D {
       ctx.fillStyle = g;
       ctx.fillRect(px - rr, py - rr, rr * 3.2, rr * 3.2);
     }
-    const imgd = ctx.getImageData(0, 0, size, size);
-    const pix = imgd.data;
-    const e = BOARD_SPAN / size;
-    const step = this.lite ? 2 : 1;
-    const sx = -0.741;
-    const sy = 0.426;
-    const sz = -0.519;
-    for (let y = 0; y < size; y += step) {
-      for (let x = 0; x < size; x += step) {
-        const wx = (x / size) * BOARD_SPAN - BOARD_HALF;
-        const wz = (y / size) * BOARD_SPAN - BOARD_HALF;
-        const hL = heightAt(wx - e, wz, null);
-        const hR = heightAt(wx + e, wz, null);
-        const hD = heightAt(wx, wz - e, null);
-        const hU = heightAt(wx, wz + e, null);
-        let nx = (hL - hR) * 1.8;
-        let nz = (hD - hU) * 1.8;
-        let ny = 1;
-        const inv = 1 / Math.hypot(nx, ny, nz);
-        nx *= inv;
-        ny *= inv;
-        nz *= inv;
-        const ndl = nx * sx + ny * sy + nz * sz;
-        const t = Math.max(0, Math.min(1, (ndl + 0.05) / 0.7));
-        const lit = 0.90 + 0.22 * t * t * (3 - 2 * t);
-        const off = Math.max(Math.abs(wx), Math.abs(wz));
-        const fade = Math.max(0, Math.min(1, (off - 6.4) / 2.8));
-        const mul = lit * (1 - fade * 0.9);
-        for (let dy = 0; dy < step; dy++) {
-          for (let dx = 0; dx < step; dx++) {
-            if (x + dx >= size || y + dy >= size) continue;
-            const i = ((y + dy) * size + (x + dx)) * 4;
-            pix[i] = Math.min(255, pix[i] * mul * 1.12);
-            pix[i + 1] = Math.min(255, pix[i + 1] * mul * 1.04);
-            pix[i + 2] = Math.min(255, pix[i + 2] * mul * 0.96);
-          }
-        }
-      }
-    }
-    ctx.putImageData(imgd, 0, 0);
+    const g = ctx.createRadialGradient(size / 2, size / 2, size * 0.40, size / 2, size / 2, size * 0.52);
+    g.addColorStop(0, 'rgba(8, 4, 2, 0)');
+    g.addColorStop(0.55, 'rgba(8, 4, 2, 0.08)');
+    g.addColorStop(1, 'rgba(8, 4, 2, 0.92)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
     this._mosaicBase = document.createElement('canvas');
     this._mosaicBase.width = this._mosaicBase.height = size;
     this._mosaicBase.getContext('2d').drawImage(cnv, 0, 0);
@@ -1214,21 +1180,21 @@ export class GameRenderer3D {
     ctx.drawImage(this._mosaicBase, 0, 0);
     const unit = img.width / BOARD_SPAN;
     const cell = unit;
-    ctx.save();
-    ctx.filter = `blur(${Math.max(2, Math.round(cell * 0.12))}px)`;
+    ctx.fillStyle = 'rgba(26, 11, 6, 0.58)';
+    ctx.fillRect(0, 0, img.width, img.height);
     for (let row = 0; row < 12; row++) {
       for (let col = 0; col < 12; col++) {
         const driven = !!state.revealed?.[row]?.[col];
         const cam = !driven && !!state.cameraSeen?.[row]?.[col];
         const x = (col + 2) * unit;
         const y = (row + 2) * unit;
-        if (!driven && !cam) ctx.fillStyle = 'rgba(28, 12, 6, 0.58)';
-        else if (cam) ctx.fillStyle = 'rgba(28, 12, 6, 0.28)';
-        else ctx.fillStyle = 'rgba(255, 204, 140, 0.10)';
-        ctx.fillRect(x, y, cell, cell);
+        if (driven || cam) {
+          ctx.drawImage(this._mosaicBase, x, y, cell, cell, x, y, cell, cell);
+          ctx.fillStyle = cam ? 'rgba(26, 11, 6, 0.28)' : 'rgba(255, 206, 142, 0.08)';
+          ctx.fillRect(x, y, cell, cell);
+        }
       }
     }
-    ctx.restore();
     for (let row = 0; row < 12; row++) {
       for (let col = 0; col < 12; col++) {
         const driven = !!state.revealed?.[row]?.[col];
