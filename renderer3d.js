@@ -16,7 +16,7 @@ const LANDER_COL = 5;
 const LANDER_ROW = 12;
 const WORLD = 40;
 const COV = 64;
-const BOARD_SPAN = 13;
+const BOARD_SPAN = 12;
 
 const FACE_Y = { north: 0, east: Math.PI / 2, south: Math.PI, west: -Math.PI / 2 };
 
@@ -629,7 +629,7 @@ export class GameRenderer3D {
       ` + shader.fragmentShader.replace(
         '#include <map_fragment>',
         `#include <map_fragment>
-         if (uClipBoard > 0.5 && abs(vWorldPos.x) < 6.62 && abs(vWorldPos.z) < 6.62) discard;
+         if (uClipBoard > 0.5 && abs(vWorldPos.x) < 6.08 && abs(vWorldPos.z) < 6.08) discard;
          vec2 cell = vec2(vWorldPos.x + 6.0, vWorldPos.z + 6.0);
          vec2 buv = cell / 12.0;
          float onB = step(0.0, buv.x) * step(0.0, buv.y) * step(buv.x, 1.0) * step(buv.y, 1.0);
@@ -652,9 +652,9 @@ export class GameRenderer3D {
          float luma = dot(ground, vec3(0.32, 0.50, 0.18));
          vec3 gray = vec3(luma * 0.48, luma * 0.34, luma * 0.26);
          vec3 dimmed = mix(ground, gray, hiddenAmt * 0.78 + camAmt * 0.32);
-         dimmed *= mix(1.0, 0.50, hiddenAmt);
-         dimmed *= mix(1.0, 0.80, camAmt);
-         dimmed *= mix(1.0, 1.22, drivenAmt);
+         dimmed *= mix(1.0, 0.58, hiddenAmt);
+         dimmed *= mix(1.0, 0.84, camAmt);
+         dimmed *= mix(1.0, 1.38, drivenAmt);
          diffuseColor.rgb = dimmed;
         `
       ).replace(
@@ -663,7 +663,7 @@ export class GameRenderer3D {
          vec3 sunL = normalize(vec3(-0.47, 0.79, -0.39));
          float ndl = clamp(dot(normal, sunL), 0.0, 1.0);
          float shade = pow(ndl, 1.35);
-         diffuseColor.rgb *= mix(vec3(0.32, 0.20, 0.14), vec3(1.20, 1.07, 0.90), shade);
+         diffuseColor.rgb *= mix(vec3(0.42, 0.28, 0.18), vec3(1.16, 1.05, 0.92), shade);
         `
       );
     };
@@ -678,6 +678,7 @@ export class GameRenderer3D {
     const geo = new THREE.PlaneGeometry(span, span, segs, segs);
     geo.rotateX(-Math.PI / 2);
     this._applyHeights(geo, this.gameState);
+    if (!isFar) this._applyBoardUV(geo);
     const mesh = new THREE.Mesh(geo, this._terrainMaterial(!!isFar));
     mesh.receiveShadow = true;
     mesh.castShadow = false;
@@ -702,6 +703,15 @@ export class GameRenderer3D {
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     pos.needsUpdate = true;
     geo.computeVertexNormals();
+  }
+
+  _applyBoardUV(geo) {
+    const pos = geo.attributes.position;
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < pos.count; i++) {
+      uv.setXY(i, (pos.getX(i) + 6) / 12, 1 - (pos.getZ(i) + 6) / 12);
+    }
+    uv.needsUpdate = true;
   }
 
   _seatRocks(state) {
@@ -1022,19 +1032,53 @@ export class GameRenderer3D {
     if (this.disposed) return;
     this.maps = { g1, g2, g3, dust, ore, crater, horizon };
     this._updateSplat();
-    const fallback = this.noiseTex;
-    for (const shader of this._terrainShaders) {
-      shader.uniforms.uG1.value = g1 || fallback;
-      shader.uniforms.uG2.value = g2 || fallback;
-      shader.uniforms.uG3.value = g3 || fallback;
-      shader.uniforms.uDustTex.value = dust || fallback;
-      shader.uniforms.uOreTex.value = ore || fallback;
-      shader.uniforms.uCraterTex.value = crater || fallback;
-    }
+    this._bindGroundMaps();
     if (horizon && this.horizonMesh) {
       this.horizonMesh.material.map = horizon;
       this.horizonMesh.material.color.setHex(0xffffff);
       this.horizonMesh.material.needsUpdate = true;
+    }
+  }
+
+  _bindGroundMaps() {
+    const maps = this.maps;
+    if (!maps?.g1) return;
+    const fallback = this.noiseTex;
+    for (const shader of this._terrainShaders) {
+      shader.uniforms.uG1.value = maps.g1 || fallback;
+      shader.uniforms.uG2.value = maps.g2 || fallback;
+      shader.uniforms.uG3.value = maps.g3 || fallback;
+      shader.uniforms.uDustTex.value = maps.dust || fallback;
+      shader.uniforms.uOreTex.value = maps.ore || fallback;
+      shader.uniforms.uCraterTex.value = maps.crater || fallback;
+    }
+    const imgs = [maps.g1, maps.g2, maps.g3].map(t => t?.image).filter(Boolean);
+    if (imgs.length) {
+      const cell = 128;
+      const cnv = document.createElement('canvas');
+      cnv.width = cnv.height = cell * 12;
+      const ctx = cnv.getContext('2d');
+      for (let r = 0; r < 12; r++) {
+        for (let c = 0; c < 12; c++) {
+          ctx.drawImage(imgs[(c + r * 2) % imgs.length], c * cell, r * cell, cell, cell);
+        }
+      }
+      if (this.groundTex) this.groundTex.dispose();
+      this.groundTex = new THREE.CanvasTexture(cnv);
+      this.groundTex.colorSpace = THREE.SRGBColorSpace;
+      this.groundTex.wrapS = this.groundTex.wrapT = THREE.ClampToEdgeWrapping;
+      this.groundTex.flipY = true;
+      this.groundTex.needsUpdate = true;
+      this.terrain.material.map = this.groundTex;
+      this.terrain.material.color.setHex(0xffffff);
+      this.terrain.material.needsUpdate = true;
+    }
+    if (maps.g1) {
+      maps.g1.wrapS = maps.g1.wrapT = THREE.RepeatWrapping;
+      maps.g1.repeat.set(14, 14);
+      this.farTerrain.material.map = maps.g1;
+      this.farTerrain.material.color.setHex(0xffffff);
+      this.farTerrain.material.needsUpdate = true;
     }
   }
 
@@ -1057,7 +1101,31 @@ export class GameRenderer3D {
       }
     }
     this.splatTex.needsUpdate = true;
+    this._paintKnownTiles();
     this._refreshOreMarks();
+  }
+
+  _paintKnownTiles() {
+    const state = this.gameState;
+    const tex = this.groundTex;
+    const img = tex?.image;
+    if (!state || !img?.getContext || !this.maps) return;
+    const ctx = img.getContext('2d');
+    const cell = img.width / 12;
+    const ground = [this.maps.g1, this.maps.g2, this.maps.g3].map(t => t?.image).filter(Boolean);
+    for (let row = 0; row < 12; row++) {
+      for (let col = 0; col < 12; col++) {
+        const known = !!(state.revealed?.[row]?.[col] || state.cameraSeen?.[row]?.[col]);
+        const src = ground[(col + row * 2) % Math.max(1, ground.length)];
+        if (src) ctx.drawImage(src, col * cell, row * cell, cell, cell);
+        let overlay = null;
+        if (known && state.terrain[row][col] === 'dust') overlay = this.maps.dust?.image;
+        if (known && state.terrain[row][col] === 'ore' && !state.drilled?.[row]?.[col]) overlay = this.maps.ore?.image;
+        if (knownCrater(state, col, row)) overlay = this.maps.crater?.image;
+        if (overlay) ctx.drawImage(overlay, col * cell, row * cell, cell, cell);
+      }
+    }
+    tex.needsUpdate = true;
   }
 
   _refreshOreMarks() {
@@ -1585,6 +1653,7 @@ export class GameRenderer3D {
     this._statusLight();
     this._updateReticle();
     this._updateRoverCam();
+    if (this.maps?.g1 && !this.terrain.material.map) this._bindGroundMaps();
     if (this.craterRings) this.craterRings.visible = !this.sensorLayers.lidar;
     const busy = this.cloudFading || this.anim.active || this.craterLossing ||
       this.particles.length > 0 || this.drillT > 0 || (this._pointers && this._pointers.size > 0);
@@ -1638,8 +1707,8 @@ export class GameRenderer3D {
   _updateRoverCam() {
     if (!this.roverCam || !this.rover) return;
     this.rover.updateMatrixWorld(true);
-    const eye = new THREE.Vector3(0, 0.42, 0.10);
-    const ahead = new THREE.Vector3(0, 0.10, -8.5);
+    const eye = new THREE.Vector3(0, 0.46, 0.08);
+    const ahead = new THREE.Vector3(0, -0.15, -7.2);
     eye.applyMatrix4(this.rover.matrixWorld);
     ahead.applyMatrix4(this.rover.matrixWorld);
     this.roverCam.position.copy(eye);
