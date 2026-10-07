@@ -16,8 +16,9 @@ const LANDER_COL = 5;
 const LANDER_ROW = 12;
 const WORLD = 40;
 const COV = 64;
-const BOARD_SPAN = 12;
+const BOARD_SPAN = 16;
 const FRAME_SPAN = 15.6;
+const BOARD_HALF = 8;
 
 const FACE_Y = { north: 0, east: Math.PI / 2, south: Math.PI, west: -Math.PI / 2 };
 
@@ -444,8 +445,7 @@ export class GameRenderer3D {
     this._terrainShaders = [];
     this.farTerrain = this._makeTerrain(true);
     this.terrain = this._makeTerrain(false);
-    this.farTerrain.layers.enable(0);
-    this.farTerrain.layers.enable(3);
+    this.farTerrain.layers.set(3);
     this.scene.add(this.farTerrain);
     this.scene.add(this.terrain);
     this.gridHelper = this._makeGrid();
@@ -601,12 +601,17 @@ export class GameRenderer3D {
 
   _terrainMaterial(clipBoard) {
     const fallback = this.noiseTex;
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.94,
-      metalness: 0.0,
-      vertexColors: true
-    });
+    const mat = clipBoard
+      ? new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.94,
+        metalness: 0.0,
+        vertexColors: true
+      })
+      : new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        vertexColors: true
+      });
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uSplat = { value: this.splatTex };
       shader.uniforms.uG1 = { value: this.maps?.g1 || fallback };
@@ -649,7 +654,7 @@ export class GameRenderer3D {
          float off = max(abs(vWorldPos.x), abs(vWorldPos.z));
          float fade = smoothstep(6.05, 9.2, off);
          float bowl = smoothstep(0.02, -0.70, vWorldPos.y);
-         diffuseColor.rgb *= 1.45 * mix(1.0, 0.36, bowl);
+         diffuseColor.rgb *= 1.12 * mix(1.0, 0.36, bowl);
          float cov = mix(1.0, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
          float hiddenAmt = smoothstep(0.55, 0.92, cov) * uCoverAmt;
          float camAmt = (1.0 - hiddenAmt) * smoothstep(0.08, 0.54, cov) * uCoverAmt;
@@ -662,14 +667,6 @@ export class GameRenderer3D {
          dimmed *= mix(1.0, 1.12, drivenAmt);
          dimmed *= mix(1.0, 0.16, fade * uClipBoard);
          diffuseColor.rgb = dimmed;
-        `
-      ).replace(
-        '#include <normal_fragment_begin>',
-        `#include <normal_fragment_begin>
-         vec3 sunL = normalize(vec3(-20.0, 11.5, -14.0));
-         float ndl = dot(normal, sunL);
-         float lit = mix(0.32, 1.18, smoothstep(-0.12, 0.68, ndl));
-         diffuseColor.rgb *= lit;
         `
       );
     };
@@ -716,7 +713,7 @@ export class GameRenderer3D {
     const pos = geo.attributes.position;
     const uv = geo.attributes.uv;
     for (let i = 0; i < pos.count; i++) {
-      uv.setXY(i, (pos.getX(i) + 6) / 12, 1 - (pos.getZ(i) + 6) / 12);
+      uv.setXY(i, (pos.getX(i) + BOARD_HALF) / BOARD_SPAN, 1 - (pos.getZ(i) + BOARD_HALF) / BOARD_SPAN);
     }
     uv.needsUpdate = true;
   }
@@ -1085,37 +1082,37 @@ export class GameRenderer3D {
     const cnv = document.createElement('canvas');
     cnv.width = cnv.height = size;
     const ctx = cnv.getContext('2d');
-    ctx.fillStyle = '#c46838';
+    ctx.fillStyle = '#d87842';
     ctx.fillRect(0, 0, size, size);
-    const stamp = size / 6.2;
-    for (let i = 0; i < 110; i++) {
+    const stamp = size / 5.4;
+    for (let i = 0; i < 140; i++) {
       const img = imgs[i % imgs.length];
-      const x = (hash2(i, 1, 2.2) - 0.18) * size;
-      const y = (hash2(i, 3, 4.1) - 0.18) * size;
-      const s = stamp * (0.75 + hash2(i, 5, 1.4) * 0.7);
-      ctx.globalAlpha = 0.42 + hash2(i, 7, 2.8) * 0.58;
+      const x = (hash2(i, 1, 2.2) - 0.2) * size;
+      const y = (hash2(i, 3, 4.1) - 0.2) * size;
+      const s = stamp * (0.7 + hash2(i, 5, 1.4) * 0.8);
+      ctx.globalAlpha = 0.48 + hash2(i, 7, 2.8) * 0.52;
       ctx.drawImage(img, x, y, s, s);
     }
     ctx.globalAlpha = 1;
-    for (let i = 0; i < 28; i++) {
+    for (let i = 0; i < 32; i++) {
       const x = hash2(i, 8, 1.1) * size;
       const y = hash2(i, 9, 1.4) * size;
-      const r = (0.07 + hash2(i, 10, 1.8) * 0.2) * size;
+      const r = (0.06 + hash2(i, 10, 1.8) * 0.18) * size;
       const dark = hash2(i, 11, 2.2) > 0.48;
       const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, dark ? 'rgba(52, 22, 10, 0.24)' : 'rgba(255, 210, 150, 0.18)');
+      g.addColorStop(0, dark ? 'rgba(70, 28, 12, 0.22)' : 'rgba(255, 214, 150, 0.2)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g;
       ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 26; i++) {
       const x = hash2(i, 20, 1.3) * size;
       const y = hash2(i, 21, 1.7) * size;
-      const r = (0.012 + hash2(i, 22, 2.1) * 0.038) * size;
-      const g = ctx.createRadialGradient(x - r * 0.22, y - r * 0.22, r * 0.08, x, y, r);
-      g.addColorStop(0, 'rgba(28, 10, 6, 0.62)');
-      g.addColorStop(0.5, 'rgba(88, 38, 18, 0.32)');
-      g.addColorStop(0.8, 'rgba(210, 128, 72, 0.4)');
+      const r = (0.01 + hash2(i, 22, 2.1) * 0.032) * size;
+      const g = ctx.createRadialGradient(x - r * 0.28, y - r * 0.22, r * 0.06, x, y, r);
+      g.addColorStop(0, 'rgba(22, 8, 4, 0.7)');
+      g.addColorStop(0.48, 'rgba(92, 40, 18, 0.28)');
+      g.addColorStop(0.8, 'rgba(230, 148, 82, 0.42)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g;
       ctx.beginPath();
@@ -1125,16 +1122,49 @@ export class GameRenderer3D {
     const spots = this.rocks?.userData?.spots || [];
     for (let i = 0; i < spots.length; i++) {
       const s = spots[i];
-      if (Math.abs(s.x) > 6.05 || Math.abs(s.z) > 6.05) continue;
-      const px = ((s.x + 6) / 12) * size;
-      const py = ((s.z + 6) / 12) * size;
-      const rr = (0.012 + s.scale * 0.018) * size;
-      const g = ctx.createRadialGradient(px + rr * 0.55, py + rr * 0.45, 0, px + rr * 0.7, py + rr * 0.55, rr * 1.8);
-      g.addColorStop(0, 'rgba(20, 8, 4, 0.42)');
+      const px = ((s.x + BOARD_HALF) / BOARD_SPAN) * size;
+      const py = ((s.z + BOARD_HALF) / BOARD_SPAN) * size;
+      const rr = (0.01 + s.scale * 0.016) * size;
+      const g = ctx.createRadialGradient(px + rr * 0.7, py + rr * 0.5, 0, px + rr * 0.85, py + rr * 0.6, rr * 2.1);
+      g.addColorStop(0, 'rgba(16, 6, 3, 0.5)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g;
-      ctx.fillRect(px - rr, py - rr, rr * 4, rr * 4);
+      ctx.fillRect(px - rr, py - rr, rr * 4.2, rr * 4.2);
     }
+    const imgd = ctx.getImageData(0, 0, size, size);
+    const pix = imgd.data;
+    const e = BOARD_SPAN / size;
+    const sx = -0.741;
+    const sy = 0.426;
+    const sz = -0.519;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const wx = (x / size) * BOARD_SPAN - BOARD_HALF;
+        const wz = (y / size) * BOARD_SPAN - BOARD_HALF;
+        const hL = heightAt(wx - e, wz, null);
+        const hR = heightAt(wx + e, wz, null);
+        const hD = heightAt(wx, wz - e, null);
+        const hU = heightAt(wx, wz + e, null);
+        let nx = (hL - hR) * 4.2;
+        let nz = (hD - hU) * 4.2;
+        let ny = 1;
+        const inv = 1 / Math.hypot(nx, ny, nz);
+        nx *= inv;
+        ny *= inv;
+        nz *= inv;
+        const ndl = nx * sx + ny * sy + nz * sz;
+        const t = Math.max(0, Math.min(1, (ndl + 0.12) / 0.8));
+        const lit = 0.62 + 0.72 * t * t * (3 - 2 * t);
+        const off = Math.max(Math.abs(wx), Math.abs(wz));
+        const fade = Math.max(0, Math.min(1, (off - 6.3) / 3.0));
+        const mul = lit * (1 - fade * 0.88);
+        const i = (y * size + x) * 4;
+        pix[i] = Math.min(255, pix[i] * mul * 1.18);
+        pix[i + 1] = Math.min(255, pix[i + 1] * mul * 1.08);
+        pix[i + 2] = Math.min(255, pix[i + 2] * mul * 0.95);
+      }
+    }
+    ctx.putImageData(imgd, 0, 0);
     this._mosaicBase = document.createElement('canvas');
     this._mosaicBase.width = this._mosaicBase.height = size;
     this._mosaicBase.getContext('2d').drawImage(cnv, 0, 0);
@@ -1147,40 +1177,7 @@ export class GameRenderer3D {
     this.terrain.material.map = this.groundTex;
     this.terrain.material.color.setHex(0xffffff);
     this.terrain.material.needsUpdate = true;
-    this._bakeNormalMap(size);
     this._paintKnownTiles();
-  }
-
-  _bakeNormalMap(size) {
-    const n = this.lite ? 256 : 512;
-    const data = new Uint8Array(n * n * 4);
-    const e = 12 / n;
-    for (let y = 0; y < n; y++) {
-      for (let x = 0; x < n; x++) {
-        const wx = (x / n) * 12 - 6;
-        const wz = (y / n) * 12 - 6;
-        const hL = heightAt(wx - e, wz, null);
-        const hR = heightAt(wx + e, wz, null);
-        const hD = heightAt(wx, wz - e, null);
-        const hU = heightAt(wx, wz + e, null);
-        const nx = (hL - hR) * 3.4;
-        const nz = (hD - hU) * 3.4;
-        const ny = 1.0;
-        const inv = 1 / Math.hypot(nx, ny, nz);
-        const i = (y * n + x) * 4;
-        data[i] = (nx * inv * 0.5 + 0.5) * 255;
-        data[i + 1] = (ny * inv * 0.5 + 0.5) * 255;
-        data[i + 2] = (nz * inv * 0.5 + 0.5) * 255;
-        data[i + 3] = 255;
-      }
-    }
-    if (this.normalTex) this.normalTex.dispose();
-    this.normalTex = new THREE.DataTexture(data, n, n);
-    this.normalTex.flipY = true;
-    this.normalTex.needsUpdate = true;
-    this.terrain.material.normalMap = this.normalTex;
-    this.terrain.material.normalScale.set(1.15, 1.15);
-    this.terrain.material.needsUpdate = true;
   }
 
   _updateSplat() {
@@ -1213,14 +1210,15 @@ export class GameRenderer3D {
     if (!state || !img?.getContext || !this.maps || !this._mosaicBase) return;
     const ctx = img.getContext('2d');
     ctx.drawImage(this._mosaicBase, 0, 0);
-    const cell = img.width / 12;
+    const unit = img.width / BOARD_SPAN;
+    const cell = unit;
     const feather = cell * 0.22;
     for (let row = 0; row < 12; row++) {
       for (let col = 0; col < 12; col++) {
         const driven = !!state.revealed?.[row]?.[col];
         const cam = !driven && !!state.cameraSeen?.[row]?.[col];
-        const x = col * cell;
-        const y = row * cell;
+        const x = (col + 2) * unit;
+        const y = (row + 2) * unit;
         if (driven || cam) {
           ctx.fillStyle = driven ? 'rgba(255, 200, 132, 0.26)' : 'rgba(210, 150, 96, 0.12)';
           ctx.fillRect(x, y, cell, cell);
