@@ -626,11 +626,11 @@ function showOperateView() {
           <div class="orbital-scanlines" aria-hidden="true"></div>
           <div class="orbital-vignette" aria-hidden="true"></div>
           <div class="rover-tag" id="rover-tag" hidden>ROVER-1</div>
-          <div class="rover-cam" id="rover-cam">
-            <div class="rover-cam-head"><span class="live-dot"></span>ROVER CAM FORWARD</div>
-            <canvas id="rover-cam-canvas" width="320" height="240"></canvas>
-            <div class="rover-cam-meta"><span>FOV 60°</span><span>RES 320×240</span></div>
-          </div>
+        </div>
+        <div class="rover-cam" id="rover-cam">
+          <div class="rover-cam-head"><span class="live-dot"></span>ROVER CAM FORWARD</div>
+          <canvas id="rover-cam-canvas" width="320" height="240"></canvas>
+          <div class="rover-cam-meta"><span>FOV 60°</span><span>RES 320×240</span></div>
         </div>
       </div>
       

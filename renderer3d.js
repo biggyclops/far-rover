@@ -399,7 +399,7 @@ export class GameRenderer3D {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.14;
     this.renderer.setClearColor(0x3a2418, 1);
-    this.renderer.shadowMap.enabled = !this.lite;
+    this.renderer.shadowMap.enabled = false;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.canvas = this.renderer.domElement;
     this.canvas.className = 'game-canvas';
@@ -597,11 +597,7 @@ export class GameRenderer3D {
         varying vec3 vWorldPos;
       ` + shader.fragmentShader.replace(
         '#include <map_fragment>',
-        `#ifdef USE_MAP
-         vec4 sampledDiffuseColor = texture2D( map, vWorldPos.xz * 0.42 );
-         sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, texture2D( map, vWorldPos.xz * 1.35 ).rgb, 0.24);
-         diffuseColor *= sampledDiffuseColor;
-         #endif
+        `#include <map_fragment>
          vec2 buv = vec2(vWorldPos.x + 6.0, vWorldPos.z + 6.0) / 12.0;
          float onB = step(0.0, buv.x) * step(0.0, buv.y) * step(buv.x, 1.0) * step(buv.y, 1.0);
          vec4 sp = texture2D(uSplat, buv);
@@ -746,21 +742,30 @@ export class GameRenderer3D {
     if (host) host.dataset.engine = 'rover-cam';
     this.roverCamCanvas.width = this.lite ? 160 : 320;
     this.roverCamCanvas.height = this.lite ? 120 : 240;
-    try {
-      this.roverCamRenderer = new THREE.WebGLRenderer({
-        canvas: this.roverCamCanvas,
-        antialias: false,
-        alpha: false,
-        powerPreference: 'low-power'
-      });
-      this.roverCamRenderer.setPixelRatio(1);
-      this.roverCamRenderer.setSize(this.roverCamCanvas.width, this.roverCamCanvas.height, false);
-      this.roverCamRenderer.outputColorSpace = THREE.SRGBColorSpace;
-      this.roverCamRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-      this.roverCamRenderer.toneMappingExposure = 1.18;
-      this.roverCamRenderer.shadowMap.enabled = false;
-    } catch {
-      this.roverCamRenderer = null;
+    this.roverCamTarget = null;
+    this.roverCamPixels = null;
+    this.roverCamRenderer = null;
+    this.roverCamCtx = null;
+    if (this.lite) {
+      this.roverCamCtx = this.roverCamCanvas.getContext('2d');
+    } else {
+      try {
+        this.roverCamRenderer = new THREE.WebGLRenderer({
+          canvas: this.roverCamCanvas,
+          antialias: false,
+          alpha: false,
+          powerPreference: 'low-power'
+        });
+        this.roverCamRenderer.setPixelRatio(1);
+        this.roverCamRenderer.setSize(this.roverCamCanvas.width, this.roverCamCanvas.height, false);
+        this.roverCamRenderer.outputColorSpace = THREE.SRGBColorSpace;
+        this.roverCamRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.roverCamRenderer.toneMappingExposure = 1.18;
+        this.roverCamRenderer.shadowMap.enabled = false;
+      } catch {
+        this.roverCamRenderer = null;
+        this.roverCamCtx = this.roverCamCanvas.getContext('2d');
+      }
     }
   }
 
@@ -993,7 +998,7 @@ export class GameRenderer3D {
     this.groundTex = new THREE.CanvasTexture(cnv);
     this.groundTex.colorSpace = THREE.SRGBColorSpace;
     this.groundTex.wrapS = this.groundTex.wrapT = THREE.RepeatWrapping;
-    this.groundTex.repeat.set(1, 1);
+    this.groundTex.repeat.set(18, 18);
     this.groundTex.anisotropy = 8;
     this.terrain.material.map = this.groundTex;
     this.terrain.material.needsUpdate = true;
@@ -1555,12 +1560,12 @@ export class GameRenderer3D {
       this._fpsT = now;
       if (typeof window !== 'undefined') window.__farRoverFps = this.fps;
     }
+    this._renderRoverCam(now);
     this._setCoverAmt(1);
     if (this.skyMesh) this.skyMesh.visible = false;
     this.scene.background = this.orbitalBg;
     this.scene.fog = null;
     this.renderer.render(this.scene, this.camera);
-    this._renderRoverCam(now);
   }
 
   _updateReticle() {
@@ -1601,17 +1606,22 @@ export class GameRenderer3D {
   }
 
   _renderRoverCam(now) {
-    if (this.disposed || !this.roverCamRenderer) return;
+    if (this.disposed) return;
+    if (!this.roverCamRenderer) {
+      if (this.roverCamCtx) this._paintRoverCam2D();
+      return;
+    }
     const interval = this.lite ? 180 : 0;
     if (interval && now - (this._lastPip || 0) < interval) return;
     this._lastPip = now;
     const roverWas = this.rover.visible;
+    const landerWas = this.lander?.visible;
     const landerHalo = this.lander?.getObjectByName('chargeHalo');
     const haloWas = landerHalo?.visible;
     this.rover.visible = false;
+    if (this.lander) this.lander.visible = false;
     const prevFog = this.scene.fog;
     const prevBg = this.scene.background;
-    const skyWas = this.skyMesh?.visible;
     this._setCoverAmt(0.16);
     if (this.skyMesh) this.skyMesh.visible = true;
     this.scene.fog = this.groundFog;
@@ -1624,20 +1634,82 @@ export class GameRenderer3D {
     this.scene.fog = prevFog;
     this.scene.background = prevBg;
     this._setCoverAmt(1);
-    if (this.skyMesh) this.skyMesh.visible = !!skyWas;
+    if (this.skyMesh) this.skyMesh.visible = false;
     this.rover.visible = roverWas;
+    if (this.lander) this.lander.visible = landerWas !== false;
     if (landerHalo) landerHalo.visible = haloWas;
   }
 
   render() {
     if (this.disposed) return;
+    this._updateRoverCam();
+    this._renderRoverCam(performance.now());
     this._setCoverAmt(1);
     if (this.skyMesh) this.skyMesh.visible = false;
     this.scene.background = this.orbitalBg;
     this.scene.fog = null;
     this.renderer.render(this.scene, this.camera);
-    this._updateRoverCam();
-    this._renderRoverCam(performance.now());
+  }
+
+  _paintRoverCam2D() {
+    const ctx = this.roverCamCtx;
+    const canvas = this.roverCamCanvas;
+    if (!ctx || !canvas || !this.gameState) return;
+    const w = canvas.width;
+    const h = canvas.height;
+    const state = this.gameState;
+    const facing = state.facing || 'north';
+    const vec = { north: [0, -1], east: [1, 0], south: [0, 1], west: [-1, 0] };
+    const [dx, dy] = vec[facing] || [0, -1];
+    const fc = state.col + dx;
+    const fr = state.row + dy;
+    const onGrid = fc >= 0 && fc < 12 && fr >= 0 && fr < 12;
+    const terrain = onGrid ? state.terrain[fr][fc] : null;
+    const ahead = parseCraterCell(state);
+    const craterAhead = !!(ahead && ahead.col === fc && ahead.row === fr);
+    ctx.fillStyle = '#d4a078';
+    ctx.fillRect(0, 0, w, h);
+    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.38);
+    sky.addColorStop(0, '#f0d0b0');
+    sky.addColorStop(0.55, '#d49260');
+    sky.addColorStop(1, '#c07848');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h * 0.38);
+    const ground = ctx.createLinearGradient(0, h * 0.38, 0, h);
+    ground.addColorStop(0, '#7a4028');
+    ground.addColorStop(0.4, '#b06038');
+    ground.addColorStop(1, '#c4683a');
+    ctx.fillStyle = ground;
+    ctx.fillRect(0, h * 0.38, w, h * 0.62);
+    ctx.fillStyle = 'rgba(40, 18, 10, 0.32)';
+    for (let i = 0; i < 16; i++) {
+      const rx = (i * 47 + 13) % w;
+      const ry = h * 0.46 + (i * 31) % (h * 0.46);
+      const rw = 3 + (i % 5) * 2.2;
+      ctx.beginPath();
+      ctx.ellipse(rx, ry, rw, rw * 0.42, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (craterAhead || terrain === 'crater') {
+      ctx.fillStyle = 'rgba(22, 8, 4, 0.78)';
+      ctx.beginPath();
+      ctx.ellipse(w * 0.5, h * 0.70, w * 0.32, h * 0.16, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(12, 4, 2, 0.55)';
+      ctx.beginPath();
+      ctx.ellipse(w * 0.47, h * 0.68, w * 0.16, h * 0.08, 0, 0, Math.PI * 2);
+      ctx.fill();
+      if (this.sensorLayers.lidar) {
+        ctx.strokeStyle = '#4be4ff';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.ellipse(w * 0.5, h * 0.70, w * 0.32, h * 0.16, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(w * 0.5, h * 0.70, w * 0.22, h * 0.11, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
   }
 
   getCellFromClick(clientX, clientY) {
