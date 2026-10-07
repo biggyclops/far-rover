@@ -745,7 +745,7 @@ export class GameRenderer {
       ctx.lineTo(quad[2].x, quad[2].y);
       ctx.lineTo(quad[3].x, quad[3].y);
       ctx.closePath();
-      ctx.fillStyle = 'rgba(10, 6, 4, 0.48)';
+      ctx.fillStyle = 'rgba(48, 26, 14, 0.38)';
       ctx.fill();
       ctx.restore();
     } else if (isCameraSeen) {
