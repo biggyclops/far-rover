@@ -414,7 +414,7 @@ export class GameRenderer3D {
     this.renderer.setPixelRatio(this.lite ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.72;
+    this.renderer.toneMappingExposure = 1.95;
     this.renderer.setClearColor(0x2a1a10, 1);
     this.renderer.shadowMap.enabled = !this.lite;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -649,16 +649,18 @@ export class GameRenderer3D {
          float off = max(abs(vWorldPos.x), abs(vWorldPos.z));
          float fade = smoothstep(6.05, 9.2, off);
          float bowl = smoothstep(0.02, -0.70, vWorldPos.y);
-         diffuseColor.rgb *= mix(1.0, 0.38, bowl);
-         float cov = mix(0.88, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
+         diffuseColor.rgb *= 1.45 * mix(1.0, 0.36, bowl);
+         float cov = mix(1.0, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
          float hiddenAmt = smoothstep(0.55, 0.92, cov) * uCoverAmt;
          float camAmt = (1.0 - hiddenAmt) * smoothstep(0.08, 0.54, cov) * uCoverAmt;
+         float drivenAmt = (1.0 - hiddenAmt) * (1.0 - camAmt) * onB * uCoverAmt;
          float luma = dot(diffuseColor.rgb, vec3(0.28, 0.48, 0.22));
-         vec3 gray = vec3(luma * 0.62, luma * 0.46, luma * 0.34);
-         vec3 dimmed = mix(diffuseColor.rgb, gray, hiddenAmt * 0.45 + camAmt * 0.16);
-         dimmed *= mix(1.0, 0.40, hiddenAmt);
-         dimmed *= mix(1.0, 0.72, camAmt);
-         dimmed *= mix(1.0, 0.18, fade * uClipBoard);
+         vec3 gray = vec3(luma * 0.70, luma * 0.52, luma * 0.38);
+         vec3 dimmed = mix(diffuseColor.rgb, gray, hiddenAmt * 0.40 + camAmt * 0.14);
+         dimmed *= mix(1.0, 0.38, hiddenAmt);
+         dimmed *= mix(1.0, 0.70, camAmt);
+         dimmed *= mix(1.0, 1.12, drivenAmt);
+         dimmed *= mix(1.0, 0.16, fade * uClipBoard);
          diffuseColor.rgb = dimmed;
         `
       ).replace(
@@ -1212,14 +1214,40 @@ export class GameRenderer3D {
     const ctx = img.getContext('2d');
     ctx.drawImage(this._mosaicBase, 0, 0);
     const cell = img.width / 12;
+    const feather = cell * 0.22;
     for (let row = 0; row < 12; row++) {
       for (let col = 0; col < 12; col++) {
-        const known = !!(state.revealed?.[row]?.[col] || state.cameraSeen?.[row]?.[col]);
+        const driven = !!state.revealed?.[row]?.[col];
+        const cam = !driven && !!state.cameraSeen?.[row]?.[col];
+        const x = col * cell;
+        const y = row * cell;
+        if (driven || cam) {
+          ctx.fillStyle = driven ? 'rgba(255, 200, 132, 0.26)' : 'rgba(210, 150, 96, 0.12)';
+          ctx.fillRect(x, y, cell, cell);
+        }
         let overlay = null;
-        if (known && state.terrain[row][col] === 'dust') overlay = this.maps.dust?.image;
-        if (known && state.terrain[row][col] === 'ore' && !state.drilled?.[row]?.[col]) overlay = this.maps.ore?.image;
+        if ((driven || cam) && state.terrain[row][col] === 'dust') overlay = this.maps.dust?.image;
+        if ((driven || cam) && state.terrain[row][col] === 'ore' && !state.drilled?.[row]?.[col]) overlay = this.maps.ore?.image;
         if (knownCrater(state, col, row)) overlay = this.maps.crater?.image;
-        if (overlay) ctx.drawImage(overlay, col * cell, row * cell, cell, cell);
+        if (overlay) {
+          ctx.globalAlpha = 0.92;
+          ctx.drawImage(overlay, x, y, cell, cell);
+          ctx.globalAlpha = 1;
+        }
+        if (knownCrater(state, col, row)) {
+          const cx = x + cell * 0.5;
+          const cy = y + cell * 0.5;
+          const r = cell * 0.42;
+          const bowl = ctx.createRadialGradient(cx - r * 0.22, cy - r * 0.22, r * 0.06, cx, cy, r);
+          bowl.addColorStop(0, 'rgba(18, 6, 3, 0.72)');
+          bowl.addColorStop(0.55, 'rgba(70, 28, 12, 0.28)');
+          bowl.addColorStop(0.82, 'rgba(230, 150, 88, 0.38)');
+          bowl.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = bowl;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
     tex.needsUpdate = true;
