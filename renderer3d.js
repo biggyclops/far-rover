@@ -14,9 +14,9 @@ const GRID_COLS = 12;
 const GRID_ROWS = 12;
 const LANDER_COL = 5;
 const LANDER_ROW = 12;
-const WORLD = 48;
-const SEGMENTS = 96;
+const WORLD = 40;
 const COV = 64;
+const BOARD_SPAN = 13;
 
 const FACE_Y = { north: 0, east: Math.PI / 2, south: Math.PI, west: -Math.PI / 2 };
 
@@ -71,10 +71,19 @@ function knownCrater(state, col, row) {
 }
 
 function heightAt(x, z, state) {
-  let y = (hash2(Math.floor(x * 0.55), Math.floor(z * 0.55), 0.3) - 0.5) * 0.42;
-  y += (hash2(Math.floor(x * 2.1), Math.floor(z * 2.1), 1.7) - 0.5) * 0.26;
-  y += (hash2(Math.floor(x * 6.2), Math.floor(z * 6.2), 4.1) - 0.5) * 0.11;
-  y += (hash2(Math.floor(x * 18), Math.floor(z * 18), 8.8) - 0.5) * 0.04;
+  let y = Math.sin(x * 0.38 + 0.6) * Math.cos(z * 0.29) * 0.22;
+  y += Math.sin(x * 0.91 + z * 0.47) * 0.11;
+  y += (hash2(Math.floor(x * 0.65), Math.floor(z * 0.65), 0.3) - 0.5) * 0.18;
+  y += (hash2(Math.floor(x * 2.2), Math.floor(z * 2.2), 1.7) - 0.5) * 0.07;
+  const px = Math.floor(x * 1.05);
+  const pz = Math.floor(z * 1.05);
+  const pock = hash2(px, pz, 6.6);
+  if (pock > 0.84) {
+    const dx = x * 1.05 - px - 0.5;
+    const dz = z * 1.05 - pz - 0.5;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d < 0.40) y -= (1 - d / 0.40) * (0.05 + (pock - 0.84) * 0.35);
+  }
   const col = x + (GRID_COLS - 1) / 2;
   const row = z + (GRID_ROWS - 1) / 2;
   if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) {
@@ -84,8 +93,8 @@ function heightAt(x, z, state) {
       const dx = col - c - 0.5;
       const dz = row - r - 0.5;
       const d = Math.sqrt(dx * dx + dz * dz);
-      if (d < 0.52) y -= (1 - d / 0.52) * 0.82;
-      else if (d < 0.70) y += (1 - Math.abs(d - 0.60) / 0.10) * 0.16;
+      if (d < 0.58) y -= (1 - d / 0.58) * 1.12;
+      else if (d < 0.82) y += (1 - Math.abs(d - 0.68) / 0.14) * 0.22;
     }
   }
   return y;
@@ -153,14 +162,14 @@ function createHazeMaterial(coverageTex, noiseTex) {
       uniform float uTime;
       varying vec2 vUv;
       void main() {
-        float n = texture2D(uNoise, vUv * 0.55 + vec2(uTime * 0.003, 0.0)).r;
+        float n = texture2D(uNoise, vUv * 0.18 + vec2(uTime * 0.002, 0.0)).r;
         float cov = texture2D(uCoverage, vUv).r;
         float hidden = smoothstep(0.55, 0.92, cov);
         float cam = (1.0 - hidden) * smoothstep(0.08, 0.55, cov);
-        float a = hidden * 0.16 + cam * 0.07;
-        a *= 0.88 + 0.12 * n;
+        float a = hidden * 0.22 + cam * 0.08;
+        a *= 0.94 + 0.06 * n;
         if (a < 0.02) discard;
-        vec3 col = vec3(0.05, 0.032, 0.022);
+        vec3 col = vec3(0.035, 0.022, 0.016);
         gl_FragColor = vec4(col, a);
       }
     `
@@ -231,7 +240,7 @@ function createRover() {
   });
   g.userData.wheels = wheels;
   g.userData.light = light;
-  g.scale.setScalar(1.28);
+  g.scale.setScalar(1.36);
   return g;
 }
 
@@ -281,12 +290,13 @@ function createLander() {
 
 function createRockInstancer(offCount, onCount) {
   const total = offCount + onCount;
-  const geo = new THREE.DodecahedronGeometry(0.10, 0);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x6e3c26, roughness: 0.96, metalness: 0.03 });
+  const geo = new THREE.DodecahedronGeometry(0.12, 0);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x5a3220, roughness: 0.97, metalness: 0.02 });
   const mesh = new THREE.InstancedMesh(geo, mat, total);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   const dummy = new THREE.Object3D();
+  const spots = [];
   let placed = 0;
   let guard = 0;
   while (placed < onCount && guard < onCount * 14) {
@@ -295,11 +305,13 @@ function createRockInstancer(offCount, onCount) {
     const row = hash2(guard, 5, 3.4) * 12;
     const x = col - 6 + (hash2(guard, 7, 1.2) - 0.5) * 0.82;
     const z = row - 6 + (hash2(guard, 8, 1.5) - 0.5) * 0.82;
-    dummy.position.set(x, 0.03, z);
+    const scale = 0.55 + hash2(guard, 11, 1) * 1.65;
+    dummy.position.set(x, 0.04, z);
     dummy.rotation.set(hash2(guard, 8, 1) * 2, hash2(guard, 9, 1) * 6, hash2(guard, 10, 1));
-    dummy.scale.setScalar(0.22 + hash2(guard, 11, 1) * 1.15);
+    dummy.scale.setScalar(scale);
     dummy.updateMatrix();
     mesh.setMatrixAt(placed, dummy.matrix);
+    spots.push({ x, z, scale, rx: dummy.rotation.x, ry: dummy.rotation.y, rz: dummy.rotation.z });
     placed++;
   }
   guard = 0;
@@ -308,17 +320,20 @@ function createRockInstancer(offCount, onCount) {
     guard++;
     const x = (hash2(guard, 2, 1.1) - 0.5) * WORLD * 0.92;
     const z = (hash2(guard, 4, 2.2) - 0.5) * WORLD * 0.92;
-    const onBoard = Math.abs(x) < 6.4 && Math.abs(z) < 6.4;
+    const onBoard = Math.abs(x) < 6.6 && Math.abs(z) < 6.6;
     if (onBoard) continue;
-    dummy.position.set(x, 0.04, z);
+    const scale = 0.9 + hash2(guard, 11, 1) * 2.4;
+    dummy.position.set(x, 0.05, z);
     dummy.rotation.set(hash2(guard, 8, 1) * 2, hash2(guard, 9, 1) * 6, hash2(guard, 10, 1));
-    dummy.scale.setScalar(0.55 + hash2(guard, 11, 1) * 1.8);
+    dummy.scale.setScalar(scale);
     dummy.updateMatrix();
     mesh.setMatrixAt(placed, dummy.matrix);
+    spots.push({ x, z, scale, rx: dummy.rotation.x, ry: dummy.rotation.y, rz: dummy.rotation.z });
     placed++;
   }
   mesh.count = placed;
   mesh.instanceMatrix.needsUpdate = true;
+  mesh.userData.spots = spots;
   return mesh;
 }
 
@@ -373,15 +388,15 @@ export class GameRenderer3D {
     this.layerKey = '';
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x3a2418);
+    this.scene.background = new THREE.Color(0x1a100c);
     this.scene.fog = null;
-    this.pipBg = new THREE.Color(0xd09a68);
-    this.orbitalBg = new THREE.Color(0x3a2418);
-    this.groundFog = new THREE.Fog(0xc07a4a, 7.5, 28);
+    this.pipBg = new THREE.Color(0xc48a58);
+    this.orbitalBg = new THREE.Color(0x1a100c);
+    this.groundFog = new THREE.Fog(0xc48a58, 5.5, 22);
 
-    this.camera = new THREE.PerspectiveCamera(40, 1, 0.12, 220);
+    this.camera = new THREE.PerspectiveCamera(38, 1, 0.12, 220);
     this.camTarget = new THREE.Vector3(0, 0.0, 0.0);
-    this.camSpherical = new THREE.Spherical(16.6, 0.09, 0.0);
+    this.camSpherical = new THREE.Spherical(15.4, 0.08, 0.0);
     this.camDefault = this.camSpherical.clone();
     this._userFramed = false;
     this._applyCamera();
@@ -397,8 +412,8 @@ export class GameRenderer3D {
     this.renderer.setPixelRatio(this.lite ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.14;
-    this.renderer.setClearColor(0x3a2418, 1);
+    this.renderer.toneMappingExposure = 1.08;
+    this.renderer.setClearColor(0x1a100c, 1);
     this.renderer.shadowMap.enabled = false;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.canvas = this.renderer.domElement;
@@ -424,7 +439,10 @@ export class GameRenderer3D {
     this.splatTex.needsUpdate = true;
 
     this._coverUniforms = [];
-    this.terrain = this._makeTerrain();
+    this._terrainShaders = [];
+    this.farTerrain = this._makeTerrain(true);
+    this.terrain = this._makeTerrain(false);
+    this.scene.add(this.farTerrain);
     this.scene.add(this.terrain);
     this.gridHelper = this._makeGrid();
     this.scene.add(this.gridHelper);
@@ -441,7 +459,7 @@ export class GameRenderer3D {
     this.scene.add(this.spectralGroup);
     this.reticle = this._makeReticle();
     this.scene.add(this.reticle);
-    this.rocks = createRockInstancer(this.lite ? 40 : 90, this.lite ? 80 : 220);
+    this.rocks = createRockInstancer(this.lite ? 70 : 140, this.lite ? 160 : 340);
     this.rocks.material.onBeforeCompile = (shader) => {
       shader.uniforms.uCoverage = { value: this.coverageTex };
       shader.uniforms.uCoverAmt = { value: 1.0 };
@@ -458,11 +476,12 @@ export class GameRenderer3D {
          float onB = step(0.0, buv.x) * step(0.0, buv.y) * step(buv.x, 1.0) * step(buv.y, 1.0);
          float cov = mix(0.82, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
          float hiddenAmt = smoothstep(0.52, 0.92, cov);
-         diffuseColor.rgb *= mix(1.0, 0.55, hiddenAmt * uCoverAmt);
+         diffuseColor.rgb *= mix(1.0, 0.42, hiddenAmt * uCoverAmt);
         `
       );
     };
     this.scene.add(this.rocks);
+    this._seatRocks(this.gameState);
     this.oreMarks = new THREE.Group();
     this.scene.add(this.oreMarks);
 
@@ -516,23 +535,15 @@ export class GameRenderer3D {
   }
 
   _lights() {
-    const hemi = new THREE.HemisphereLight(0xc8b098, 0x5a2e18, 0.46);
+    const hemi = new THREE.HemisphereLight(0xe0c4a0, 0x4a2414, 0.38);
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffd4a0, 2.25);
-    sun.position.set(-12, 20, -10);
-    sun.castShadow = !this.lite;
-    sun.shadow.mapSize.set(this.lite ? 512 : 1024, this.lite ? 512 : 1024);
-    sun.shadow.camera.near = 2;
-    sun.shadow.camera.far = 48;
-    sun.shadow.camera.left = -16;
-    sun.shadow.camera.right = 16;
-    sun.shadow.camera.top = 16;
-    sun.shadow.camera.bottom = -16;
-    sun.shadow.bias = -0.0004;
+    const sun = new THREE.DirectionalLight(0xffe0b8, 1.85);
+    sun.position.set(-14, 18, -11);
+    sun.castShadow = false;
     this.scene.add(sun);
     this.sun = sun;
-    this.sunDefault = 2.25;
-    this.scene.add(new THREE.AmbientLight(0xffc8a0, 0.20));
+    this.sunDefault = 1.85;
+    this.scene.add(new THREE.AmbientLight(0xc89a72, 0.16));
   }
 
   _sky() {
@@ -559,26 +570,42 @@ export class GameRenderer3D {
     this.skyMesh.visible = false;
     this.skyMesh.frustumCulled = false;
     this.scene.add(this.skyMesh);
+    const horizon = new THREE.Mesh(
+      new THREE.CylinderGeometry(26, 26, 16, 32, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xc48a58,
+        side: THREE.BackSide,
+        fog: false
+      })
+    );
+    horizon.position.y = 4.2;
+    horizon.layers.set(3);
+    horizon.visible = false;
+    horizon.frustumCulled = false;
+    this.horizonMesh = horizon;
+    this.scene.add(horizon);
   }
 
-  _makeTerrain() {
-    const geo = new THREE.PlaneGeometry(WORLD, WORLD, SEGMENTS, SEGMENTS);
-    geo.rotateX(-Math.PI / 2);
-    this._applyHeights(geo, this.gameState);
+  _terrainMaterial(clipBoard) {
+    const fallback = this.noiseTex;
     const mat = new THREE.MeshStandardMaterial({
-      color: 0xc45e34,
-      roughness: 0.92,
-      metalness: 0.02,
+      color: 0xffffff,
+      roughness: 0.96,
+      metalness: 0.0,
       vertexColors: true
     });
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uSplat = { value: this.splatTex };
-      shader.uniforms.uDustTex = { value: this.maps?.dust || this.splatTex };
-      shader.uniforms.uOreTex = { value: this.maps?.ore || this.splatTex };
-      shader.uniforms.uCraterTex = { value: this.maps?.crater || this.splatTex };
+      shader.uniforms.uG1 = { value: this.maps?.g1 || fallback };
+      shader.uniforms.uG2 = { value: this.maps?.g2 || fallback };
+      shader.uniforms.uG3 = { value: this.maps?.g3 || fallback };
+      shader.uniforms.uDustTex = { value: this.maps?.dust || fallback };
+      shader.uniforms.uOreTex = { value: this.maps?.ore || fallback };
+      shader.uniforms.uCraterTex = { value: this.maps?.crater || fallback };
       shader.uniforms.uCoverage = { value: this.coverageTex };
       shader.uniforms.uCoverAmt = { value: 1.0 };
-      this._terrainShader = shader;
+      shader.uniforms.uClipBoard = { value: clipBoard ? 1.0 : 0.0 };
+      this._terrainShaders.push(shader);
       this._coverUniforms.push(shader.uniforms.uCoverAmt);
       shader.vertexShader = `
         varying vec3 vWorldPos;
@@ -589,50 +616,73 @@ export class GameRenderer3D {
       );
       shader.fragmentShader = `
         uniform sampler2D uSplat;
+        uniform sampler2D uG1;
+        uniform sampler2D uG2;
+        uniform sampler2D uG3;
         uniform sampler2D uDustTex;
         uniform sampler2D uOreTex;
         uniform sampler2D uCraterTex;
         uniform sampler2D uCoverage;
         uniform float uCoverAmt;
+        uniform float uClipBoard;
         varying vec3 vWorldPos;
       ` + shader.fragmentShader.replace(
         '#include <map_fragment>',
         `#include <map_fragment>
-         vec2 buv = vec2(vWorldPos.x + 6.0, vWorldPos.z + 6.0) / 12.0;
+         if (uClipBoard > 0.5 && abs(vWorldPos.x) < 6.62 && abs(vWorldPos.z) < 6.62) discard;
+         vec2 cell = vec2(vWorldPos.x + 6.0, vWorldPos.z + 6.0);
+         vec2 buv = cell / 12.0;
          float onB = step(0.0, buv.x) * step(0.0, buv.y) * step(buv.x, 1.0) * step(buv.y, 1.0);
-         vec4 sp = texture2D(uSplat, buv);
-         vec2 ruv = vWorldPos.xz * 0.55;
-         vec3 dustC = texture2D(uDustTex, ruv).rgb;
-         vec3 oreC = texture2D(uOreTex, ruv).rgb;
-         vec3 crC = texture2D(uCraterTex, ruv).rgb;
-         diffuseColor.rgb = mix(diffuseColor.rgb, dustC, sp.r * onB);
-         diffuseColor.rgb = mix(diffuseColor.rgb, oreC, sp.g * onB);
-         diffuseColor.rgb = mix(diffuseColor.rgb, crC, sp.b * onB);
-         float cov = mix(0.78, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
+         vec2 tuv = fract(cell);
+         float hsel = fract(sin(dot(floor(cell), vec2(127.1, 311.7))) * 43758.5453);
+         vec3 gA = texture2D(uG1, tuv).rgb;
+         vec3 gB = texture2D(uG2, tuv).rgb;
+         vec3 gC = texture2D(uG3, tuv).rgb;
+         vec3 ground = hsel < 0.34 ? gA : (hsel < 0.67 ? gB : gC);
+         vec4 sp = texture2D(uSplat, clamp(buv, 0.0, 1.0));
+         ground = mix(ground, texture2D(uDustTex, tuv).rgb, sp.r * onB);
+         ground = mix(ground, texture2D(uOreTex, tuv).rgb, sp.g * onB);
+         ground = mix(ground, texture2D(uCraterTex, tuv).rgb, sp.b * onB);
+         float bowl = smoothstep(0.04, -0.55, vWorldPos.y);
+         ground *= mix(1.0, 0.40, bowl);
+         float cov = mix(0.82, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
          float hiddenAmt = smoothstep(0.52, 0.92, cov) * uCoverAmt;
          float camAmt = (1.0 - hiddenAmt) * smoothstep(0.06, 0.52, cov) * uCoverAmt;
          float drivenAmt = (1.0 - hiddenAmt) * (1.0 - camAmt) * onB * uCoverAmt;
-         float luma = dot(diffuseColor.rgb, vec3(0.36, 0.28, 0.16));
-         vec3 gray = vec3(luma * 0.92, luma * 0.62, luma * 0.42);
-         vec3 dimmed = mix(diffuseColor.rgb, gray, hiddenAmt * 0.42 + camAmt * 0.18);
-         dimmed *= mix(1.0, 0.58, hiddenAmt);
-         dimmed *= mix(1.0, 0.82, camAmt);
-         dimmed *= mix(1.0, 1.16, drivenAmt);
+         float luma = dot(ground, vec3(0.32, 0.50, 0.18));
+         vec3 gray = vec3(luma * 0.48, luma * 0.34, luma * 0.26);
+         vec3 dimmed = mix(ground, gray, hiddenAmt * 0.78 + camAmt * 0.32);
+         dimmed *= mix(1.0, 0.50, hiddenAmt);
+         dimmed *= mix(1.0, 0.80, camAmt);
+         dimmed *= mix(1.0, 1.22, drivenAmt);
          diffuseColor.rgb = dimmed;
         `
       ).replace(
         '#include <normal_fragment_begin>',
         `#include <normal_fragment_begin>
-         float nx = fract(sin(dot(vWorldPos.xz, vec2(127.1, 311.7))) * 43758.5453);
-         float nz = fract(sin(dot(vWorldPos.xz, vec2(269.5, 183.3))) * 43758.5453);
-         normal = normalize(normal + vec3(nx - 0.5, 0.0, nz - 0.5) * 0.28);
+         vec3 sunL = normalize(vec3(-0.47, 0.79, -0.39));
+         float ndl = clamp(dot(normal, sunL), 0.0, 1.0);
+         float shade = pow(ndl, 1.35);
+         diffuseColor.rgb *= mix(vec3(0.32, 0.20, 0.14), vec3(1.20, 1.07, 0.90), shade);
         `
       );
     };
-    const mesh = new THREE.Mesh(geo, mat);
+    return mat;
+  }
+
+  _makeTerrain(isFar) {
+    const span = isFar ? WORLD : BOARD_SPAN;
+    const segs = isFar
+      ? (this.lite ? 32 : 48)
+      : (this.lite ? 52 : 104);
+    const geo = new THREE.PlaneGeometry(span, span, segs, segs);
+    geo.rotateX(-Math.PI / 2);
+    this._applyHeights(geo, this.gameState);
+    const mesh = new THREE.Mesh(geo, this._terrainMaterial(!!isFar));
     mesh.receiveShadow = true;
-    mesh.castShadow = true;
-    mesh.name = 'terrain';
+    mesh.castShadow = false;
+    mesh.name = isFar ? 'terrainFar' : 'terrain';
+    if (isFar) mesh.position.y = -0.04;
     return mesh;
   }
 
@@ -644,15 +694,29 @@ export class GameRenderer3D {
       const z = pos.getZ(i);
       const y = heightAt(x, z, state);
       pos.setY(i, y);
-      const ao = 0.90 + Math.max(0, y) * 0.55 + (y < 0 ? y * 0.45 : 0);
-      const warm = 0.96 + (ao - 0.90) * 0.4;
-      colors[i * 3] = warm;
-      colors[i * 3 + 1] = warm * 0.70;
-      colors[i * 3 + 2] = warm * 0.44;
+      const ao = y < 0 ? Math.max(0.42, 0.88 + y * 0.55) : Math.min(1.08, 0.94 + y * 0.22);
+      colors[i * 3] = ao;
+      colors[i * 3 + 1] = ao;
+      colors[i * 3 + 2] = ao;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     pos.needsUpdate = true;
     geo.computeVertexNormals();
+  }
+
+  _seatRocks(state) {
+    if (!this.rocks?.userData?.spots) return;
+    const dummy = new THREE.Object3D();
+    const spots = this.rocks.userData.spots;
+    for (let i = 0; i < spots.length; i++) {
+      const s = spots[i];
+      dummy.position.set(s.x, heightAt(s.x, s.z, state) + 0.03, s.z);
+      dummy.rotation.set(s.rx, s.ry, s.rz);
+      dummy.scale.setScalar(s.scale);
+      dummy.updateMatrix();
+      this.rocks.setMatrixAt(i, dummy.matrix);
+    }
+    this.rocks.instanceMatrix.needsUpdate = true;
   }
 
   _craterKey(state) {
@@ -696,8 +760,8 @@ export class GameRenderer3D {
       opacity: 0.82,
       depthWrite: false
     });
-    const s = 0.52;
-    const len = 0.18;
+    const s = 0.64;
+    const len = 0.22;
     const corners = [
       [[-s, -s], [-s + len, -s], [-s, -s], [-s, -s + len]],
       [[s, -s], [s - len, -s], [s, -s], [s, -s + len]],
@@ -733,40 +797,24 @@ export class GameRenderer3D {
   }
 
   _initRoverCam() {
-    this.roverCam = new THREE.PerspectiveCamera(60, 4 / 3, 0.08, 48);
+    this.roverCam = new THREE.PerspectiveCamera(58, 4 / 3, 0.06, 56);
     this.roverCam.layers.enable(0);
     this.roverCam.layers.enable(3);
     this.roverCam.layers.disable(2);
     const host = document.getElementById('rover-cam-canvas');
     this.roverCamCanvas = host || document.createElement('canvas');
     if (host) host.dataset.engine = 'rover-cam';
-    this.roverCamCanvas.width = this.lite ? 160 : 320;
-    this.roverCamCanvas.height = this.lite ? 120 : 240;
-    this.roverCamTarget = null;
-    this.roverCamPixels = null;
+    const pw = this.lite ? 160 : 320;
+    const ph = this.lite ? 120 : 240;
+    this.roverCamCanvas.width = pw;
+    this.roverCamCanvas.height = ph;
+    this.roverCamCtx = this.roverCamCanvas.getContext('2d');
+    this.roverCamTarget = new THREE.WebGLRenderTarget(pw, ph, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter
+    });
+    this.roverCamPixels = new Uint8Array(pw * ph * 4);
     this.roverCamRenderer = null;
-    this.roverCamCtx = null;
-    if (this.lite) {
-      this.roverCamCtx = this.roverCamCanvas.getContext('2d');
-    } else {
-      try {
-        this.roverCamRenderer = new THREE.WebGLRenderer({
-          canvas: this.roverCamCanvas,
-          antialias: false,
-          alpha: false,
-          powerPreference: 'low-power'
-        });
-        this.roverCamRenderer.setPixelRatio(1);
-        this.roverCamRenderer.setSize(this.roverCamCanvas.width, this.roverCamCanvas.height, false);
-        this.roverCamRenderer.outputColorSpace = THREE.SRGBColorSpace;
-        this.roverCamRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.roverCamRenderer.toneMappingExposure = 1.18;
-        this.roverCamRenderer.shadowMap.enabled = false;
-      } catch {
-        this.roverCamRenderer = null;
-        this.roverCamCtx = this.roverCamCanvas.getContext('2d');
-      }
-    }
   }
 
   setSensorLayer(name, on) {
@@ -962,46 +1010,32 @@ export class GameRenderer3D {
   }
 
   async _loadArt() {
-    const [g1, g2, g3, dust, ore, crater] = await Promise.all([
+    const [g1, g2, g3, dust, ore, crater, horizon] = await Promise.all([
       loadTexture('assets/art/tile-ground-1.png'),
       loadTexture('assets/art/tile-ground-2.png'),
       loadTexture('assets/art/tile-ground-3.png'),
       loadTexture('assets/art/tile-dust.png'),
       loadTexture('assets/art/tile-ore.png'),
-      loadTexture('assets/art/tile-crater.png')
+      loadTexture('assets/art/tile-crater.png'),
+      loadTexture('assets/art/bg-horizon.png')
     ]);
     if (this.disposed) return;
-    this.maps = { g1, g2, g3, dust, ore, crater };
-    this._makeGroundMap();
+    this.maps = { g1, g2, g3, dust, ore, crater, horizon };
     this._updateSplat();
-    if (this._terrainShader) {
-      this._terrainShader.uniforms.uDustTex.value = dust || this.splatTex;
-      this._terrainShader.uniforms.uOreTex.value = ore || this.splatTex;
-      this._terrainShader.uniforms.uCraterTex.value = crater || this.splatTex;
+    const fallback = this.noiseTex;
+    for (const shader of this._terrainShaders) {
+      shader.uniforms.uG1.value = g1 || fallback;
+      shader.uniforms.uG2.value = g2 || fallback;
+      shader.uniforms.uG3.value = g3 || fallback;
+      shader.uniforms.uDustTex.value = dust || fallback;
+      shader.uniforms.uOreTex.value = ore || fallback;
+      shader.uniforms.uCraterTex.value = crater || fallback;
     }
-  }
-
-  _makeGroundMap() {
-    if (!this.maps?.g1) return;
-    const size = 512;
-    const cnv = document.createElement('canvas');
-    cnv.width = cnv.height = size;
-    const ctx = cnv.getContext('2d');
-    const imgs = [this.maps.g1, this.maps.g2, this.maps.g3].map(t => t?.image).filter(Boolean);
-    if (!imgs.length) return;
-    for (let y = 0; y < size; y += 128) {
-      for (let x = 0; x < size; x += 128) {
-        ctx.drawImage(imgs[(x / 128 + y / 128) % imgs.length], x, y, 128, 128);
-      }
+    if (horizon && this.horizonMesh) {
+      this.horizonMesh.material.map = horizon;
+      this.horizonMesh.material.color.setHex(0xffffff);
+      this.horizonMesh.material.needsUpdate = true;
     }
-    if (this.groundTex) this.groundTex.dispose();
-    this.groundTex = new THREE.CanvasTexture(cnv);
-    this.groundTex.colorSpace = THREE.SRGBColorSpace;
-    this.groundTex.wrapS = this.groundTex.wrapT = THREE.RepeatWrapping;
-    this.groundTex.repeat.set(18, 18);
-    this.groundTex.anisotropy = 8;
-    this.terrain.material.map = this.groundTex;
-    this.terrain.material.needsUpdate = true;
   }
 
   _updateSplat() {
@@ -1167,7 +1201,7 @@ export class GameRenderer3D {
       el.removeEventListener('wheel', this._onWheel);
     }
     this.renderer?.dispose();
-    this.roverCamRenderer?.dispose();
+    this.roverCamTarget?.dispose();
     this.coverageTex?.dispose();
     this.splatTex?.dispose();
     this.noiseTex?.dispose();
@@ -1175,6 +1209,8 @@ export class GameRenderer3D {
     this.trackTex?.dispose();
     this.terrain?.geometry?.dispose();
     this.terrain?.material?.dispose();
+    this.farTerrain?.geometry?.dispose();
+    this.farTerrain?.material?.dispose();
     if (this.canvas?.parentNode) this.canvas.parentNode.removeChild(this.canvas);
     if (typeof window !== 'undefined' && window.__farRoverFps && this.fps) {
       // keep last reading
@@ -1206,7 +1242,7 @@ export class GameRenderer3D {
     this.renderer.setSize(w, h, false);
     this.canvas.style.width = w + 'px';
     this.canvas.style.height = h + 'px';
-    this.canvas.style.background = '#3a2418';
+    this.canvas.style.background = '#1a100c';
     const framed = this._framingRadius();
     this.camDefault.radius = framed;
     if (!this._userFramed) this.camSpherical.radius = framed;
@@ -1224,6 +1260,8 @@ export class GameRenderer3D {
     if (ck !== this.knownCraterKey) {
       this.knownCraterKey = ck;
       this._applyHeights(this.terrain.geometry, gameState);
+      if (this.farTerrain) this._applyHeights(this.farTerrain.geometry, gameState);
+      this._seatRocks(gameState);
       this._rebuildCraterRings();
     }
     const vk = this._visKey(gameState);
@@ -1560,12 +1598,16 @@ export class GameRenderer3D {
       this._fpsT = now;
       if (typeof window !== 'undefined') window.__farRoverFps = this.fps;
     }
-    this._renderRoverCam(now);
     this._setCoverAmt(1);
     if (this.skyMesh) this.skyMesh.visible = false;
+    if (this.horizonMesh) this.horizonMesh.visible = false;
     this.scene.background = this.orbitalBg;
     this.scene.fog = null;
+    const size = this.renderer.getSize(new THREE.Vector2());
+    this.renderer.setScissorTest(false);
+    this.renderer.setViewport(0, 0, size.x, size.y);
     this.renderer.render(this.scene, this.camera);
+    this._renderRoverCam(now);
   }
 
   _updateReticle() {
@@ -1596,8 +1638,8 @@ export class GameRenderer3D {
   _updateRoverCam() {
     if (!this.roverCam || !this.rover) return;
     this.rover.updateMatrixWorld(true);
-    const eye = new THREE.Vector3(0, 0.40, 0.12);
-    const ahead = new THREE.Vector3(0, 0.08, -6.2);
+    const eye = new THREE.Vector3(0, 0.42, 0.10);
+    const ahead = new THREE.Vector3(0, 0.10, -8.5);
     eye.applyMatrix4(this.rover.matrixWorld);
     ahead.applyMatrix4(this.rover.matrixWorld);
     this.roverCam.position.copy(eye);
@@ -1605,13 +1647,37 @@ export class GameRenderer3D {
     this.roverCam.lookAt(ahead);
   }
 
-  _renderRoverCam(now) {
-    if (this.disposed) return;
-    if (!this.roverCamRenderer) {
-      if (this.roverCamCtx) this._paintRoverCam2D();
-      return;
+  _pipRect() {
+    const host = this.roverCamCanvas;
+    const main = this.canvas;
+    if (!host || !main) return null;
+    const a = host.getBoundingClientRect();
+    const b = main.getBoundingClientRect();
+    if (a.width < 8 || a.height < 8 || b.width < 8 || b.height < 8) return null;
+    const x = a.left - b.left;
+    const y = a.top - b.top;
+    const fullyInside = x >= 0 && y >= 0 && (x + a.width) <= b.width + 1 && (y + a.height) <= b.height + 1;
+    return { x, y, w: a.width, h: a.height, fullyInside };
+  }
+
+  _blitPipTarget() {
+    const ctx = this.roverCamCtx;
+    const target = this.roverCamTarget;
+    if (!ctx || !target) return;
+    const w = target.width;
+    const h = target.height;
+    this.renderer.readRenderTargetPixels(target, 0, 0, w, h, this.roverCamPixels);
+    const img = ctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      const src = (h - 1 - y) * w * 4;
+      img.data.set(this.roverCamPixels.subarray(src, src + w * 4), y * w * 4);
     }
-    const interval = this.lite ? 180 : 0;
+    ctx.putImageData(img, 0, 0);
+  }
+
+  _renderRoverCam(now) {
+    if (this.disposed || !this.roverCam) return;
+    const interval = this.lite ? 140 : 0;
     if (interval && now - (this._lastPip || 0) < interval) return;
     this._lastPip = now;
     const roverWas = this.rover.visible;
@@ -1622,19 +1688,48 @@ export class GameRenderer3D {
     if (this.lander) this.lander.visible = false;
     const prevFog = this.scene.fog;
     const prevBg = this.scene.background;
-    this._setCoverAmt(0.16);
+    this._setCoverAmt(0.12);
     if (this.skyMesh) this.skyMesh.visible = true;
+    if (this.horizonMesh) this.horizonMesh.visible = true;
     this.scene.fog = this.groundFog;
     this.scene.background = this.pipBg;
+    const rect = this._pipRect();
+    const host = this.roverCamCanvas;
     try {
-      this.roverCamRenderer.render(this.scene, this.roverCam);
+      if (rect?.fullyInside) {
+        if (host) host.style.opacity = '0';
+        const dpr = this.renderer.getPixelRatio();
+        const vx = Math.round(rect.x * dpr);
+        const vy = Math.round((this.canvas.clientHeight - rect.y - rect.h) * dpr);
+        const vw = Math.max(1, Math.round(rect.w * dpr));
+        const vh = Math.max(1, Math.round(rect.h * dpr));
+        this.roverCam.aspect = rect.w / Math.max(1, rect.h);
+        this.roverCam.updateProjectionMatrix();
+        this.renderer.setScissorTest(true);
+        this.renderer.setViewport(vx, vy, vw, vh);
+        this.renderer.setScissor(vx, vy, vw, vh);
+        this.renderer.render(this.scene, this.roverCam);
+        this.renderer.setScissorTest(false);
+        this.renderer.setViewport(0, 0, this.canvas.width, this.canvas.height);
+      } else {
+        if (host) host.style.opacity = '1';
+        this.roverCam.aspect = 4 / 3;
+        this.roverCam.updateProjectionMatrix();
+        this.renderer.setRenderTarget(this.roverCamTarget);
+        this.renderer.setClearColor(this.pipBg, 1);
+        this.renderer.render(this.scene, this.roverCam);
+        this.renderer.setRenderTarget(null);
+        this.renderer.setClearColor(this.orbitalBg, 1);
+        this._blitPipTarget();
+      }
     } catch {
-      // keep orbital feed even if the PiP context drops
+      if (this.roverCamCtx) this._paintRoverCam2D();
     }
     this.scene.fog = prevFog;
     this.scene.background = prevBg;
     this._setCoverAmt(1);
     if (this.skyMesh) this.skyMesh.visible = false;
+    if (this.horizonMesh) this.horizonMesh.visible = false;
     this.rover.visible = roverWas;
     if (this.lander) this.lander.visible = landerWas !== false;
     if (landerHalo) landerHalo.visible = haloWas;
@@ -1643,12 +1738,14 @@ export class GameRenderer3D {
   render() {
     if (this.disposed) return;
     this._updateRoverCam();
-    this._renderRoverCam(performance.now());
     this._setCoverAmt(1);
     if (this.skyMesh) this.skyMesh.visible = false;
+    if (this.horizonMesh) this.horizonMesh.visible = false;
     this.scene.background = this.orbitalBg;
     this.scene.fog = null;
+    this.renderer.setScissorTest(false);
     this.renderer.render(this.scene, this.camera);
+    this._renderRoverCam(performance.now());
   }
 
   _paintRoverCam2D() {
@@ -1667,20 +1764,25 @@ export class GameRenderer3D {
     const terrain = onGrid ? state.terrain[fr][fc] : null;
     const ahead = parseCraterCell(state);
     const craterAhead = !!(ahead && ahead.col === fc && ahead.row === fr);
-    ctx.fillStyle = '#d4a078';
-    ctx.fillRect(0, 0, w, h);
-    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.38);
-    sky.addColorStop(0, '#f0d0b0');
-    sky.addColorStop(0.55, '#d49260');
-    sky.addColorStop(1, '#c07848');
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, w, h * 0.38);
-    const ground = ctx.createLinearGradient(0, h * 0.38, 0, h);
-    ground.addColorStop(0, '#7a4028');
-    ground.addColorStop(0.4, '#b06038');
-    ground.addColorStop(1, '#c4683a');
-    ctx.fillStyle = ground;
-    ctx.fillRect(0, h * 0.38, w, h * 0.62);
+    const horizon = this.maps?.horizon?.image;
+    if (horizon) {
+      ctx.drawImage(horizon, 0, 0, w, h);
+    } else {
+      ctx.fillStyle = '#c48a58';
+      ctx.fillRect(0, 0, w, h);
+      const sky = ctx.createLinearGradient(0, 0, 0, h * 0.38);
+      sky.addColorStop(0, '#f0d0b0');
+      sky.addColorStop(0.55, '#d49260');
+      sky.addColorStop(1, '#c07848');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, w, h * 0.38);
+      const ground = ctx.createLinearGradient(0, h * 0.38, 0, h);
+      ground.addColorStop(0, '#7a4028');
+      ground.addColorStop(0.4, '#b06038');
+      ground.addColorStop(1, '#c4683a');
+      ctx.fillStyle = ground;
+      ctx.fillRect(0, h * 0.38, w, h * 0.62);
+    }
     ctx.fillStyle = 'rgba(40, 18, 10, 0.32)';
     for (let i = 0; i < 16; i++) {
       const rx = (i * 47 + 13) % w;

@@ -1223,30 +1223,30 @@ export class GameRenderer {
     const ahead = this._aheadCell();
     const craterAhead = !!(ahead && ahead.col === fc && ahead.row === fr);
 
-    ctx.fillStyle = '#d4a078';
-    ctx.fillRect(0, 0, w, h);
-    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.38);
-    sky.addColorStop(0, '#f0d0b0');
-    sky.addColorStop(0.55, '#d49260');
-    sky.addColorStop(1, '#c07848');
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, w, h * 0.38);
-    const ground = ctx.createLinearGradient(0, h * 0.38, 0, h);
-    ground.addColorStop(0, '#7a4028');
-    ground.addColorStop(0.45, '#b06038');
-    ground.addColorStop(1, '#c4683a');
-    ctx.fillStyle = ground;
-    ctx.beginPath();
-    ctx.moveTo(0, h * 0.38);
-    ctx.lineTo(w, h * 0.38);
-    ctx.lineTo(w, h);
-    ctx.lineTo(0, h);
-    ctx.fill();
-    const gnd = getTile('ground', 1);
-    if (gnd) {
-      ctx.globalAlpha = 0.9;
-      ctx.drawImage(gnd, 0, h * 0.38, w, h * 0.62);
-      ctx.globalAlpha = 1;
+    const horizonImg = getBackgroundImage();
+    if (horizonImg) {
+      ctx.drawImage(horizonImg, 0, 0, w, h);
+    } else {
+      ctx.fillStyle = '#d4a078';
+      ctx.fillRect(0, 0, w, h);
+      const sky = ctx.createLinearGradient(0, 0, 0, h * 0.38);
+      sky.addColorStop(0, '#f0d0b0');
+      sky.addColorStop(0.55, '#d49260');
+      sky.addColorStop(1, '#c07848');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, w, h * 0.38);
+      const ground = ctx.createLinearGradient(0, h * 0.38, 0, h);
+      ground.addColorStop(0, '#7a4028');
+      ground.addColorStop(0.45, '#b06038');
+      ground.addColorStop(1, '#c4683a');
+      ctx.fillStyle = ground;
+      ctx.fillRect(0, h * 0.38, w, h * 0.62);
+      const gnd = getTile('ground', 1);
+      if (gnd) {
+        ctx.globalAlpha = 0.9;
+        ctx.drawImage(gnd, 0, h * 0.38, w, h * 0.62);
+        ctx.globalAlpha = 1;
+      }
     }
     ctx.fillStyle = 'rgba(40, 18, 10, 0.28)';
     for (let i = 0; i < 14; i++) {
