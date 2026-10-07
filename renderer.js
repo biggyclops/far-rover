@@ -153,11 +153,11 @@ function createCloudTexture(seed) {
       let n = n1 * 0.5 + n2 * 0.32 + n3 * 0.18;
       n = Math.pow(Math.max(0, n), 1.65);
       const i = (y * size + x) * 4;
-      const shade = 168 + n * 72;
-      data[i] = shade;
-      data[i + 1] = shade + 3;
-      data[i + 2] = Math.min(255, shade + 12);
-      data[i + 3] = Math.min(255, 70 + n * 185);
+      const shade = 22 + n * 18;
+      data[i] = shade + 6;
+      data[i + 1] = shade;
+      data[i + 2] = Math.max(0, shade - 4);
+      data[i + 3] = Math.min(255, 36 + n * 70);
     }
   }
   sctx.putImageData(img, 0, 0);
@@ -745,7 +745,7 @@ export class GameRenderer {
       ctx.lineTo(quad[2].x, quad[2].y);
       ctx.lineTo(quad[3].x, quad[3].y);
       ctx.closePath();
-      ctx.fillStyle = 'rgba(10, 6, 4, 0.78)';
+      ctx.fillStyle = 'rgba(10, 6, 4, 0.48)';
       ctx.fill();
       ctx.restore();
     } else if (isCameraSeen) {
@@ -756,7 +756,7 @@ export class GameRenderer {
       ctx.lineTo(quad[2].x, quad[2].y);
       ctx.lineTo(quad[3].x, quad[3].y);
       ctx.closePath();
-      ctx.fillStyle = 'rgba(28, 16, 10, 0.38)';
+      ctx.fillStyle = 'rgba(28, 16, 10, 0.22)';
       ctx.fill();
       ctx.restore();
     }
@@ -1223,37 +1223,38 @@ export class GameRenderer {
     const ahead = this._aheadCell();
     const craterAhead = !!(ahead && ahead.col === fc && ahead.row === fr);
 
-    ctx.fillStyle = '#d08958';
+    ctx.fillStyle = '#d4a078';
     ctx.fillRect(0, 0, w, h);
-    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.42);
-    sky.addColorStop(0, '#e8c4a0');
-    sky.addColorStop(0.55, '#d48a58');
-    sky.addColorStop(1, '#c07040');
+    const sky = ctx.createLinearGradient(0, 0, 0, h * 0.38);
+    sky.addColorStop(0, '#f0d0b0');
+    sky.addColorStop(0.55, '#d49260');
+    sky.addColorStop(1, '#c07848');
     ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, w, h * 0.42);
-    const ground = ctx.createLinearGradient(0, h * 0.42, 0, h);
-    ground.addColorStop(0, '#8a4a2c');
+    ctx.fillRect(0, 0, w, h * 0.38);
+    const ground = ctx.createLinearGradient(0, h * 0.38, 0, h);
+    ground.addColorStop(0, '#7a4028');
+    ground.addColorStop(0.45, '#b06038');
     ground.addColorStop(1, '#c4683a');
     ctx.fillStyle = ground;
     ctx.beginPath();
-    ctx.moveTo(0, h * 0.42);
-    ctx.lineTo(w, h * 0.42);
+    ctx.moveTo(0, h * 0.38);
+    ctx.lineTo(w, h * 0.38);
     ctx.lineTo(w, h);
     ctx.lineTo(0, h);
     ctx.fill();
     const gnd = getTile('ground', 1);
     if (gnd) {
-      ctx.globalAlpha = 0.85;
-      ctx.drawImage(gnd, 0, h * 0.42, w, h * 0.58);
+      ctx.globalAlpha = 0.9;
+      ctx.drawImage(gnd, 0, h * 0.38, w, h * 0.62);
       ctx.globalAlpha = 1;
     }
-    ctx.fillStyle = 'rgba(40, 18, 10, 0.22)';
-    for (let i = 0; i < 8; i++) {
+    ctx.fillStyle = 'rgba(40, 18, 10, 0.28)';
+    for (let i = 0; i < 14; i++) {
       const rx = (i * 47 + 13) % w;
-      const ry = h * 0.52 + (i * 31) % (h * 0.4);
-      const rw = 6 + (i % 4) * 3;
+      const ry = h * 0.46 + (i * 31) % (h * 0.48);
+      const rw = 4 + (i % 5) * 2.5;
       ctx.beginPath();
-      ctx.ellipse(rx, ry, rw, rw * 0.45, 0, 0, Math.PI * 2);
+      ctx.ellipse(rx, ry, rw, rw * 0.42, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -1266,18 +1267,18 @@ export class GameRenderer {
       if ((known || craterAhead) && terrain === 'crater') tile = getTile('crater', 1);
       else if (known && terrain === 'dust') tile = getTile('dust', 1);
       else if (known && terrain === 'ore') tile = getTile('ore', 1);
-      drawBillboard(tile, w * 0.08, h * 0.40, w * 0.84, h * 0.52);
+      drawBillboard(tile, w * 0.08, h * 0.36, w * 0.84, h * 0.56);
     }
 
     if (craterAhead || (known && terrain === 'crater')) {
       ctx.fillStyle = 'rgba(22, 8, 4, 0.72)';
       ctx.beginPath();
-      ctx.ellipse(w * 0.5, h * 0.70, w * 0.28, h * 0.12, 0, 0, Math.PI * 2);
+      ctx.ellipse(w * 0.5, h * 0.68, w * 0.30, h * 0.14, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = this.sensorLayers.lidar ? '#4be4ff' : 'rgba(180, 80, 40, 0.5)';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.ellipse(w * 0.5, h * 0.70, w * 0.28, h * 0.12, 0, 0, Math.PI * 2);
+      ctx.ellipse(w * 0.5, h * 0.68, w * 0.30, h * 0.14, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
     if (this.sensorLayers.thermal && known && terrain === 'dust') {

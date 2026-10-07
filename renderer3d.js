@@ -71,9 +71,10 @@ function knownCrater(state, col, row) {
 }
 
 function heightAt(x, z, state) {
-  let y = (hash2(Math.floor(x * 2.1), Math.floor(z * 2.1), 1.7) - 0.5) * 0.22;
-  y += (hash2(Math.floor(x * 6.2), Math.floor(z * 6.2), 4.1) - 0.5) * 0.09;
-  y += (hash2(Math.floor(x * 18), Math.floor(z * 18), 8.8) - 0.5) * 0.03;
+  let y = (hash2(Math.floor(x * 0.55), Math.floor(z * 0.55), 0.3) - 0.5) * 0.42;
+  y += (hash2(Math.floor(x * 2.1), Math.floor(z * 2.1), 1.7) - 0.5) * 0.26;
+  y += (hash2(Math.floor(x * 6.2), Math.floor(z * 6.2), 4.1) - 0.5) * 0.11;
+  y += (hash2(Math.floor(x * 18), Math.floor(z * 18), 8.8) - 0.5) * 0.04;
   const col = x + (GRID_COLS - 1) / 2;
   const row = z + (GRID_ROWS - 1) / 2;
   if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) {
@@ -83,8 +84,8 @@ function heightAt(x, z, state) {
       const dx = col - c - 0.5;
       const dz = row - r - 0.5;
       const d = Math.sqrt(dx * dx + dz * dz);
-      if (d < 0.46) y -= (1 - d / 0.46) * 0.58;
-      else if (d < 0.62) y += (1 - Math.abs(d - 0.54) / 0.08) * 0.11;
+      if (d < 0.52) y -= (1 - d / 0.52) * 0.82;
+      else if (d < 0.70) y += (1 - Math.abs(d - 0.60) / 0.10) * 0.16;
     }
   }
   return y;
@@ -152,14 +153,14 @@ function createHazeMaterial(coverageTex, noiseTex) {
       uniform float uTime;
       varying vec2 vUv;
       void main() {
-        float n = texture2D(uNoise, vUv * 1.15 + vec2(uTime * 0.004, 0.0)).r;
+        float n = texture2D(uNoise, vUv * 0.55 + vec2(uTime * 0.003, 0.0)).r;
         float cov = texture2D(uCoverage, vUv).r;
         float hidden = smoothstep(0.55, 0.92, cov);
         float cam = (1.0 - hidden) * smoothstep(0.08, 0.55, cov);
-        float a = hidden * 0.22 + cam * 0.10;
-        a *= 0.82 + 0.18 * n;
+        float a = hidden * 0.16 + cam * 0.07;
+        a *= 0.88 + 0.12 * n;
         if (a < 0.02) discard;
-        vec3 col = vec3(0.07, 0.045, 0.03);
+        vec3 col = vec3(0.05, 0.032, 0.022);
         gl_FragColor = vec4(col, a);
       }
     `
@@ -213,7 +214,7 @@ function createRover() {
   light.position.set(0, 0.24, -0.20);
   light.name = 'statusLight';
   g.add(light);
-  const head = new THREE.PointLight(0xffe6c8, 1.1, 6.5, 1.6);
+  const head = new THREE.PointLight(0xffe6c8, 1.65, 9.0, 1.4);
   head.position.set(0, 0.26, -0.22);
   g.add(head);
 
@@ -230,7 +231,7 @@ function createRover() {
   });
   g.userData.wheels = wheels;
   g.userData.light = light;
-  g.scale.setScalar(1.9);
+  g.scale.setScalar(1.28);
   return g;
 }
 
@@ -280,23 +281,23 @@ function createLander() {
 
 function createRockInstancer(offCount, onCount) {
   const total = offCount + onCount;
-  const geo = new THREE.DodecahedronGeometry(0.12, 0);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x6a3a24, roughness: 0.94, metalness: 0.04 });
+  const geo = new THREE.DodecahedronGeometry(0.10, 0);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x6e3c26, roughness: 0.96, metalness: 0.03 });
   const mesh = new THREE.InstancedMesh(geo, mat, total);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   const dummy = new THREE.Object3D();
   let placed = 0;
   let guard = 0;
-  while (placed < onCount && guard < onCount * 12) {
+  while (placed < onCount && guard < onCount * 14) {
     guard++;
     const col = hash2(guard, 3, 2.1) * 12;
     const row = hash2(guard, 5, 3.4) * 12;
-    const x = col - 6 + (hash2(guard, 7, 1.2) - 0.5) * 0.72;
-    const z = row - 6 + (hash2(guard, 8, 1.5) - 0.5) * 0.72;
-    dummy.position.set(x, 0.045, z);
+    const x = col - 6 + (hash2(guard, 7, 1.2) - 0.5) * 0.82;
+    const z = row - 6 + (hash2(guard, 8, 1.5) - 0.5) * 0.82;
+    dummy.position.set(x, 0.03, z);
     dummy.rotation.set(hash2(guard, 8, 1) * 2, hash2(guard, 9, 1) * 6, hash2(guard, 10, 1));
-    dummy.scale.setScalar(0.35 + hash2(guard, 11, 1) * 0.95);
+    dummy.scale.setScalar(0.22 + hash2(guard, 11, 1) * 1.15);
     dummy.updateMatrix();
     mesh.setMatrixAt(placed, dummy.matrix);
     placed++;
@@ -309,9 +310,9 @@ function createRockInstancer(offCount, onCount) {
     const z = (hash2(guard, 4, 2.2) - 0.5) * WORLD * 0.92;
     const onBoard = Math.abs(x) < 6.4 && Math.abs(z) < 6.4;
     if (onBoard) continue;
-    dummy.position.set(x, 0.05, z);
+    dummy.position.set(x, 0.04, z);
     dummy.rotation.set(hash2(guard, 8, 1) * 2, hash2(guard, 9, 1) * 6, hash2(guard, 10, 1));
-    dummy.scale.setScalar(0.7 + hash2(guard, 11, 1) * 2.1);
+    dummy.scale.setScalar(0.55 + hash2(guard, 11, 1) * 1.8);
     dummy.updateMatrix();
     mesh.setMatrixAt(placed, dummy.matrix);
     placed++;
@@ -372,16 +373,17 @@ export class GameRenderer3D {
     this.layerKey = '';
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x24150e);
+    this.scene.background = new THREE.Color(0x3a2418);
     this.scene.fog = null;
-    this.pipBg = new THREE.Color(0xc07a4a);
-    this.orbitalBg = new THREE.Color(0x24150e);
-    this.groundFog = new THREE.Fog(0xc07a4a, 4.5, 22);
+    this.pipBg = new THREE.Color(0xd09a68);
+    this.orbitalBg = new THREE.Color(0x3a2418);
+    this.groundFog = new THREE.Fog(0xc07a4a, 7.5, 28);
 
-    this.camera = new THREE.PerspectiveCamera(46, 1, 0.15, 220);
-    this.camTarget = new THREE.Vector3(0, 0.02, 0.2);
-    this.camSpherical = new THREE.Spherical(15.4, 0.16, 0.0);
+    this.camera = new THREE.PerspectiveCamera(40, 1, 0.12, 220);
+    this.camTarget = new THREE.Vector3(0, 0.0, 0.0);
+    this.camSpherical = new THREE.Spherical(16.6, 0.09, 0.0);
     this.camDefault = this.camSpherical.clone();
+    this._userFramed = false;
     this._applyCamera();
     this.camera.layers.enable(0);
     this.camera.layers.enable(1);
@@ -395,7 +397,8 @@ export class GameRenderer3D {
     this.renderer.setPixelRatio(this.lite ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.02;
+    this.renderer.toneMappingExposure = 1.14;
+    this.renderer.setClearColor(0x3a2418, 1);
     this.renderer.shadowMap.enabled = !this.lite;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.canvas = this.renderer.domElement;
@@ -420,6 +423,7 @@ export class GameRenderer3D {
     this.splatTex.flipY = false;
     this.splatTex.needsUpdate = true;
 
+    this._coverUniforms = [];
     this.terrain = this._makeTerrain();
     this.scene.add(this.terrain);
     this.gridHelper = this._makeGrid();
@@ -437,22 +441,24 @@ export class GameRenderer3D {
     this.scene.add(this.spectralGroup);
     this.reticle = this._makeReticle();
     this.scene.add(this.reticle);
-    this.rocks = createRockInstancer(this.lite ? 30 : 140, this.lite ? 50 : 110);
+    this.rocks = createRockInstancer(this.lite ? 40 : 90, this.lite ? 80 : 220);
     this.rocks.material.onBeforeCompile = (shader) => {
       shader.uniforms.uCoverage = { value: this.coverageTex };
+      shader.uniforms.uCoverAmt = { value: 1.0 };
+      this._coverUniforms.push(shader.uniforms.uCoverAmt);
       shader.vertexShader = `varying vec3 vWorldPos;\n` + shader.vertexShader.replace(
         '#include <worldpos_vertex>',
         `#include <worldpos_vertex>
          vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
       );
-      shader.fragmentShader = `uniform sampler2D uCoverage; varying vec3 vWorldPos;\n` + shader.fragmentShader.replace(
+      shader.fragmentShader = `uniform sampler2D uCoverage; uniform float uCoverAmt; varying vec3 vWorldPos;\n` + shader.fragmentShader.replace(
         '#include <color_fragment>',
         `#include <color_fragment>
          vec2 buv = vec2(vWorldPos.x + 6.0, vWorldPos.z + 6.0) / 12.0;
          float onB = step(0.0, buv.x) * step(0.0, buv.y) * step(buv.x, 1.0) * step(buv.y, 1.0);
-         float cov = mix(1.0, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
+         float cov = mix(0.82, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
          float hiddenAmt = smoothstep(0.52, 0.92, cov);
-         diffuseColor.rgb *= mix(1.0, 0.18, hiddenAmt);
+         diffuseColor.rgb *= mix(1.0, 0.55, hiddenAmt * uCoverAmt);
         `
       );
     };
@@ -463,7 +469,7 @@ export class GameRenderer3D {
     this.cloudLayers = [];
     {
       const mat = createHazeMaterial(this.coverageTex, this.noiseTex);
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(12.0, 12.0), mat);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(12.6, 12.6), mat);
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.set(0, 0.55, 0);
       mesh.renderOrder = 10;
@@ -510,10 +516,10 @@ export class GameRenderer3D {
   }
 
   _lights() {
-    const hemi = new THREE.HemisphereLight(0x8eb4d4, 0x5a2e18, 0.28);
+    const hemi = new THREE.HemisphereLight(0xc8b098, 0x5a2e18, 0.46);
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffd4a0, 2.7);
-    sun.position.set(-20, 6.4, -13);
+    const sun = new THREE.DirectionalLight(0xffd4a0, 2.25);
+    sun.position.set(-12, 20, -10);
     sun.castShadow = !this.lite;
     sun.shadow.mapSize.set(this.lite ? 512 : 1024, this.lite ? 512 : 1024);
     sun.shadow.camera.near = 2;
@@ -525,8 +531,8 @@ export class GameRenderer3D {
     sun.shadow.bias = -0.0004;
     this.scene.add(sun);
     this.sun = sun;
-    this.sunDefault = 2.7;
-    this.scene.add(new THREE.AmbientLight(0xffc8a0, 0.10));
+    this.sunDefault = 2.25;
+    this.scene.add(new THREE.AmbientLight(0xffc8a0, 0.20));
   }
 
   _sky() {
@@ -550,6 +556,8 @@ export class GameRenderer3D {
     });
     this.skyMesh = new THREE.Mesh(skyGeo, skyMat);
     this.skyMesh.layers.set(3);
+    this.skyMesh.visible = false;
+    this.skyMesh.frustumCulled = false;
     this.scene.add(this.skyMesh);
   }
 
@@ -559,8 +567,8 @@ export class GameRenderer3D {
     this._applyHeights(geo, this.gameState);
     const mat = new THREE.MeshStandardMaterial({
       color: 0xc45e34,
-      roughness: 0.95,
-      metalness: 0.03,
+      roughness: 0.92,
+      metalness: 0.02,
       vertexColors: true
     });
     mat.onBeforeCompile = (shader) => {
@@ -569,7 +577,9 @@ export class GameRenderer3D {
       shader.uniforms.uOreTex = { value: this.maps?.ore || this.splatTex };
       shader.uniforms.uCraterTex = { value: this.maps?.crater || this.splatTex };
       shader.uniforms.uCoverage = { value: this.coverageTex };
+      shader.uniforms.uCoverAmt = { value: 1.0 };
       this._terrainShader = shader;
+      this._coverUniforms.push(shader.uniforms.uCoverAmt);
       shader.vertexShader = `
         varying vec3 vWorldPos;
       ` + shader.vertexShader.replace(
@@ -583,29 +593,43 @@ export class GameRenderer3D {
         uniform sampler2D uOreTex;
         uniform sampler2D uCraterTex;
         uniform sampler2D uCoverage;
+        uniform float uCoverAmt;
         varying vec3 vWorldPos;
       ` + shader.fragmentShader.replace(
         '#include <map_fragment>',
-        `#include <map_fragment>
+        `#ifdef USE_MAP
+         vec4 sampledDiffuseColor = texture2D( map, vWorldPos.xz * 0.42 );
+         sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, texture2D( map, vWorldPos.xz * 1.35 ).rgb, 0.24);
+         diffuseColor *= sampledDiffuseColor;
+         #endif
          vec2 buv = vec2(vWorldPos.x + 6.0, vWorldPos.z + 6.0) / 12.0;
          float onB = step(0.0, buv.x) * step(0.0, buv.y) * step(buv.x, 1.0) * step(buv.y, 1.0);
          vec4 sp = texture2D(uSplat, buv);
-         vec2 ruv = vWorldPos.xz * 0.72;
+         vec2 ruv = vWorldPos.xz * 0.55;
          vec3 dustC = texture2D(uDustTex, ruv).rgb;
          vec3 oreC = texture2D(uOreTex, ruv).rgb;
          vec3 crC = texture2D(uCraterTex, ruv).rgb;
          diffuseColor.rgb = mix(diffuseColor.rgb, dustC, sp.r * onB);
          diffuseColor.rgb = mix(diffuseColor.rgb, oreC, sp.g * onB);
          diffuseColor.rgb = mix(diffuseColor.rgb, crC, sp.b * onB);
-         float cov = mix(1.0, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
-         float hiddenAmt = smoothstep(0.52, 0.92, cov);
-         float camAmt = (1.0 - hiddenAmt) * smoothstep(0.06, 0.52, cov);
+         float cov = mix(0.78, texture2D(uCoverage, clamp(vec2(buv.x, 1.0 - buv.y), 0.0, 1.0)).r, onB);
+         float hiddenAmt = smoothstep(0.52, 0.92, cov) * uCoverAmt;
+         float camAmt = (1.0 - hiddenAmt) * smoothstep(0.06, 0.52, cov) * uCoverAmt;
+         float drivenAmt = (1.0 - hiddenAmt) * (1.0 - camAmt) * onB * uCoverAmt;
          float luma = dot(diffuseColor.rgb, vec3(0.36, 0.28, 0.16));
-         vec3 gray = vec3(luma * 0.78, luma * 0.48, luma * 0.32);
-         vec3 dimmed = mix(diffuseColor.rgb, gray, hiddenAmt * 0.78 + camAmt * 0.32);
-         dimmed *= mix(1.0, 0.20, hiddenAmt);
-         dimmed *= mix(1.0, 0.58, camAmt);
+         vec3 gray = vec3(luma * 0.92, luma * 0.62, luma * 0.42);
+         vec3 dimmed = mix(diffuseColor.rgb, gray, hiddenAmt * 0.42 + camAmt * 0.18);
+         dimmed *= mix(1.0, 0.58, hiddenAmt);
+         dimmed *= mix(1.0, 0.82, camAmt);
+         dimmed *= mix(1.0, 1.16, drivenAmt);
          diffuseColor.rgb = dimmed;
+        `
+      ).replace(
+        '#include <normal_fragment_begin>',
+        `#include <normal_fragment_begin>
+         float nx = fract(sin(dot(vWorldPos.xz, vec2(127.1, 311.7))) * 43758.5453);
+         float nz = fract(sin(dot(vWorldPos.xz, vec2(269.5, 183.3))) * 43758.5453);
+         normal = normalize(normal + vec3(nx - 0.5, 0.0, nz - 0.5) * 0.28);
         `
       );
     };
@@ -624,11 +648,11 @@ export class GameRenderer3D {
       const z = pos.getZ(i);
       const y = heightAt(x, z, state);
       pos.setY(i, y);
-      const ao = 0.72 + Math.max(0, y) * 1.5 + (y < 0 ? y * 0.85 : 0);
-      const warm = 0.62 + ao * 0.25;
+      const ao = 0.90 + Math.max(0, y) * 0.55 + (y < 0 ? y * 0.45 : 0);
+      const warm = 0.96 + (ao - 0.90) * 0.4;
       colors[i * 3] = warm;
-      colors[i * 3 + 1] = warm * 0.62;
-      colors[i * 3 + 2] = warm * 0.38;
+      colors[i * 3 + 1] = warm * 0.70;
+      colors[i * 3 + 2] = warm * 0.44;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     pos.needsUpdate = true;
@@ -706,14 +730,14 @@ export class GameRenderer3D {
     );
     ring.rotation.x = -Math.PI / 2;
     g.add(ring);
-    g.layers.set(0);
-    g.traverse(o => o.layers.set(0));
+    g.layers.set(1);
+    g.traverse(o => o.layers.set(1));
     g.visible = false;
     return g;
   }
 
   _initRoverCam() {
-    this.roverCam = new THREE.PerspectiveCamera(60, 4 / 3, 0.05, 36);
+    this.roverCam = new THREE.PerspectiveCamera(60, 4 / 3, 0.08, 48);
     this.roverCam.layers.enable(0);
     this.roverCam.layers.enable(3);
     this.roverCam.layers.disable(2);
@@ -733,7 +757,7 @@ export class GameRenderer3D {
       this.roverCamRenderer.setSize(this.roverCamCanvas.width, this.roverCamCanvas.height, false);
       this.roverCamRenderer.outputColorSpace = THREE.SRGBColorSpace;
       this.roverCamRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-      this.roverCamRenderer.toneMappingExposure = 1.05;
+      this.roverCamRenderer.toneMappingExposure = 1.18;
       this.roverCamRenderer.shadowMap.enabled = false;
     } catch {
       this.roverCamRenderer = null;
@@ -969,8 +993,8 @@ export class GameRenderer3D {
     this.groundTex = new THREE.CanvasTexture(cnv);
     this.groundTex.colorSpace = THREE.SRGBColorSpace;
     this.groundTex.wrapS = this.groundTex.wrapT = THREE.RepeatWrapping;
-    this.groundTex.repeat.set(WORLD / 2.2, WORLD / 2.2);
-    this.groundTex.anisotropy = 4;
+    this.groundTex.repeat.set(1, 1);
+    this.groundTex.anisotropy = 8;
     this.terrain.material.map = this.groundTex;
     this.terrain.material.needsUpdate = true;
   }
@@ -1046,13 +1070,14 @@ export class GameRenderer3D {
       prev.y = e.clientY;
       if (this._pointers.size === 1) {
         this.camSpherical.theta -= dx * 0.0035;
-        this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi + dy * 0.003, 0.10, 0.38);
+        this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi + dy * 0.003, 0.04, 0.32);
         this._clampCam();
       } else if (this._pointers.size === 2) {
         const pts = [...this._pointers.values()];
         const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
         if (this._lastPinch) {
           this.camSpherical.radius *= this._lastPinch / dist;
+          this._userFramed = true;
           this._clampCam();
         }
         this._lastPinch = dist;
@@ -1066,6 +1091,7 @@ export class GameRenderer3D {
     this._onWheel = (e) => {
       e.preventDefault();
       this.camSpherical.radius *= (1 + Math.sign(e.deltaY) * 0.08);
+      this._userFramed = true;
       this._clampCam();
     };
     el.addEventListener('pointerdown', this._onPointerDown);
@@ -1077,8 +1103,8 @@ export class GameRenderer3D {
   }
 
   _clampCam() {
-    this.camSpherical.radius = THREE.MathUtils.clamp(this.camSpherical.radius, 12.2, 18.5);
-    this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi, 0.10, 0.38);
+    this.camSpherical.radius = THREE.MathUtils.clamp(this.camSpherical.radius, 11.5, 22);
+    this.camSpherical.phi = THREE.MathUtils.clamp(this.camSpherical.phi, 0.04, 0.32);
     const span = 0.36;
     this.camSpherical.theta = THREE.MathUtils.clamp(this.camSpherical.theta, this.camDefault.theta - span, this.camDefault.theta + span);
   }
@@ -1091,7 +1117,9 @@ export class GameRenderer3D {
   }
 
   resetView() {
+    this._userFramed = false;
     this.camSpherical.copy(this.camDefault);
+    if (this.camera?.aspect) this.camSpherical.radius = this._framingRadius();
     this._applyCamera();
   }
 
@@ -1148,6 +1176,21 @@ export class GameRenderer3D {
     }
   }
 
+  _framingRadius() {
+    const span = 13.35;
+    const vFov = THREE.MathUtils.degToRad(this.camera.fov);
+    const aspect = Math.max(0.25, this.camera.aspect || 1);
+    const halfH = Math.tan(vFov / 2);
+    const halfW = halfH * aspect;
+    const halfMin = Math.min(halfW, halfH);
+    return (span / 2) / Math.max(0.08, halfMin);
+  }
+
+  _setCoverAmt(v) {
+    if (!this._coverUniforms) return;
+    for (let i = 0; i < this._coverUniforms.length; i++) this._coverUniforms[i].value = v;
+  }
+
   resize() {
     if (this.disposed) return;
     const rect = this.container.getBoundingClientRect();
@@ -1158,6 +1201,11 @@ export class GameRenderer3D {
     this.renderer.setSize(w, h, false);
     this.canvas.style.width = w + 'px';
     this.canvas.style.height = h + 'px';
+    this.canvas.style.background = '#3a2418';
+    const framed = this._framingRadius();
+    this.camDefault.radius = framed;
+    if (!this._userFramed) this.camSpherical.radius = framed;
+    this._applyCamera();
   }
 
   setPlaybackSpeed(speed) {
@@ -1415,7 +1463,7 @@ export class GameRenderer3D {
     const now = performance.now();
     this._stepCloud(now);
     this._applyCamera();
-    this.gridHelper.visible = this.gridForced || this.hovering || this.pausedHint;
+    this.gridHelper.visible = this.gridForced || this.hovering;
     const t = this.reduceMotion ? 0 : now / 1000;
     this.cloudLayers.forEach((m) => {
       m.material.uniforms.uTime.value = t;
@@ -1507,6 +1555,10 @@ export class GameRenderer3D {
       this._fpsT = now;
       if (typeof window !== 'undefined') window.__farRoverFps = this.fps;
     }
+    this._setCoverAmt(1);
+    if (this.skyMesh) this.skyMesh.visible = false;
+    this.scene.background = this.orbitalBg;
+    this.scene.fog = null;
     this.renderer.render(this.scene, this.camera);
     this._renderRoverCam(now);
   }
@@ -1539,8 +1591,8 @@ export class GameRenderer3D {
   _updateRoverCam() {
     if (!this.roverCam || !this.rover) return;
     this.rover.updateMatrixWorld(true);
-    const eye = new THREE.Vector3(0, 0.36, 0.16);
-    const ahead = new THREE.Vector3(0, 0.08, -4.6);
+    const eye = new THREE.Vector3(0, 0.40, 0.12);
+    const ahead = new THREE.Vector3(0, 0.08, -6.2);
     eye.applyMatrix4(this.rover.matrixWorld);
     ahead.applyMatrix4(this.rover.matrixWorld);
     this.roverCam.position.copy(eye);
@@ -1559,6 +1611,9 @@ export class GameRenderer3D {
     this.rover.visible = false;
     const prevFog = this.scene.fog;
     const prevBg = this.scene.background;
+    const skyWas = this.skyMesh?.visible;
+    this._setCoverAmt(0.16);
+    if (this.skyMesh) this.skyMesh.visible = true;
     this.scene.fog = this.groundFog;
     this.scene.background = this.pipBg;
     try {
@@ -1568,12 +1623,18 @@ export class GameRenderer3D {
     }
     this.scene.fog = prevFog;
     this.scene.background = prevBg;
+    this._setCoverAmt(1);
+    if (this.skyMesh) this.skyMesh.visible = !!skyWas;
     this.rover.visible = roverWas;
     if (landerHalo) landerHalo.visible = haloWas;
   }
 
   render() {
     if (this.disposed) return;
+    this._setCoverAmt(1);
+    if (this.skyMesh) this.skyMesh.visible = false;
+    this.scene.background = this.orbitalBg;
+    this.scene.fog = null;
     this.renderer.render(this.scene, this.camera);
     this._updateRoverCam();
     this._renderRoverCam(performance.now());
