@@ -1127,12 +1127,35 @@ export class GameRenderer3D {
       ctx.fillStyle = g;
       ctx.fillRect(px - rr, py - rr, rr * 3.2, rr * 3.2);
     }
-    const g = ctx.createRadialGradient(size / 2, size / 2, size * 0.40, size / 2, size / 2, size * 0.52);
-    g.addColorStop(0, 'rgba(8, 4, 2, 0)');
-    g.addColorStop(0.55, 'rgba(8, 4, 2, 0.08)');
-    g.addColorStop(1, 'rgba(8, 4, 2, 0.92)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size, size);
+    const fadeW = size * (1.6 / BOARD_SPAN);
+    ctx.fillStyle = (() => {
+      const g = ctx.createLinearGradient(0, 0, 0, fadeW);
+      g.addColorStop(0, 'rgba(8, 4, 2, 0.94)');
+      g.addColorStop(1, 'rgba(8, 4, 2, 0)');
+      return g;
+    })();
+    ctx.fillRect(0, 0, size, fadeW);
+    ctx.fillStyle = (() => {
+      const g = ctx.createLinearGradient(0, size, 0, size - fadeW);
+      g.addColorStop(0, 'rgba(8, 4, 2, 0.94)');
+      g.addColorStop(1, 'rgba(8, 4, 2, 0)');
+      return g;
+    })();
+    ctx.fillRect(0, size - fadeW, size, fadeW);
+    ctx.fillStyle = (() => {
+      const g = ctx.createLinearGradient(0, 0, fadeW, 0);
+      g.addColorStop(0, 'rgba(8, 4, 2, 0.94)');
+      g.addColorStop(1, 'rgba(8, 4, 2, 0)');
+      return g;
+    })();
+    ctx.fillRect(0, 0, fadeW, size);
+    ctx.fillStyle = (() => {
+      const g = ctx.createLinearGradient(size, 0, size - fadeW, 0);
+      g.addColorStop(0, 'rgba(8, 4, 2, 0.94)');
+      g.addColorStop(1, 'rgba(8, 4, 2, 0)');
+      return g;
+    })();
+    ctx.fillRect(size - fadeW, 0, fadeW, size);
     this._mosaicBase = document.createElement('canvas');
     this._mosaicBase.width = this._mosaicBase.height = size;
     this._mosaicBase.getContext('2d').drawImage(cnv, 0, 0);
@@ -1180,17 +1203,24 @@ export class GameRenderer3D {
     ctx.drawImage(this._mosaicBase, 0, 0);
     const unit = img.width / BOARD_SPAN;
     const cell = unit;
-    ctx.fillStyle = 'rgba(26, 11, 6, 0.58)';
+    ctx.fillStyle = 'rgba(26, 11, 6, 0.62)';
     ctx.fillRect(0, 0, img.width, img.height);
+    const pad = cell * 0.2;
     for (let row = 0; row < 12; row++) {
       for (let col = 0; col < 12; col++) {
         const driven = !!state.revealed?.[row]?.[col];
         const cam = !driven && !!state.cameraSeen?.[row]?.[col];
+        const crater = knownCrater(state, col, row);
         const x = (col + 2) * unit;
         const y = (row + 2) * unit;
-        if (driven || cam) {
+        if (driven || cam || crater) {
+          ctx.globalAlpha = 0.45;
+          ctx.drawImage(this._mosaicBase, x - pad, y - pad, cell + pad * 2, cell + pad * 2, x - pad, y - pad, cell + pad * 2, cell + pad * 2);
+          ctx.globalAlpha = 1;
           ctx.drawImage(this._mosaicBase, x, y, cell, cell, x, y, cell, cell);
-          ctx.fillStyle = cam ? 'rgba(26, 11, 6, 0.28)' : 'rgba(255, 206, 142, 0.08)';
+          ctx.fillStyle = driven
+            ? 'rgba(255, 206, 142, 0.08)'
+            : (crater && !cam ? 'rgba(26, 11, 6, 0.12)' : 'rgba(26, 11, 6, 0.28)');
           ctx.fillRect(x, y, cell, cell);
         }
       }
