@@ -901,6 +901,110 @@ test.describe('Far Rover UI Tests', () => {
     await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
   });
 
+  test('Instrument layer toggle changes the board without advancing ticks', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    await expect(page.locator('.tick-indicator')).toContainText('Tick 0');
+    await expect(page.locator('.game-canvas')).toBeVisible();
+    await page.waitForFunction(() => {
+      const c = document.querySelector('.game-canvas');
+      return c && c.width > 10;
+    });
+    await page.waitForTimeout(500);
+
+    const sample = () => page.evaluate(() => {
+      const c = document.querySelector('.game-canvas');
+      const ctx = c.getContext('2d');
+      const x = Math.floor(c.width * 0.42);
+      const y = Math.floor(c.height * 0.46);
+      const pw = Math.min(96, c.width - x);
+      const ph = Math.min(96, c.height - y);
+      const { data } = ctx.getImageData(x, y, pw, ph);
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+        n++;
+      }
+      return { r: r / n, g: g / n, b: b / n };
+    });
+    const dist = (a, b) => Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
+
+    const before = await sample();
+    await page.click('#layer-lidar');
+    await expect(page.locator('#layer-lidar')).toHaveAttribute('aria-pressed', 'true');
+    await page.waitForTimeout(120);
+    const lidar = await sample();
+    expect(dist(before, lidar)).toBeGreaterThan(6);
+
+    await page.click('[data-layer="thermal"]');
+    await expect(page.locator('[data-layer="thermal"]')).toHaveAttribute('aria-pressed', 'true');
+    await page.waitForTimeout(120);
+    const stacked = await sample();
+    expect(dist(lidar, stacked)).toBeGreaterThan(4);
+
+    await expect(page.locator('.tick-indicator')).toContainText('Tick 0');
+    await page.click('#step-btn');
+    await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
+  });
+
+  test('Rover cam modes render and change between ticks without extra ticks', async ({ page }) => {
+    test.setTimeout(60000);
+    const sampleCam = () => page.evaluate(() => {
+      const c = document.getElementById('rover-cam-canvas');
+      const ctx = c.getContext('2d');
+      // Lower field: sky is mostly static, pose shows up in the near ground.
+      const { data } = ctx.getImageData(40, 130, 240, 120);
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+        n++;
+      }
+      return { r: r / n, g: g / n, b: b / n };
+    });
+    const dist = (a, b) => Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
+
+    for (const mode of ['photo', 'hybrid', '3d']) {
+      await page.goto(`${BASE_URL}/?cam=${mode}`);
+      await page.click('#start-btn');
+      await page.click('input[data-sensor="distance"]');
+      await page.click('input[data-sensor="spectral"]');
+      await page.click('input[data-sensor="camera"]');
+      await page.selectOption('.condition-select[data-slot="0"]', 'always');
+      await page.selectOption('.action-select[data-slot="0"]', 'explore');
+      await page.click('#launch-btn');
+      await expect(page.locator('.tick-indicator')).toContainText('Tick 0');
+      await expect(page.locator(`#cam-${mode}`)).toHaveAttribute('aria-pressed', 'true');
+      await page.waitForFunction(() => {
+        const c = document.getElementById('rover-cam-canvas');
+        if (!c) return false;
+        const d = c.getContext('2d').getImageData(100, 80, 8, 8).data;
+        return d[0] + d[1] + d[2] > 80;
+      });
+      await page.waitForTimeout(200);
+      const before = await sampleCam();
+      await page.click('#step-btn');
+      await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
+      await page.waitForFunction(() => {
+        const r = window.__orbitalRenderer;
+        return r && !r.anim;
+      }, null, { timeout: 8000 });
+      await page.waitForTimeout(80);
+      const after = await sampleCam();
+      expect(dist(before, after)).toBeGreaterThan(3);
+      await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
+    }
+  });
+
   test('Reset view and grid toggle do not break the operate canvas', async ({ page }) => {
     await page.goto(BASE_URL);
     await page.click('#start-btn');

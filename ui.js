@@ -5,6 +5,7 @@ import * as Sim from './simulation.js';
 import { GameRenderer, MinimapRenderer, loadAssets, hasRealArt, getBackgroundImage, getIcon } from './renderer.js';
 import { shouldUse3D } from './renderer3d.js';
 import { OrbitalRenderer } from './orbital.js';
+import { resolveCamMode, persistCamMode, CAM_MODES } from './rovercam.js';
 
 // === LOCAL STORAGE ===
 const STORAGE_KEY = 'far-rover-demo-v1';
@@ -40,7 +41,6 @@ let tickInterval = null;
 let previouslyRevealed = null;
 let pendingAutoPause = null;
 let pendingStuck = null;
-let animatingMove = false;
 let lastTickResult = null;
 let autoPauseMode = loadAutoPauseMode();
 let autoPauseKindsSeen = new Set();
@@ -580,7 +580,7 @@ function createBoardRenderer(container, state) {
 function showOperateView() {
   clearScreen();
   sensorLayers = {
-    camera: !!(gameState.sensors || []).includes(Sim.SENSORS.CAMERA),
+    camera: true,
     lidar: false,
     thermal: false,
     spectral: false
@@ -604,6 +604,11 @@ function showOperateView() {
             <span class="rover-cam-nav">NAVCAM</span>
           </div>
           <canvas id="rover-cam-canvas" width="528" height="297"></canvas>
+          <div class="rover-cam-modes" role="radiogroup" aria-label="Rover camera mode">
+            <button type="button" class="cam-mode-btn" id="cam-photo" data-cam="photo">PHOTO</button>
+            <button type="button" class="cam-mode-btn" id="cam-hybrid" data-cam="hybrid">HYBRID</button>
+            <button type="button" class="cam-mode-btn" id="cam-3d" data-cam="3d">3D</button>
+          </div>
           <div class="rover-cam-meta">
             <span>FOV 60°</span>
             <span>RES 1024×576</span>
@@ -691,7 +696,7 @@ function showOperateView() {
       </div>
 
       <div class="tracking-strip" id="tracking-strip">${trackingText(gameState)}</div>
-      <div class="credits-line">Terrain: NASA/JPL-Caltech/UArizona HiRISE PIA23289 · Rover cam: NASA/JPL-Caltech/ASU/MSSS Mastcam-Z PIA23727</div>
+      <div class="credits-line">Terrain: NASA/JPL-Caltech/UArizona HiRISE PIA23289 · Rover cam: NASA/JPL-Caltech/ASU/MSSS Mastcam-Z PIA23727, Navcam PIA24422, PIA24543</div>
       <div class="battery-gauge visual-hidden" aria-hidden="true">
         <div class="battery-fill" id="battery-fill" style="width: ${gameState.battery * 5}%"></div>
       </div>
@@ -721,6 +726,30 @@ function showOperateView() {
   renderMinimap();
   wireOperateControls();
   wireRoverCamDrag();
+  wireCamModeToggle();
+}
+
+function wireCamModeToggle() {
+  const mode = resolveCamMode();
+  renderer?.setCamMode?.(mode);
+  const buttons = document.querySelectorAll('.cam-mode-btn');
+  const paint = (m) => {
+    buttons.forEach((btn) => {
+      const on = btn.dataset.cam === m;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  };
+  paint(mode);
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const m = btn.dataset.cam;
+      if (!CAM_MODES.includes(m)) return;
+      persistCamMode(m);
+      renderer?.setCamMode?.(m);
+      paint(m);
+    });
+  });
 }
 
 function renderAutoPauseToast() {
@@ -809,37 +838,29 @@ function renderInstrumentStack() {
   let html = '';
   for (const spec of SENSOR_LAYER_SPEC) {
     const installed = sensors.includes(spec.sensor);
-    const on = installed && !!sensorLayers[spec.id];
+    const on = !!sensorLayers[spec.id];
     const st = on ? 'ACTIVE' : 'STANDBY';
-    if (installed) {
-      html += `<button type="button" class="instrument-toggle${on ? ' active' : ''}"
-        id="layer-${spec.id}" data-layer="${spec.id}" aria-pressed="${on}">
-        ${icons[spec.id] || ''}
-        <span class="instrument-dot"></span>
-        <span class="instrument-copy">
-          <span class="instrument-name">${spec.label.toUpperCase()}</span>
-          <span class="instrument-state">${st}</span>
-        </span>
-      </button>`;
-    } else {
-      html += `<div class="instrument-toggle standby-only">
-        ${icons[spec.id] || ''}
-        <span class="instrument-dot"></span>
-        <span class="instrument-copy">
-          <span class="instrument-name">${spec.label.toUpperCase()}</span>
-          <span class="instrument-state">STANDBY</span>
-        </span>
-      </div>`;
-    }
+    const idAttr = (spec.id !== 'thermal' || installed) ? `id="layer-${spec.id}"` : '';
+    html += `<button type="button" class="instrument-toggle${on ? ' active' : ''}"
+      ${idAttr} data-layer="${spec.id}" aria-pressed="${on}"
+      aria-label="${spec.label} layer ${on ? 'active' : 'standby'}">
+      ${icons[spec.id] || ''}
+      <span class="instrument-dot"></span>
+      <span class="instrument-copy">
+        <span class="instrument-name">${spec.label.toUpperCase()}</span>
+        <span class="instrument-state">${st}</span>
+      </span>
+    </button>`;
   }
   el.innerHTML = html;
   el.querySelectorAll('.instrument-toggle[data-layer]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    const toggle = () => {
       const id = btn.dataset.layer;
       sensorLayers[id] = !sensorLayers[id];
       renderer?.setSensorLayer?.(id, sensorLayers[id]);
       renderInstrumentStack();
-    });
+    };
+    btn.addEventListener('click', toggle);
   });
   applySensorLayers();
 }
@@ -1333,8 +1354,19 @@ function stepOneTick() {
   doTick();
 }
 
+function tickAnimDuration() {
+  if (isPaused) return 200;
+  if (currentSpeed === 1) return 880;
+  if (currentSpeed === 4) return 220;
+  return 52;
+}
+
+function playPoseAnimation(prevCol, prevRow) {
+  if (!renderer?.startAnimation || !gameState) return;
+  renderer.startAnimation(prevCol, prevRow, gameState.col, gameState.row, tickAnimDuration());
+}
+
 function doTick() {
-  if (animatingMove) return;
   if (gameState.outcome) return;
   
   const prevCol = gameState.col;
@@ -1385,32 +1417,26 @@ function doTick() {
     gameState.endReason = result.endCondition.reason;
     stopTicking();
     if (renderer) {
+      playPoseAnimation(prevCol, prevRow);
       renderer.updateState(gameState);
       renderer.render();
     }
     const delay = (gameState.outcome === Sim.OUTCOMES.LOST_CRATER || gameState.outcome === 'lost-crater') ? 1300
       : (gameState.outcome === Sim.OUTCOMES.LOST_BATTERY || gameState.outcome === 'lost-battery') ? 700
       : 0;
-    if (delay && renderer?.canvas?.dataset?.engine === 'webgl' && !navigator.webdriver) {
+    if (delay && !navigator.webdriver) {
       setTimeout(() => endRun(), delay);
     } else {
       endRun();
     }
     return;
   }
-  
-  const shouldAnimate = !isPaused && currentSpeed <= 4 && result.tickRecord?.actionResult?.moved;
-  if (shouldAnimate && renderer) {
-    animatingMove = true;
-    const duration = currentSpeed === 1 ? 120 : currentSpeed === 4 ? 30 : 0;
-    renderer.startAnimation(prevCol, prevRow, gameState.col, gameState.row, duration);
-    setTimeout(() => {
-      animatingMove = false;
-      updateOperateView();
-    }, duration);
-  } else {
-    updateOperateView();
+
+  if (renderer) {
+    playPoseAnimation(prevCol, prevRow);
+    renderer.updateState(gameState);
   }
+  updateOperateView();
 }
 
 function resumeFromAutoPause() {
