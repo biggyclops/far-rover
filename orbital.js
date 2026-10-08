@@ -573,7 +573,10 @@ export class OrbitalRenderer {
       && Math.sign(dx || 0) === Math.sign(prev.dx || 0)
       && Math.sign(dy || 0) === Math.sign(prev.dy || 0)
       && Math.abs(wrapAngle(facingH - fromH)) < 0.4);
-    if (sameDir && this.anim) {
+    const reverseEarly = !!(prev && prev.moving && moving
+      && (dx * (prev.dx || 0) + dy * (prev.dy || 0)) < -0.2);
+    const continueMotion = !!(prev && prev.moving && moving && recent && !reverseEarly);
+    if (continueMotion && this.anim) {
       fromC = this.anim.toCol;
       fromR = this.anim.toRow;
       fromH = this.anim.toH;
@@ -595,9 +598,9 @@ export class OrbitalRenderer {
     const peekDy = peek ? (peek.row ?? toRow) - toRow : 0;
     const peekMove = Math.hypot(peekDx, peekDy) > 0.01;
     const turning = Math.abs(dh) > 0.2;
-    const reverse = !!(prev && prev.moving && moving
-      && (dx * (prev.dx || 0) + dy * (prev.dy || 0)) < -0.2);
-    const continueMotion = !!(prev && prev.moving && moving && recent && !reverse);
+    const reverse = reverseEarly
+      || !!(prev && prev.moving && moving
+        && (dx * (prev.dx || 0) + dy * (prev.dy || 0)) < -0.2);
     const corner = !!(continueMotion && !sameDir);
     const easeIn = moving && !continueMotion;
     // Carry cruise through a corner; a following drill/turn-in-place
@@ -621,7 +624,6 @@ export class OrbitalRenderer {
       start: t0,
       duration: Math.max(16, duration),
       moving,
-      chained: continueMotion,
       easeIn,
       easeOut,
       headingMode,
@@ -1028,9 +1030,7 @@ export class OrbitalRenderer {
   stepAnim(now) {
     if (!this.anim) return false;
     const a = this.anim;
-    let elapsed = now - a.start;
-    if (elapsed <= 0 && a.chained) elapsed = Math.min(33, Math.max(1, this._lastDt || 16));
-    const t = Math.min(1, elapsed / a.duration);
+    const t = Math.min(1, (now - a.start) / a.duration);
     const e = posEase(t, !!a.easeIn, !!a.easeOut);
     const ht = headingEase(t, a.headingMode || 'linear');
     let col;
