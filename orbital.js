@@ -574,6 +574,19 @@ export class OrbitalRenderer {
     let r = this._sampleBilinear(this.camColor, this.hW, col, row, 4, 0);
     let g = this._sampleBilinear(this.camColor, this.hW, col, row, 4, 1);
     let b = this._sampleBilinear(this.camColor, this.hW, col, row, 4, 2);
+    const ht = this._heightAt(col, row);
+    const hx = this._heightAt(col + 0.08, row) - this._heightAt(col - 0.08, row);
+    const hy = this._heightAt(col, row + 0.08) - this._heightAt(col, row - 0.08);
+    const shade = Math.max(0.32, Math.min(1.2, 0.78 - hx * 3.2 + hy * 0.7));
+    r *= shade;
+    g *= shade;
+    b *= shade;
+    if (ht < -0.1) {
+      const k = Math.min(1, (-ht - 0.1) / 0.55);
+      r *= 1 - 0.5 * k;
+      g *= 1 - 0.42 * k;
+      b *= 1 - 0.22 * k;
+    }
     const fog = Math.min(1, Math.max(0, z / 6.4));
     r = r + (210 - r) * fog * 0.58;
     g = g + (168 - g) * fog * 0.58;
