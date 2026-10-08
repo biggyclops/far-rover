@@ -938,17 +938,20 @@ export class OrbitalRenderer {
       return;
     }
     ctx.save();
-    ctx.fillStyle = 'rgba(252, 238, 206, 0.95)';
+    ctx.fillStyle = 'rgba(255, 236, 196, 0.96)';
     ctx.beginPath();
-    ctx.ellipse(cx, cy, 0.07, 0.05, n, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy, 0.12, 0.09, n, 0, Math.PI * 2);
     ctx.fill();
     for (let i = 0; i < 9; i++) {
-      const px = cx + (this._noiseAt(col + i * 1.7, row) - 0.5) * 0.26;
-      const py = cy + (this._noiseAt(col, row + i * 2.1) - 0.5) * 0.2;
-      const r = 0.055 + (i % 3) * 0.028;
-      ctx.fillStyle = i % 2
-        ? 'rgba(248, 236, 210, 0.94)'
-        : 'rgba(42, 28, 18, 0.9)';
+      const dx = (this._noiseAt(col + i * 1.7, row) - 0.5) * 0.26;
+      const dy = (this._noiseAt(col, row + i * 2.1) - 0.5) * 0.2;
+      const px = cx + dx;
+      const py = cy + dy;
+      const r = 0.05 + (i % 3) * 0.028;
+      const nearCore = Math.hypot(dx, dy) < 0.1;
+      ctx.fillStyle = (nearCore || i % 2 === 0)
+        ? 'rgba(248, 236, 210, 0.95)'
+        : 'rgba(42, 28, 18, 0.88)';
       ctx.beginPath();
       ctx.ellipse(px, py, r, r * 0.7, n, 0, Math.PI * 2);
       ctx.fill();
