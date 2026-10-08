@@ -1005,6 +1005,197 @@ test.describe('Far Rover UI Tests', () => {
     }
   });
 
+  test('Camera layer marks camera-seen ore and dust, not hidden fog', async ({ page }) => {
+    test.setTimeout(45000);
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    await expect(page.locator('#layer-camera')).toHaveAttribute('aria-pressed', 'true');
+    await page.waitForFunction(() => window.__orbitalRenderer?._view);
+
+    for (let i = 0; i < 12; i++) {
+      const marks = await page.locator('.game-canvas').getAttribute('data-dust-marks');
+      const ore = await page.locator('.game-canvas').getAttribute('data-ore-marks');
+      if ((marks || '').includes('G10') && (ore || '').includes('G9')) break;
+      await dismissAutoPause(page);
+      const step = page.locator('#step-btn');
+      if (await step.isVisible() && await step.isEnabled()) await step.click({ force: true });
+      await page.waitForTimeout(80);
+    }
+
+    await page.waitForFunction(() => {
+      const c = document.querySelector('.game-canvas');
+      const dust = c?.dataset?.dustMarks || '';
+      const ore = c?.dataset?.oreMarks || '';
+      return dust.includes('G10') && ore.includes('G9');
+    });
+
+    const dustMarks = (await page.locator('.game-canvas').getAttribute('data-dust-marks')) || '';
+    const oreMarks = (await page.locator('.game-canvas').getAttribute('data-ore-marks')) || '';
+    expect(dustMarks.split(',').filter(Boolean).length).toBeGreaterThan(0);
+    expect(oreMarks.split(',').filter(Boolean).length).toBeGreaterThan(0);
+    expect(dustMarks).toMatch(/F10|G10/);
+    expect(oreMarks).toMatch(/G9/);
+    expect(oreMarks).not.toContain('D11');
+    expect(oreMarks).not.toContain('F2');
+    expect(dustMarks).not.toContain('J3');
+
+    const sampleTile = (col, row) => page.evaluate(({ col, row }) => {
+      const r = window.__orbitalRenderer;
+      const v = r._view;
+      const c = r.canvas;
+      const ctx = c.getContext('2d');
+      const x = Math.round(((col + 0.5) * v.scale + v.tx) * v.dpr);
+      const y = Math.round(((row + 0.5) * v.scale + v.ty) * v.dpr);
+      const { data } = ctx.getImageData(Math.max(0, x - 3), Math.max(0, y - 3), 7, 7);
+      let s = 0, n = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        s += data[i] + data[i + 1] + data[i + 2];
+        n++;
+      }
+      return s / n;
+    }, { col, row });
+
+    const dustPx = await sampleTile(6, 9); // G10 camera-seen dust, rover never occupies it
+    const orePx = await sampleTile(6, 8); // G9 camera-seen ore
+    const hiddenPx = await sampleTile(3, 10); // D11 hidden ore
+    expect(Math.abs(dustPx - hiddenPx)).toBeGreaterThan(8);
+    expect(Math.abs(orePx - hiddenPx)).toBeGreaterThan(4);
+    await expect(page.locator('.tick-indicator')).not.toContainText('Tick 0');
+  });
+
+  test('Log table cargo uses goal copy, not a cap fraction', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    await completeRun(page);
+    await page.click('#view-log-end-btn');
+    await page.evaluate(() => {
+      const key = 'far-rover-demo-v1';
+      const data = JSON.parse(localStorage.getItem(key));
+      const run = data?.currentSession?.runs?.[0];
+      if (!run) throw new Error('expected a saved run');
+      run.cargo = 4;
+      localStorage.setItem(key, JSON.stringify(data));
+    });
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('#view-log-btn');
+    await expect(page.locator('.log-cargo')).toContainText('4 (goal 3)');
+    await expect(page.locator('.log-cargo')).not.toContainText('4/3');
+  });
+
+  test('Charge tick 3 header battery matches start-of-turn trace', async ({ page }) => {
+    test.setTimeout(45000);
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'battery_below');
+    await page.locator('.battery-n[data-slot="0"]').fill('19');
+    await page.selectOption('.action-select[data-slot="0"]', 'return_charge');
+    await page.selectOption('.condition-select[data-slot="1"]', 'always');
+    await page.selectOption('.action-select[data-slot="1"]', 'explore');
+    await page.click('#launch-btn');
+
+    for (let i = 0; i < 40; i++) {
+      const found = await page.evaluate(() => {
+        const t = window.__orbitalRenderer?.gameState?.trace || [];
+        return t.some((x) => (x.ruleReason || '').includes('3 of 3'));
+      });
+      if (found) break;
+      await dismissAutoPause(page);
+      const step = page.locator('#step-btn');
+      if (await step.isVisible() && await step.isEnabled()) await step.click({ force: true });
+      await page.waitForTimeout(50);
+    }
+
+    const rec = await page.evaluate(() => {
+      const t = window.__orbitalRenderer?.gameState?.trace || [];
+      return t.find((x) => (x.ruleReason || '').includes('3 of 3')) || null;
+    });
+    expect(rec).toBeTruthy();
+    expect(rec.batteryAtStart).toBeLessThan(20);
+    const hud = await page.locator('#hud-battery').textContent();
+    expect(hud.trim()).toBe(`${Math.round(rec.batteryAtStart * 5)}%`);
+    expect(hud.trim()).not.toBe('100%');
+
+    page.once('dialog', (d) => d.accept());
+    await page.click('#end-run-btn');
+    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
+    const showMore = page.locator('#show-more-trace');
+    if (await showMore.isVisible()) await showMore.click();
+    const chargeRow = page.locator('.trace-item', { hasText: '3 of 3' });
+    await expect(chargeRow).toBeVisible();
+    await expect(chargeRow.locator('.trace-battery')).toHaveText(`Battery: ${rec.batteryAtStart}`);
+  });
+
+  test('Uplink edits are not counted as voluntary reruns', async ({ page }) => {
+    test.setTimeout(60000);
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.click('input[data-sensor="camera"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    await page.click('#step-btn');
+    await page.click('#uplink-btn');
+    await page.selectOption('#uplink-condition', 'crater_in_front');
+    await page.selectOption('#uplink-action', 'sidestep');
+    await page.click('#uplink-apply');
+    await completeRun(page);
+    await page.click('#rerun-btn');
+    await page.click('#launch-btn');
+    await completeRun(page);
+    await page.click('#view-log-end-btn');
+    const summary = await page.locator('.summary-stats').textContent();
+    expect(summary).toMatch(/Voluntary Reruns with Change:\s*0/);
+    const changedCells = page.locator('.log-table tbody tr td:nth-child(6)');
+    await expect(changedCells.nth(1)).toHaveText('No');
+  });
+
+  test('Trace reasons wrap in full without truncation', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('input[data-sensor="distance"]');
+    await page.click('input[data-sensor="dust"]');
+    await page.click('input[data-sensor="spectral"]');
+    await page.selectOption('.condition-select[data-slot="0"]', 'always');
+    await page.selectOption('.action-select[data-slot="0"]', 'explore');
+    await page.click('#launch-btn');
+    await completeRun(page);
+    const reason = page.locator('.trace-reason').last();
+    await expect(reason).toBeVisible();
+    const css = await reason.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {
+        whiteSpace: s.whiteSpace,
+        textOverflow: s.textOverflow,
+        overflow: s.overflow,
+        text: el.textContent
+      };
+    });
+    expect(css.whiteSpace).not.toBe('nowrap');
+    expect(css.textOverflow).not.toBe('ellipsis');
+    expect(css.text.length).toBeGreaterThan(8);
+    expect(css.text).not.toMatch(/…$/);
+    const box = await reason.boundingBox();
+    expect(box.width).toBeGreaterThan(40);
+  });
+
   test('Reset view and grid toggle do not break the operate canvas', async ({ page }) => {
     await page.goto(BASE_URL);
     await page.click('#start-btn');

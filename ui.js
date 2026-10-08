@@ -92,6 +92,7 @@ function shouldPauseForHazards(autoPause) {
 
 function displayedBattery() {
   const rec = lastTickResult?.tickRecord;
+  if (rec?.batteryAtStart != null) return rec.batteryAtStart;
   if (rec?.readings && rec.readings.battery != null) return rec.readings.battery;
   return gameState?.battery ?? 20;
 }
@@ -1668,7 +1669,7 @@ function showLogScreen() {
                 <td class="${r.outcome?.startsWith('success') ? 'success' : 'failure'}">${r.outcome || '?'}</td>
                 <td>${r.ticks}</td>
                 <td>${r.tilesScanned}/25</td>
-                <td>${r.cargo}/3</td>
+                <td class="log-cargo">${r.cargo} (goal 3)</td>
                 <td>${r.changesFromPrevious?.changed ? 'Yes' : (i === 0 ? '-' : 'No')}</td>
                 <td><input type="checkbox" data-run="${i}" ${r.prompted ? 'checked' : ''} class="prompted-check"></td>
                 <td>${r.durationSeconds}s</td>
