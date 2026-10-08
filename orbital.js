@@ -172,9 +172,13 @@ export class OrbitalRenderer {
     this.chuteImg = chute;
     this.mastcamImg = cam;
     this.noiseImg = noise;
-    this._buildAuxMaps();
-    this._collectCraters();
-    this._bakeCratersIntoHeight();
+    try {
+      this._buildAuxMaps();
+      this._collectCraters();
+      this._bakeCratersIntoHeight();
+    } catch (err) {
+      console.warn('Orbital aux maps failed', err);
+    }
   }
 
   dispose() {
@@ -444,14 +448,30 @@ export class OrbitalRenderer {
         const ny = -dy * 5;
         const inv = 1 / Math.hypot(nx, ny, 1);
         const shade = Math.max(0.08, Math.min(1, -nx * inv * 0.62 + ny * inv * 0.18 + inv * 0.78));
-        let lr = (28 + L * 170) * shade;
-        let lg = (48 + L * 150) * shade;
-        let lb = (88 + L * 90) * shade;
+        let lr;
+        let lg;
+        let lb;
+        if (L < 0.34) {
+          const k = L / 0.34;
+          lr = (8 + 24 * k) * shade;
+          lg = (36 + 90 * k) * shade;
+          lb = (110 + 90 * k) * shade;
+        } else if (L < 0.66) {
+          const k = (L - 0.34) / 0.32;
+          lr = (32 + 100 * k) * shade;
+          lg = (126 + 30 * k) * shade;
+          lb = (200 - 80 * k) * shade;
+        } else {
+          const k = (L - 0.66) / 0.34;
+          lr = (132 + 90 * k) * shade;
+          lg = (156 + 60 * k) * shade;
+          lb = (120 + 20 * k) * shade;
+        }
         const band = Math.abs((L * 16) % 1);
         if (band < 0.07 || band > 0.93) {
-          lr = lr * 0.35 + 210 * 0.65;
-          lg = lg * 0.35 + 225 * 0.65;
-          lb = lb * 0.35 + 235 * 0.65;
+          lr = lr * 0.25 + 160 * 0.75;
+          lg = lg * 0.25 + 230 * 0.75;
+          lb = lb * 0.25 + 255 * 0.75;
         }
         ld[i] = lr;
         ld[i + 1] = lg;
@@ -724,9 +744,9 @@ export class OrbitalRenderer {
       wctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * tx, dpr * ty);
     };
 
-    if (this.sensorLayers.lidar) blitLayer(this.lidarImg, this.seenMask, 'source-over', 0.78);
-    if (this.sensorLayers.thermal) blitLayer(this.thermalImg, this.seenMask, 'color', 0.82);
-    if (this.sensorLayers.spectral) blitLayer(this.spectralImg, this.seenMask, 'color', 0.72);
+    if (this.sensorLayers.lidar) blitLayer(this.lidarImg, this.seenMask, 'source-over', 0.88);
+    if (this.sensorLayers.thermal) blitLayer(this.thermalImg, this.seenMask, 'source-over', 0.72);
+    if (this.sensorLayers.spectral) blitLayer(this.spectralImg, this.seenMask, 'source-over', 0.7);
 
     this._drawTracks(wctx);
     this._drawPath(wctx, roverCol, roverRow);

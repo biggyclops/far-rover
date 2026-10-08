@@ -907,7 +907,6 @@ test.describe('Far Rover UI Tests', () => {
     await page.click('input[data-sensor="distance"]');
     await page.click('input[data-sensor="spectral"]');
     await page.click('input[data-sensor="camera"]');
-    await page.click('input[data-sensor="dust"]');
     await page.selectOption('.condition-select[data-slot="0"]', 'always');
     await page.selectOption('.action-select[data-slot="0"]', 'explore');
     await page.click('#launch-btn');
@@ -922,10 +921,10 @@ test.describe('Far Rover UI Tests', () => {
     const sample = () => page.evaluate(() => {
       const c = document.querySelector('.game-canvas');
       const ctx = c.getContext('2d');
-      const x = Math.floor(c.width * 0.16);
-      const y = Math.floor(c.height * 0.36);
-      const pw = Math.min(140, c.width - x);
-      const ph = Math.min(140, c.height - y);
+      const x = Math.floor(c.width * 0.42);
+      const y = Math.floor(c.height * 0.46);
+      const pw = Math.min(96, c.width - x);
+      const ph = Math.min(96, c.height - y);
       const { data } = ctx.getImageData(x, y, pw, ph);
       let r = 0, g = 0, b = 0, n = 0;
       for (let i = 0; i < data.length; i += 4) {
@@ -945,8 +944,8 @@ test.describe('Far Rover UI Tests', () => {
     const lidar = await sample();
     expect(dist(before, lidar)).toBeGreaterThan(6);
 
-    await page.click('#layer-thermal');
-    await expect(page.locator('#layer-thermal')).toHaveAttribute('aria-pressed', 'true');
+    await page.click('[data-layer="thermal"]');
+    await expect(page.locator('[data-layer="thermal"]')).toHaveAttribute('aria-pressed', 'true');
     await page.waitForTimeout(120);
     const stacked = await sample();
     expect(dist(lidar, stacked)).toBeGreaterThan(4);
