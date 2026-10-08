@@ -540,6 +540,7 @@ button:disabled {
   font-size: 1.7rem;
   font-weight: 600;
   letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: #e8ecee;
   line-height: 1.1;
 }
@@ -715,10 +716,14 @@ button:disabled {
 .orbital-ops .info-panel {
   position: absolute;
   top: 78px;
-  right: 16px;
+  right: 12px;
   z-index: 30;
-  width: 200px;
-  max-height: calc(100vh - 160px);
+  width: 186px;
+  max-height: calc(100vh - 170px);
+}
+
+.orbital-ops .info-panel .glass-panel {
+  background: rgba(8, 12, 16, 0.72);
 }
 
 .tracking-strip {
@@ -1051,11 +1056,15 @@ button:disabled {
   text-transform: none;
 }
 
+.orbital-ops .minimap {
+  display: none;
+}
+
 .rover-cam {
   position: absolute;
-  right: 34px;
-  bottom: 34px;
-  width: 320px;
+  right: 228px;
+  bottom: 52px;
+  width: 300px;
   z-index: 12;
   background: rgba(10, 12, 14, 0.84);
   border: 1px solid rgba(150, 162, 170, 0.78);
@@ -1330,6 +1339,10 @@ button:disabled {
   border-radius: 6px;
   padding: 4px 8px;
   min-height: 32px;
+}
+
+.orbital-ops .return-crater-note {
+  bottom: 58px;
 }
 
 .return-crater-note {
@@ -1783,22 +1796,36 @@ button:disabled {
   }
 
   .orbital-left {
-    top: 64px;
-    left: 8px;
-    width: 210px;
-    max-height: calc(100vh - 220px);
+    top: 58px;
+    left: 6px;
+    width: min(210px, 54vw);
+    max-height: 46vh;
   }
 
   .orbital-ops .hud-bar {
-    padding: 8px 12px 12px;
-    grid-template-columns: 1fr auto 1fr;
+    padding: 6px 10px 10px;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .hud-title-row {
+    flex-wrap: nowrap;
+  }
+
+  .orbital-ops .hud-brand {
+    font-size: 0.78rem;
+    white-space: nowrap;
+  }
+
+  .hud-ops {
+    font-size: 0.58rem;
+    white-space: nowrap;
   }
 
   .orbital-ops .tick-indicator {
-    font-size: 1.15rem;
+    font-size: 1.05rem;
   }
 
-  .hud-sat, .run-indicator {
+  .hud-sat, .run-indicator, .telemetry-block {
     display: none;
   }
 
@@ -1830,10 +1857,14 @@ button:disabled {
 
   .orbital-ops .info-panel {
     top: auto;
-    bottom: 10px;
-    right: 8px;
-    width: 168px;
-    max-height: 42vh;
+    bottom: 8px;
+    right: 6px;
+    width: min(160px, 44vw);
+    max-height: 38vh;
+  }
+
+  .orbital-ops .sensors-panel {
+    display: none;
   }
   
   .minimap {
@@ -1892,10 +1923,10 @@ button:disabled {
   }
 
   .rover-cam {
-    width: 168px;
+    width: 156px;
     right: auto;
     left: 8px;
-    bottom: 52px;
+    bottom: 48px;
   }
 
   #rover-cam-canvas {

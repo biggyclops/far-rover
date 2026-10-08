@@ -98,8 +98,8 @@ export class OrbitalRenderer {
     this.driveU = 0;
     this.t0 = performance.now();
     this.raf = 0;
-    this.camX = LANDER_COL + 2.4;
-    this.camY = LANDER_ROW - 0.4;
+    this.camX = LANDER_COL + 3.1;
+    this.camY = LANDER_ROW - 0.15;
     this.camZoom = 1;
     this.ready = false;
 
@@ -223,8 +223,8 @@ export class OrbitalRenderer {
   }
 
   resetView() {
-    this.camX = (this.roverCol ?? LANDER_COL) + 2.4;
-    this.camY = (this.roverRow ?? LANDER_ROW) - 0.4;
+    this.camX = (this.roverCol ?? LANDER_COL) + 3.1;
+    this.camY = (this.roverRow ?? LANDER_ROW) - 0.15;
     this.camZoom = 1;
   }
 
@@ -357,8 +357,10 @@ export class OrbitalRenderer {
     apply(seen);
     apply(full);
 
-    this._stampOrganic(seen, LANDER_COL, LANDER_ROW, 2.45, 1);
-    this._stampOrganic(full, LANDER_COL, LANDER_ROW, 1.18, 1);
+    this._stampOrganic(seen, LANDER_COL, LANDER_ROW, 3.15, 1);
+    this._stampOrganic(seen, LANDER_COL + 0.8, LANDER_ROW - 0.4, 1.7, 0.85);
+    this._stampOrganic(full, LANDER_COL, LANDER_ROW, 1.35, 1);
+    this._stampOrganic(full, LANDER_COL + 0.55, LANDER_ROW - 0.15, 0.95, 0.9);
 
     for (let row = 0; row < GRID_ROWS; row++) {
       for (let col = 0; col < GRID_COLS; col++) {
@@ -415,17 +417,17 @@ export class OrbitalRenderer {
     const roverCol = this.roverCol;
     const roverRow = this.roverRow;
 
-    const follow = 0.38;
-    const wantX = lerp(LANDER_COL + 2.35, roverCol + 2.15, follow + 0.25);
-    const wantY = lerp(LANDER_ROW - 0.35, roverRow - 0.2, follow + 0.25);
-    const driftX = reduce ? 0 : 0.28 * Math.sin(t * 0.11) + 0.12 * Math.sin(t * 0.031);
-    const driftY = reduce ? 0 : 0.16 * Math.cos(t * 0.09) + 0.08 * Math.cos(t * 0.047);
-    const zoomPulse = reduce ? 1 : 0.96 + 0.055 * smoothstep(0, 1, (Math.sin(t * 0.07) + 1) / 2);
-    this.camX = lerp(this.camX, wantX + driftX, reduce ? 1 : 0.045);
-    this.camY = lerp(this.camY, wantY + driftY, reduce ? 1 : 0.045);
-    this.camZoom = lerp(this.camZoom, zoomPulse, reduce ? 1 : 0.04);
+    const follow = 0.32;
+    const wantX = lerp(LANDER_COL + 3.05, roverCol + 2.85, follow + 0.22);
+    const wantY = lerp(LANDER_ROW - 0.15, roverRow + 0.35, follow + 0.22);
+    const driftX = reduce ? 0 : 0.34 * Math.sin(t * 0.11) + 0.14 * Math.sin(t * 0.031);
+    const driftY = reduce ? 0 : 0.2 * Math.cos(t * 0.09) + 0.1 * Math.cos(t * 0.047);
+    const zoomPulse = reduce ? 1 : 0.97 + 0.045 * smoothstep(0, 1, (Math.sin(t * 0.07) + 1) / 2);
+    this.camX = lerp(this.camX, wantX + driftX, reduce ? 1 : 0.04);
+    this.camY = lerp(this.camY, wantY + driftY, reduce ? 1 : 0.04);
+    this.camZoom = lerp(this.camZoom, zoomPulse, reduce ? 1 : 0.035);
 
-    const fit = Math.min(w / 13.6, h / 12.2);
+    const fit = Math.min(w / 16.8, h / 13.4);
     const scale = fit * this.camZoom;
     const tx = w / 2 - this.camX * scale;
     const ty = h / 2 - this.camY * scale;
@@ -545,9 +547,12 @@ export class OrbitalRenderer {
       ctx.drawImage(img, -s / 2, -s / 2, s, s);
       ctx.restore();
     };
-    stamp(this.chuteImg, MAP.chuteCol + 0.5, MAP.chuteRow + 0.5, 0.4, 0.72, 0.5);
-    stamp(this.landerImg, LANDER_COL + 0.5, LANDER_ROW + 0.5, 0.18, 1.05, 0.7);
-    stamp(this.roverImg, col + 0.5, row + 0.5, this.heading, 0.58, 0.55);
+    ctx.save();
+    ctx.globalAlpha = 0.72;
+    stamp(this.chuteImg, MAP.chuteCol + 0.5, MAP.chuteRow + 0.55, 0.4, 0.55, 0.35);
+    ctx.restore();
+    stamp(this.landerImg, LANDER_COL + 0.5, LANDER_ROW + 0.72, 0.18, 0.78, 0.55);
+    stamp(this.roverImg, col + 0.5, row + 0.42, this.heading, 0.5, 0.5);
   }
 
   _drawSensors(ctx) {
