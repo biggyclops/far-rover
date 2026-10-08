@@ -43,6 +43,59 @@ function smoothstep(e0, e1, x) {
   return t * t * (3 - 2 * t);
 }
 
+function wrapAngle(a) {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+function hermiteEaseIn(t, k) {
+  if (t <= 0) return 0;
+  if (t >= k) return t;
+  const u = t / k;
+  return k * (-u * u * u + 2 * u * u);
+}
+
+function hermiteEaseOut(t, k) {
+  if (t >= 1) return 1;
+  if (t <= 1 - k) return t;
+  const t0 = 1 - k;
+  const u = (t - t0) / k;
+  const h00 = 2 * u * u * u - 3 * u * u + 1;
+  const h10 = u * u * u - 2 * u * u + u;
+  const h01 = -2 * u * u * u + 3 * u * u;
+  return h00 * t0 + h10 * k + h01;
+}
+
+function posEase(t, easeIn, easeOut) {
+  t = Math.min(1, Math.max(0, t));
+  const k = 0.24;
+  if (easeIn && easeOut) return t * t * (3 - 2 * t);
+  if (easeIn) return hermiteEaseIn(t, k);
+  if (easeOut) return hermiteEaseOut(t, k);
+  return t;
+}
+
+function headingEase(t, mode) {
+  if (mode === 'late') return smoothstep(0.58, 1, t);
+  if (mode === 'early') return smoothstep(0, 0.42, t);
+  if (mode === 'full') return t * t * (3 - 2 * t);
+  return t;
+}
+
+function summarizeMotionLog(log) {
+  const dts = (log || []).map((s) => s.dt).filter((d) => d > 0 && d < 4000);
+  dts.sort((a, b) => a - b);
+  const at = (q) => (dts.length ? dts[Math.min(dts.length - 1, Math.floor(q * (dts.length - 1)))] : 0);
+  return {
+    n: dts.length,
+    p50: at(0.5),
+    p95: at(0.95),
+    max: dts.length ? dts[dts.length - 1] : 0,
+    over33: dts.filter((d) => d > 33).length
+  };
+}
+
 function loadImage(src) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -99,6 +152,18 @@ export class OrbitalRenderer {
     this.driveU = 0;
     this.t0 = performance.now();
     this.raf = 0;
+    this.ownsLoop = true;
+    this.onFrame = null;
+    this._frozen = false;
+    this._clockNow = null;
+    this._lastNow = 0;
+    this._lastDt = 16;
+    this._cruise = null;
+    this._motionLogOn = false;
+    this._motionLog = [];
+    this._grainPat = null;
+    this._scanOverlay = null;
+    this._camParity = 0;
     this.camX = LANDER_COL + 3.1;
     this.camY = LANDER_ROW - 0.15;
     this.camZoom = 1;
@@ -154,7 +219,15 @@ export class OrbitalRenderer {
       this.motionQuery.addEventListener?.('change', this.onMotion);
     }
     this.syncCloudTargets();
-    if (typeof window !== 'undefined') window.__orbitalRenderer = this;
+    if (typeof window !== 'undefined') {
+      window.__orbitalRenderer = this;
+      window.__farRoverMotion = this._motionApi();
+      try {
+        if (new URLSearchParams(location.search).get('motionlog') === '1') this.enableMotionLog(true);
+      } catch {
+        // ignore
+      }
+    }
     this.loadArt().then(() => {
       if (this.disposed) return;
       this.ready = true;
@@ -223,6 +296,7 @@ export class OrbitalRenderer {
     this.disposed = true;
     if (typeof window !== 'undefined' && window.__orbitalRenderer === this) {
       window.__orbitalRenderer = null;
+      window.__farRoverMotion = null;
     }
     if (this.raf) cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.onResize);
@@ -259,6 +333,17 @@ export class OrbitalRenderer {
     this.fullMask.width = mw;
     this.fullMask.height = mh;
     this.fullMaskCtx = this.fullMask.getContext('2d');
+    this.seenBase = document.createElement('canvas');
+    this.seenBase.width = mw;
+    this.seenBase.height = mh;
+    this.seenBaseCtx = this.seenBase.getContext('2d');
+    this.fullBase = document.createElement('canvas');
+    this.fullBase.width = mw;
+    this.fullBase.height = mh;
+    this.fullBaseCtx = this.fullBase.getContext('2d');
+    this._maskBaseValid = false;
+    this._scanOverlay = null;
+    this._grainPat = null;
     this.maskDirty = true;
     this.render();
   }
@@ -318,27 +403,91 @@ export class OrbitalRenderer {
     this.syncCloudTargets();
   }
 
-  startAnimation(fromCol, fromRow, toCol, toRow, duration = 120) {
-    const toH = FACE_RAD[this.gameState?.facing] ?? this.heading;
-    let dh = toH - this.heading;
-    while (dh > Math.PI) dh -= Math.PI * 2;
-    while (dh < -Math.PI) dh += Math.PI * 2;
-    const moving = Math.hypot((toCol - this.roverCol), (toRow - this.roverRow)) > 0.001
-      || Math.hypot((toCol - fromCol), (toRow - fromRow)) > 0.001;
+  now() {
+    if (this._clockNow != null) return this._clockNow;
+    return performance.now();
+  }
+
+  startAnimation(fromCol, fromRow, toCol, toRow, duration = 120, now = null, peek = null) {
+    const t0 = now != null ? now : this.now();
+    const facingH = FACE_RAD[this.gameState?.facing] ?? this.heading;
+    let fromC = this.roverCol;
+    let fromR = this.roverRow;
+    let fromH = this.heading;
+    const moving = Math.hypot(toCol - fromC, toRow - fromR) > 0.001
+      || Math.hypot(toCol - fromCol, toRow - fromRow) > 0.001;
+    let dx = toCol - fromC;
+    let dy = toRow - fromR;
+    const prev = this._cruise;
+    const recent = !!(prev && (this.anim || (t0 - (prev.endedAt || 0)) < 48));
+    const sameDir = !!(prev && prev.moving && moving && recent
+      && Math.sign(dx || 0) === Math.sign(prev.dx || 0)
+      && Math.sign(dy || 0) === Math.sign(prev.dy || 0)
+      && Math.abs(wrapAngle(facingH - fromH)) < 0.4);
+    if (sameDir && this.anim) {
+      fromC = this.anim.toCol;
+      fromR = this.anim.toRow;
+      fromH = this.anim.toH;
+      this.roverCol = fromC;
+      this.roverRow = fromR;
+      this.heading = fromH;
+      dx = toCol - fromC;
+      dy = toRow - fromR;
+    }
+    let toH = facingH;
+    if (peek?.facing && FACE_RAD[peek.facing] != null) {
+      const peekH = FACE_RAD[peek.facing];
+      const peekMove = Math.hypot((peek.col ?? toCol) - toCol, (peek.row ?? toRow) - toRow) > 0.01;
+      if (!peekMove && Math.abs(wrapAngle(peekH - facingH)) > 0.2) toH = peekH;
+    }
+    let dh = wrapAngle(toH - fromH);
+    toH = fromH + dh;
+    const peekDx = peek ? (peek.col ?? toCol) - toCol : 0;
+    const peekDy = peek ? (peek.row ?? toRow) - toRow : 0;
+    const peekMove = Math.hypot(peekDx, peekDy) > 0.01;
+    const peekSameDir = peekMove
+      && Math.sign(peekDx || 0) === Math.sign(dx || 0)
+      && Math.sign(peekDy || 0) === Math.sign(dy || 0);
+    const turning = Math.abs(dh) > 0.2;
+    const sidestep = moving && Math.abs(dx * Math.cos(fromH) + dy * Math.sin(fromH)) < 0.35
+      && Math.hypot(dx, dy) > 0.5;
+    const reverse = !!(prev && prev.moving && moving
+      && (dx * (prev.dx || 0) + dy * (prev.dy || 0)) < -0.2);
+    const fromCorner = !!(prev && prev.turnArc && moving && recent);
+    const easeIn = (moving && !(sameDir || fromCorner)) || reverse || sidestep;
+    const easeOut = moving && (!peekSameDir || reverse || sidestep || (turning && !peekMove));
+    let headingMode = 'linear';
+    if (!moving && turning) headingMode = peekMove ? 'early' : 'full';
+    else if (moving && peek && !peekMove && Math.abs(wrapAngle((FACE_RAD[peek.facing] ?? toH) - facingH)) > 0.2) {
+      headingMode = 'late';
+    } else if (moving && turning) headingMode = 'full';
     if (moving) this.driveU += 1;
     this.anim = {
-      fromCol: this.roverCol,
-      fromRow: this.roverRow,
+      fromCol: fromC,
+      fromRow: fromR,
       toCol,
       toRow,
-      fromH: this.heading,
-      toH: this.heading + dh,
-      start: performance.now(),
+      fromH,
+      toH,
+      start: t0,
       duration: Math.max(16, duration),
-      moving
+      moving,
+      easeIn,
+      easeOut,
+      headingMode,
+      turnArc: (!moving && turning) || sidestep,
+      peekCol: peekMove ? peek.col : toCol,
+      peekRow: peekMove ? peek.row : toRow
     };
-    this._stampTrack(this.roverCol, this.roverRow, this.heading);
-    this.lastCam = 0;
+    this._cruise = {
+      moving,
+      turnArc: (!moving && turning) || sidestep,
+      dx: moving ? dx : 0,
+      dy: moving ? dy : 0,
+      heading: toH,
+      endedAt: t0 + Math.max(16, duration)
+    };
+    this._stampTrack(fromC, fromR, fromH);
   }
 
   _stampTrack(col, row, heading) {
@@ -384,7 +533,7 @@ export class OrbitalRenderer {
           this.cloudFadeFrom[row][col] = this.cloudDisplay[row][col];
         }
       }
-      this.cloudFadeStart = performance.now();
+      this.cloudFadeStart = this.now();
       this.cloudFading = true;
     }
   }
@@ -399,14 +548,24 @@ export class OrbitalRenderer {
         this.cloudDisplay[row][col] = lerp(this.cloudFadeFrom[row][col], this.cloudTarget[row][col], e);
       }
     }
-    this.maskDirty = true;
+    if (now - (this._lastCloudMask || 0) >= 32 || t >= 1) {
+      this.maskDirty = true;
+      this._maskBaseValid = false;
+      this._lastCloudMask = now;
+    }
     if (t >= 1) this.cloudFading = false;
   }
 
-  loop = () => {
+  loop = (rafNow) => {
     if (this.disposed) return;
-    this.render();
     this.raf = requestAnimationFrame(this.loop);
+    if (this._frozen) return;
+    const now = this._clockNow != null ? this._clockNow : rafNow;
+    const dt = this._lastNow ? now - this._lastNow : 16;
+    this._lastNow = now;
+    this._lastDt = dt;
+    if (this.onFrame) this.onFrame(now, dt);
+    this.render(now, dt);
   };
 
   _stampOrganic(ctx, col, row, radius, alpha) {
@@ -643,32 +802,30 @@ export class OrbitalRenderer {
     return `rgb(${r | 0},${g | 0},${b | 0})`;
   }
 
-  rebuildMasks() {
-    const seen = this.seenMaskCtx;
-    const full = this.fullMaskCtx;
+  _maskWorldTransform(ctx) {
     const w = this.seenMask.width;
     const h = this.seenMask.height;
     const sx = w / MAP.texCols;
     const sy = h / MAP.texRows;
-    const apply = (ctx) => {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, w, h);
-      ctx.setTransform(sx, 0, 0, sy, -MAP.originCol * sx, -MAP.originRow * sy);
-    };
-    apply(seen);
-    apply(full);
+    ctx.setTransform(sx, 0, 0, sy, -MAP.originCol * sx, -MAP.originRow * sy);
+  }
 
+  _rebuildMaskBase() {
+    if (!this.seenBaseCtx || !this.fullBaseCtx) return;
+    const seen = this.seenBaseCtx;
+    const full = this.fullBaseCtx;
+    const w = this.seenBase.width;
+    const h = this.seenBase.height;
+    seen.setTransform(1, 0, 0, 1, 0, 0);
+    seen.clearRect(0, 0, w, h);
+    full.setTransform(1, 0, 0, 1, 0, 0);
+    full.clearRect(0, 0, w, h);
+    this._maskWorldTransform(seen);
+    this._maskWorldTransform(full);
     this._stampOrganic(seen, LANDER_COL, LANDER_ROW, 3.15, 1);
     this._stampOrganic(seen, LANDER_COL + 0.8, LANDER_ROW - 0.4, 1.7, 0.85);
     this._stampOrganic(full, LANDER_COL, LANDER_ROW, 1.35, 1);
     this._stampOrganic(full, LANDER_COL + 0.55, LANDER_ROW - 0.15, 0.95, 0.9);
-    if (Number.isFinite(this.roverCol) && Number.isFinite(this.roverRow)) {
-      this._stampOrganic(seen, this.roverCol, this.roverRow, 1.65, 1);
-      this._stampOrganic(full, this.roverCol, this.roverRow, 1.12, 0.95);
-      this._maskRoverCol = this.roverCol;
-      this._maskRoverRow = this.roverRow;
-    }
-
     for (let row = 0; row < GRID_ROWS; row++) {
       for (let col = 0; col < GRID_COLS; col++) {
         const v = this.cloudDisplay[row][col];
@@ -682,6 +839,33 @@ export class OrbitalRenderer {
         }
       }
     }
+    this._maskBaseValid = true;
+  }
+
+  _blitMaskRover() {
+    if (!this.seenMaskCtx || !this.seenBase) return;
+    const w = this.seenMask.width;
+    const h = this.seenMask.height;
+    this.seenMaskCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.seenMaskCtx.clearRect(0, 0, w, h);
+    this.seenMaskCtx.drawImage(this.seenBase, 0, 0);
+    this.fullMaskCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.fullMaskCtx.clearRect(0, 0, w, h);
+    this.fullMaskCtx.drawImage(this.fullBase, 0, 0);
+    this._maskWorldTransform(this.seenMaskCtx);
+    this._maskWorldTransform(this.fullMaskCtx);
+    if (Number.isFinite(this.roverCol) && Number.isFinite(this.roverRow)) {
+      this._stampOrganic(this.seenMaskCtx, this.roverCol, this.roverRow, 1.65, 1);
+      this._stampOrganic(this.fullMaskCtx, this.roverCol, this.roverRow, 1.12, 0.95);
+      this._maskRoverCol = this.roverCol;
+      this._maskRoverRow = this.roverRow;
+    }
+  }
+
+  rebuildMasks() {
+    if (!this.seenMaskCtx) return;
+    if (!this._maskBaseValid || this.cloudFading) this._rebuildMaskBase();
+    this._blitMaskRover();
     this.maskDirty = false;
   }
 
@@ -693,15 +877,29 @@ export class OrbitalRenderer {
     if (!this.anim) return false;
     const a = this.anim;
     const t = Math.min(1, (now - a.start) / a.duration);
-    const e = t * t * t * (t * (t * 6 - 15) + 10);
-    this.roverCol = lerp(a.fromCol, a.toCol, e);
-    this.roverRow = lerp(a.fromRow, a.toRow, e);
-    let dh = a.toH - a.fromH;
-    while (dh > Math.PI) dh -= Math.PI * 2;
-    while (dh < -Math.PI) dh += Math.PI * 2;
-    this.heading = a.fromH + dh * e;
-    if (a.moving) this._stampTrack(this.roverCol, this.roverRow, this.heading);
-    if (Math.hypot(this.roverCol - (this._maskRoverCol ?? 99), this.roverRow - (this._maskRoverRow ?? 99)) > 0.05) {
+    const e = posEase(t, !!a.easeIn, !!a.easeOut);
+    const ht = headingEase(t, a.headingMode || 'linear');
+    let col = lerp(a.fromCol, a.toCol, e);
+    let row = lerp(a.fromRow, a.toRow, e);
+    if (a.turnArc) {
+      const dh = a.toH - a.fromH;
+      const inset = 0.16 * Math.sin(Math.PI * t);
+      const fx = Math.cos(a.fromH);
+      const fy = Math.sin(a.fromH);
+      const rx = -Math.sin(a.fromH);
+      const ry = Math.cos(a.fromH);
+      const side = dh >= 0 ? 1 : -1;
+      col += rx * inset * side * 0.55 + fx * inset * 0.4;
+      row += ry * inset * side * 0.55 + fy * inset * 0.4;
+    }
+    this.roverCol = col;
+    this.roverRow = row;
+    this.heading = a.fromH + (a.toH - a.fromH) * ht;
+    if (a.moving && (t * 12 | 0) !== (this._trackStep || 0)) {
+      this._trackStep = t * 12 | 0;
+      this._stampTrack(this.roverCol, this.roverRow, this.heading);
+    }
+    if (Math.hypot(this.roverCol - (this._maskRoverCol ?? 99), this.roverRow - (this._maskRoverRow ?? 99)) > 0.08) {
       this.maskDirty = true;
     }
     if (t >= 1) {
@@ -709,15 +907,15 @@ export class OrbitalRenderer {
       this.roverCol = a.toCol;
       this.roverRow = a.toRow;
       this.heading = a.toH;
+      if (this._cruise) this._cruise.endedAt = now;
       this.anim = null;
       this.maskDirty = true;
     }
     return true;
   }
 
-  render() {
+  render(now = this.now(), dt = this._lastDt) {
     if (this.disposed || !this.ctx) return;
-    const now = performance.now();
     this.stepCloudFade(now);
     this.stepAnim(now);
     if (this.maskDirty) this.rebuildMasks();
@@ -825,6 +1023,7 @@ export class OrbitalRenderer {
     this._drawGrain(ctx, w, h, t);
     this._drawVignette(ctx, w, h);
     this._drawRoverCam(now, t);
+    this._sampleMotion(now, dt);
   }
 
   _drawTracks(ctx) {
@@ -1088,23 +1287,30 @@ export class OrbitalRenderer {
 
   _drawGrain(ctx, w, h, t) {
     if (!this.grain) return;
+    if (!this._grainPat) this._grainPat = ctx.createPattern(this.grain, 'repeat');
     ctx.save();
     ctx.globalAlpha = 0.11;
     const ox = (t * 18) % 64;
     const oy = (t * 11) % 64;
-    const pat = ctx.createPattern(this.grain, 'repeat');
     ctx.translate(-ox, -oy);
-    ctx.fillStyle = pat;
+    ctx.fillStyle = this._grainPat;
     ctx.fillRect(ox, oy, w + 64, h + 64);
     ctx.restore();
-    ctx.save();
-    ctx.globalAlpha = 0.045;
-    ctx.fillStyle = '#fff';
-    for (let y = 0; y < h; y += 3) {
-      const a = 0.5 + 0.5 * Math.sin(y * 0.9 + t * 2.4);
-      ctx.globalAlpha = 0.02 + 0.03 * a;
-      ctx.fillRect(0, y, w, 1);
+    if (!this._scanOverlay || this._scanOverlay.width !== Math.ceil(w) || this._scanOverlay.height !== Math.ceil(h)) {
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.ceil(w));
+      c.height = Math.max(1, Math.ceil(h));
+      const s = c.getContext('2d');
+      s.fillStyle = '#fff';
+      for (let y = 0; y < c.height; y += 3) {
+        s.globalAlpha = 0.035;
+        s.fillRect(0, y, c.width, 1);
+      }
+      this._scanOverlay = c;
     }
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+    ctx.drawImage(this._scanOverlay, 0, 0);
     ctx.restore();
   }
 
@@ -1117,8 +1323,82 @@ export class OrbitalRenderer {
   }
 
   _drawRoverCam(now, t) {
+    this._camParity ^= 1;
+    if (this._camParity && this.playbackSpeed < 16 && this.lastCam) return;
     drawRoverCam(this, now, t);
   }
+
+  enableMotionLog(on) {
+    this._motionLogOn = !!on;
+    if (on) this._motionLog = [];
+  }
+
+  _sampleMotion(now, dt) {
+    if (!this._motionLogOn) return;
+    const view = this._view;
+    const sx = view ? this.roverCol * view.scale + view.tx : 0;
+    const sy = view ? this.roverRow * view.scale + view.ty : 0;
+    const prev = this._motionLog[this._motionLog.length - 1];
+    let speed = 0;
+    if (prev && dt > 0) {
+      const tilesPerSec = Math.hypot(this.roverCol - prev.col, this.roverRow - prev.row) / (dt / 1000);
+      speed = tilesPerSec;
+    }
+    this._motionLog.push({
+      now,
+      dt,
+      col: this.roverCol,
+      row: this.roverRow,
+      heading: this.heading,
+      sx,
+      sy,
+      speed,
+      moving: !!(this.anim && this.anim.moving)
+    });
+  }
+
+  motionStats() {
+    return summarizeMotionLog(this._motionLog);
+  }
+
+  freezeClock(on = true) {
+    this._frozen = !!on;
+    if (on && this._clockNow == null) this._clockNow = performance.now();
+  }
+
+  setNow(t) {
+    this._clockNow = t;
+  }
+
+  pump(now, dt = 16) {
+    const prev = this._lastNow || now;
+    const step = dt || (now - prev) || 16;
+    this._clockNow = now;
+    this._lastDt = step;
+    this._lastNow = now;
+    if (this.onFrame) this.onFrame(now, step);
+    this.render(now, step);
+  }
+
+  _motionApi() {
+    const r = this;
+    return {
+      pose: () => ({ col: r.roverCol, row: r.roverRow, heading: r.heading, dt: r._lastDt }),
+      freeze: (on = true) => r.freezeClock(on),
+      setNow: (t) => r.setNow(t),
+      now: () => r.now(),
+      pump: (now, dt) => r.pump(now, dt),
+      startLog: () => r.enableMotionLog(true),
+      stopLog: () => {
+        r.enableMotionLog(false);
+        return r._motionLog;
+      },
+      log: () => r._motionLog,
+      stats: () => r.motionStats()
+    };
+  }
 }
+
+export { summarizeMotionLog };
 
 export default OrbitalRenderer;
