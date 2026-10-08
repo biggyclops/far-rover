@@ -10,7 +10,11 @@
 | rover-nadir.png | Top-down rover sprite |
 | lander-insight.png | InSight-style lander |
 | chute.png | Parachute + backshell |
-| mastcam.jpg | Perseverance Mastcam-Z crop for rover-cam PiP |
+| mastcam.jpg | Perseverance Mastcam-Z PIA23727 crop |
+| cam-sky.jpg / cam-far.jpg / cam-mid.jpg / cam-near.jpg | Parallax planes from PIA23727 |
+| cam-alt.jpg | Alternate heading landscape (PIA24543) |
+| cam-pano.jpg | Navcam pan strip (PIA24422) |
+| cam-rocks.png | Rock chips for billboards |
 | edge-noise.png | Organic reveal / haze noise |
 | orbital-map.json | Tile mapping constants |
 

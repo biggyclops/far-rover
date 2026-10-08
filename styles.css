@@ -1112,6 +1112,38 @@ button:disabled {
   background: #2a1a12;
 }
 
+.rover-cam-modes {
+  display: flex;
+  gap: 4px;
+  padding: 4px 10px 2px;
+}
+
+.cam-mode-btn {
+  flex: 1;
+  min-height: 28px;
+  padding: 3px 4px;
+  border: 1px solid rgba(150, 162, 170, 0.45);
+  border-radius: 3px;
+  background: rgba(16, 18, 20, 0.55);
+  color: #9aa4aa;
+  font-family: inherit;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.cam-mode-btn.active,
+.cam-mode-btn[aria-pressed="true"] {
+  color: #e8ecee;
+  border-color: rgba(210, 220, 225, 0.9);
+  background: rgba(38, 44, 48, 0.9);
+}
+
+.cam-mode-btn:focus-visible {
+  outline: 2px solid rgba(220, 228, 232, 0.95);
+  outline-offset: 1px;
+}
+
 .rover-cam-meta {
   display: flex;
   justify-content: space-between;
@@ -1938,6 +1970,11 @@ button:disabled {
 
   #rover-cam-canvas {
     height: 92px;
+  }
+
+  .cam-mode-btn {
+    min-height: 32px;
+    font-size: 0.58rem;
   }
 
   .orbital-ops .instrument-toggle {

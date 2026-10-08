@@ -5,6 +5,7 @@ import * as Sim from './simulation.js';
 import { GameRenderer, MinimapRenderer, loadAssets, hasRealArt, getBackgroundImage, getIcon } from './renderer.js';
 import { shouldUse3D } from './renderer3d.js';
 import { OrbitalRenderer } from './orbital.js';
+import { resolveCamMode, persistCamMode, CAM_MODES } from './rovercam.js';
 
 // === LOCAL STORAGE ===
 const STORAGE_KEY = 'far-rover-demo-v1';
@@ -603,6 +604,11 @@ function showOperateView() {
             <span class="rover-cam-nav">NAVCAM</span>
           </div>
           <canvas id="rover-cam-canvas" width="528" height="297"></canvas>
+          <div class="rover-cam-modes" role="radiogroup" aria-label="Rover camera mode">
+            <button type="button" class="cam-mode-btn" id="cam-photo" data-cam="photo">PHOTO</button>
+            <button type="button" class="cam-mode-btn" id="cam-hybrid" data-cam="hybrid">HYBRID</button>
+            <button type="button" class="cam-mode-btn" id="cam-3d" data-cam="3d">3D</button>
+          </div>
           <div class="rover-cam-meta">
             <span>FOV 60°</span>
             <span>RES 1024×576</span>
@@ -690,7 +696,7 @@ function showOperateView() {
       </div>
 
       <div class="tracking-strip" id="tracking-strip">${trackingText(gameState)}</div>
-      <div class="credits-line">Terrain: NASA/JPL-Caltech/UArizona HiRISE PIA23289 · Rover cam: NASA/JPL-Caltech/ASU/MSSS Mastcam-Z PIA23727</div>
+      <div class="credits-line">Terrain: NASA/JPL-Caltech/UArizona HiRISE PIA23289 · Rover cam: NASA/JPL-Caltech/ASU/MSSS Mastcam-Z PIA23727, Navcam PIA24422, PIA24543</div>
       <div class="battery-gauge visual-hidden" aria-hidden="true">
         <div class="battery-fill" id="battery-fill" style="width: ${gameState.battery * 5}%"></div>
       </div>
@@ -720,6 +726,30 @@ function showOperateView() {
   renderMinimap();
   wireOperateControls();
   wireRoverCamDrag();
+  wireCamModeToggle();
+}
+
+function wireCamModeToggle() {
+  const mode = resolveCamMode();
+  renderer?.setCamMode?.(mode);
+  const buttons = document.querySelectorAll('.cam-mode-btn');
+  const paint = (m) => {
+    buttons.forEach((btn) => {
+      const on = btn.dataset.cam === m;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  };
+  paint(mode);
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const m = btn.dataset.cam;
+      if (!CAM_MODES.includes(m)) return;
+      persistCamMode(m);
+      renderer?.setCamMode?.(m);
+      paint(m);
+    });
+  });
 }
 
 function renderAutoPauseToast() {

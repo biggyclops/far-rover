@@ -11,6 +11,7 @@ import {
   CLOUD_CAMERA,
   CLOUD_CLEAR
 } from './renderer.js';
+import { drawRoverCam, resolveCamMode, persistCamMode, CAM_MODES } from './rovercam.js';
 
 const GRID_COLS = 12;
 const GRID_ROWS = 12;
@@ -123,6 +124,15 @@ export class OrbitalRenderer {
     this.camBuf = null;
     this.camBufCtx = null;
     this.lastCam = 0;
+    this.camMode = resolveCamMode();
+    this.camSky = null;
+    this.camFar = null;
+    this.camMid = null;
+    this.camNear = null;
+    this.camAlt = null;
+    this.camPano = null;
+    this.camRocks = null;
+    this.landerFwdImg = null;
 
     this.seenMask = null;
     this.fullMask = null;
@@ -154,7 +164,7 @@ export class OrbitalRenderer {
 
   async loadArt() {
     const base = 'assets/art/';
-    const [full, seen, fog, rover, lander, chute, cam, noise] = await Promise.all([
+    const [full, seen, fog, rover, lander, chute, cam, noise, sky, far, mid, near, alt, pano, rocks, landerFwd] = await Promise.all([
       loadImage(base + 'hirise-board.jpg'),
       loadImage(base + 'hirise-seen.jpg'),
       loadImage(base + 'hirise-fog.jpg'),
@@ -162,7 +172,15 @@ export class OrbitalRenderer {
       loadImage(base + 'lander-insight.png'),
       loadImage(base + 'chute.png'),
       loadImage(base + 'mastcam.jpg'),
-      loadImage(base + 'edge-noise.png')
+      loadImage(base + 'edge-noise.png'),
+      loadImage(base + 'cam-sky.jpg'),
+      loadImage(base + 'cam-far.jpg'),
+      loadImage(base + 'cam-mid.jpg'),
+      loadImage(base + 'cam-near.jpg'),
+      loadImage(base + 'cam-alt.jpg'),
+      loadImage(base + 'cam-pano.jpg'),
+      loadImage(base + 'cam-rocks.png'),
+      loadImage(base + 'lander.png')
     ]);
     this.fullImg = full;
     this.seenImg = seen;
@@ -172,6 +190,15 @@ export class OrbitalRenderer {
     this.chuteImg = chute;
     this.mastcamImg = cam;
     this.noiseImg = noise;
+    this.camSky = sky;
+    this.camFar = far;
+    this.camMid = mid;
+    this.camNear = near;
+    this.camAlt = alt;
+    this.camPano = pano;
+    this.camRocks = rocks;
+    this.landerFwdImg = landerFwd;
+    this.lastCam = 0;
     try {
       this._buildAuxMaps();
       this._collectCraters();
@@ -245,6 +272,14 @@ export class OrbitalRenderer {
   setSensorLayer(name, on) {
     if (!(name in this.sensorLayers)) return;
     this.sensorLayers[name] = !!on;
+    if (this.ready) this.render();
+  }
+
+  setCamMode(mode) {
+    if (!CAM_MODES.includes(mode)) return;
+    this.camMode = mode;
+    persistCamMode(mode);
+    this.lastCam = 0;
     if (this.ready) this.render();
   }
 
@@ -952,103 +987,7 @@ export class OrbitalRenderer {
   }
 
   _drawRoverCam(now, t) {
-    const canvas = document.getElementById('rover-cam-canvas');
-    if (!canvas) return;
-    const out = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
-    const cheap = typeof navigator !== 'undefined' && navigator.webdriver;
-    const cw = cheap ? 160 : 240;
-    const ch = cheap ? 90 : 136;
-    if (!this.camBuf) {
-      this.camBuf = document.createElement('canvas');
-      this.camBuf.width = cw;
-      this.camBuf.height = ch;
-      this.camBufCtx = this.camBuf.getContext('2d');
-    }
-    const minDt = cheap ? 80 : ((this.playbackSpeed || 1) >= 16 ? 48 : 30);
-    const moving = !!(this.anim && this.anim.moving);
-    if (now - this.lastCam >= minDt || !this.lastCam) {
-      this.lastCam = now;
-      const ctx = this.camBufCtx;
-      const sky = ctx.createLinearGradient(0, 0, 0, ch);
-      sky.addColorStop(0, '#b88958');
-      sky.addColorStop(0.38, '#d4a56a');
-      sky.addColorStop(0.7, '#e6bf88');
-      sky.addColorStop(1, '#c99664');
-      ctx.fillStyle = sky;
-      ctx.fillRect(0, 0, cw, ch);
-      const col = this.roverCol + 0.5;
-      const row = this.roverRow + 0.42;
-      const heading = this.heading;
-      const fwdC = Math.cos(heading);
-      const fwdR = Math.sin(heading);
-      const rightC = -Math.sin(heading);
-      const rightR = Math.cos(heading);
-      const bob = (moving && !this.reduceMotion) ? Math.sin(t * 17) * 0.014 : 0;
-      const eyeH = 0.18 + bob;
-      const horizon = ch * 0.36;
-      const zNear = 0.1;
-      const zFar = 6.4;
-      const steps = cheap ? 28 : 56;
-      const fov = 1.22;
-      for (let x = 0; x < cw; x++) {
-        let yBuf = ch;
-        const camX = (x / cw - 0.5) * fov;
-        for (let i = 0; i < steps; i++) {
-          const u = i / (steps - 1);
-          const z = zNear + (zFar - zNear) * u * u;
-          const wx = col + fwdC * z + rightC * camX * z;
-          const wy = row + fwdR * z + rightR * camX * z;
-          const ht = this._heightAt(wx, wy);
-          const sy = horizon - ((ht - eyeH) / z) * ch * 0.9;
-          const y0 = sy < 0 ? 0 : sy > ch ? ch : (sy | 0);
-          if (y0 < yBuf) {
-            ctx.fillStyle = this._camColorAt(wx, wy, z);
-            ctx.fillRect(x, y0, 1, yBuf - y0);
-            yBuf = y0;
-          }
-        }
-      }
-      ctx.save();
-      ctx.globalAlpha = 0.16;
-      ctx.fillStyle = '#4a2810';
-      ctx.fillRect(0, 0, cw, ch);
-      ctx.restore();
-    }
-    out.save();
-    const bobY = moving ? 2.4 * Math.sin(t * 16) : 0.6 * Math.sin(t * 2.1);
-    out.fillStyle = '#2a1c12';
-    out.fillRect(0, 0, w, h);
-    out.drawImage(this.camBuf, 0, bobY, w, h);
-    out.globalAlpha = 0.1;
-    const vg = out.createLinearGradient(0, 0, 0, h);
-    vg.addColorStop(0, '#000');
-    vg.addColorStop(0.4, 'transparent');
-    vg.addColorStop(1, '#1a1008');
-    out.fillStyle = vg;
-    out.fillRect(0, 0, w, h);
-    out.globalAlpha = 1;
-    out.strokeStyle = 'rgba(240,244,246,0.55)';
-    out.lineWidth = 1;
-    const cx = w / 2;
-    const cy = h / 2;
-    out.beginPath();
-    out.moveTo(cx - 12, cy);
-    out.lineTo(cx - 4, cy);
-    out.moveTo(cx + 4, cy);
-    out.lineTo(cx + 12, cy);
-    out.moveTo(cx, cy - 12);
-    out.lineTo(cx, cy - 4);
-    out.moveTo(cx, cy + 4);
-    out.lineTo(cx, cy + 12);
-    out.stroke();
-    out.font = '9px "IBM Plex Mono", ui-monospace, monospace';
-    out.fillStyle = 'rgba(236, 240, 242, 0.82)';
-    const facing = this.gameState?.facing || 'north';
-    out.fillText(`NAVCAM  ${facing.toUpperCase()}`, 8, 14);
-    out.fillText('SOL 0  14:02:11', 8, h - 8);
-    out.restore();
+    drawRoverCam(this, now, t);
   }
 }
 
