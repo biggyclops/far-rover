@@ -165,7 +165,7 @@ export class OrbitalRenderer {
 
   async loadArt() {
     const base = 'assets/art/';
-    const [full, seen, fog, rover, lander, chute, cam, noise, sky, far, mid, near, alt, pano, rocks, landerFwd] = await Promise.all([
+    const [full, seen, fog, rover, lander, chute, cam, noise, sky, far, mid, near, alt, pano, rocks, landerFwd, oreTile, dustTile] = await Promise.all([
       loadImage(base + 'hirise-board.jpg'),
       loadImage(base + 'hirise-seen.jpg'),
       loadImage(base + 'hirise-fog.jpg'),
@@ -181,7 +181,9 @@ export class OrbitalRenderer {
       loadImage(base + 'cam-alt.jpg'),
       loadImage(base + 'cam-pano.jpg'),
       loadImage(base + 'cam-rocks.png'),
-      loadImage(base + 'lander.png')
+      loadImage(base + 'lander.png'),
+      loadImage(base + 'tile-ore.png'),
+      loadImage(base + 'tile-dust.png')
     ]);
     this.fullImg = full;
     this.seenImg = seen;
@@ -199,6 +201,8 @@ export class OrbitalRenderer {
     this.camPano = pano;
     this.camRocks = rocks;
     this.landerFwdImg = landerFwd;
+    this.oreTileImg = oreTile;
+    this.dustTileImg = dustTile;
     this.lastCam = 0;
     this._camTexReady = false;
     this._camPoseKey = '';
@@ -736,6 +740,7 @@ export class OrbitalRenderer {
     const scale = fit * this.camZoom;
     const tx = w / 2 - this.camX * scale;
     const ty = h / 2 - this.camY * scale;
+    this._view = { scale, tx, ty, dpr: this.canvas.width / w, w, h };
 
     const dpr = this.canvas.width / w;
     const wctx = this.worldCtx;
@@ -805,8 +810,8 @@ export class OrbitalRenderer {
 
     this._drawTracks(wctx);
     this._drawPath(wctx, roverCol, roverRow);
-    this._drawSprites(wctx, roverCol, roverRow, scale);
     this._drawSensors(wctx);
+    this._drawSprites(wctx, roverCol, roverRow, scale);
     if (this.gridForced) this._drawGrid(wctx);
 
     const ctx = this.ctx;
@@ -885,20 +890,92 @@ export class OrbitalRenderer {
     stamp(this.roverImg, col + 0.5, row + 0.42, this.heading, 0.5, 0.5);
   }
 
+  _tileKnown(col, row) {
+    const state = this.gameState;
+    if (!state) return false;
+    return !!(state.revealed?.[row]?.[col] || state.cameraSeen?.[row]?.[col]);
+  }
+
+  _cellName(col, row) {
+    return String.fromCharCode(65 + col) + (row + 1);
+  }
+
+  _stampPhotoMark(ctx, img, col, row, rx, ry) {
+    const cx = col + 0.5;
+    const cy = row + 0.5;
+    if (!img) return false;
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, -0.18, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(img, col, row, 1, 1);
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = 'rgba(248, 228, 196, 0.7)';
+    ctx.lineWidth = 0.035;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, -0.18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return true;
+  }
+
+  _drawOreMark(ctx, col, row, drilled) {
+    const cx = col + 0.5;
+    const cy = row + 0.5;
+    if (!drilled && this._stampPhotoMark(ctx, this.oreTileImg, col, row, 0.34, 0.28)) return;
+    ctx.fillStyle = drilled ? 'rgba(92, 72, 52, 0.55)' : 'rgba(22, 16, 12, 0.88)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 0.2, 0.16, -0.35, 0, Math.PI * 2);
+    ctx.fill();
+    if (!drilled) {
+      ctx.fillStyle = 'rgba(228, 214, 186, 0.9)';
+      ctx.beginPath();
+      ctx.arc(cx - 0.04, cy - 0.03, 0.03, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  _drawDustMark(ctx, col, row) {
+    if (this._stampPhotoMark(ctx, this.dustTileImg, col, row, 0.38, 0.26)) return;
+    const cx = col + 0.5;
+    const cy = row + 0.5;
+    ctx.fillStyle = 'rgba(214, 176, 128, 0.55)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 0.04, 0.32, 0.2, 0.18, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   _drawSensors(ctx) {
     const state = this.gameState;
     if (!state?.terrain) return;
+    const oreCells = [];
+    const dustCells = [];
     ctx.save();
+    const showCamera = this.sensorLayers.camera !== false;
+    for (let row = 0; row < GRID_ROWS; row++) {
+      for (let col = 0; col < GRID_COLS; col++) {
+        if (!this._tileKnown(col, row)) continue;
+        const t = state.terrain[row][col];
+        if (t === 'ore') {
+          if (showCamera) this._drawOreMark(ctx, col, row, !!state.drilled?.[row]?.[col]);
+          oreCells.push(this._cellName(col, row));
+        } else if (t === 'dust') {
+          if (showCamera) this._drawDustMark(ctx, col, row);
+          dustCells.push(this._cellName(col, row));
+        }
+      }
+    }
     if (this.sensorLayers.spectral) {
       for (let row = 0; row < GRID_ROWS; row++) {
         for (let col = 0; col < GRID_COLS; col++) {
-          if (this.cloudTarget[row][col] !== CLOUD_CLEAR) continue;
+          if (!this._tileKnown(col, row)) continue;
           if (state.terrain[row][col] !== 'ore') continue;
           const cx = col + 0.5;
           const cy = row + 0.5;
-          ctx.fillStyle = state.drilled?.[row]?.[col] ? 'rgba(180,170,140,0.28)' : 'rgba(40, 255, 210, 0.55)';
+          ctx.fillStyle = state.drilled?.[row]?.[col] ? 'rgba(180,170,140,0.28)' : 'rgba(40, 255, 210, 0.42)';
           ctx.beginPath();
-          ctx.ellipse(cx, cy, 0.32, 0.24, 0.4, 0, Math.PI * 2);
+          ctx.ellipse(cx, cy, 0.28, 0.2, 0.4, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -916,8 +993,19 @@ export class OrbitalRenderer {
       };
       glow(this.roverCol + 0.5, this.roverRow + 0.42, 0.55);
       glow(LANDER_COL + 0.5, LANDER_ROW + 0.72, 0.7);
+      for (let row = 0; row < GRID_ROWS; row++) {
+        for (let col = 0; col < GRID_COLS; col++) {
+          if (!this._tileKnown(col, row)) continue;
+          if (state.terrain[row][col] !== 'dust') continue;
+          glow(col + 0.5, row + 0.5, 0.42);
+        }
+      }
     }
     ctx.restore();
+    if (this.canvas) {
+      this.canvas.dataset.oreMarks = showCamera ? oreCells.join(',') : '';
+      this.canvas.dataset.dustMarks = showCamera ? dustCells.join(',') : '';
+    }
   }
 
   _drawGrid(ctx) {
