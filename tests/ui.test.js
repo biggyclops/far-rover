@@ -1079,13 +1079,18 @@ test.describe('Far Rover UI Tests', () => {
     await page.selectOption('.action-select[data-slot="0"]', 'explore');
     await page.click('#launch-btn');
     await completeRun(page);
+    await page.click('#view-log-end-btn');
     await page.evaluate(() => {
       const key = 'far-rover-demo-v1';
-      const log = JSON.parse(localStorage.getItem(key));
-      log.currentSession.runs[0].cargo = 4;
-      localStorage.setItem(key, JSON.stringify(log));
+      const data = JSON.parse(localStorage.getItem(key));
+      const run = data?.currentSession?.runs?.[0];
+      if (!run) throw new Error('expected a saved run');
+      run.cargo = 4;
+      localStorage.setItem(key, JSON.stringify(data));
     });
-    await page.click('#view-log-end-btn');
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('#view-log-btn');
     await expect(page.locator('.log-cargo')).toContainText('4 (goal 3)');
     await expect(page.locator('.log-cargo')).not.toContainText('4/3');
   });
@@ -1126,8 +1131,9 @@ test.describe('Far Rover UI Tests', () => {
     expect(hud.trim()).toBe(`${Math.round(rec.batteryAtStart * 5)}%`);
     expect(hud.trim()).not.toBe('100%');
 
+    page.once('dialog', (d) => d.accept());
     await page.click('#end-run-btn');
-    await expect(page.locator('.end-screen')).toBeVisible();
+    await expect(page.locator('.end-screen')).toBeVisible({ timeout: 10000 });
     const showMore = page.locator('#show-more-trace');
     if (await showMore.isVisible()) await showMore.click();
     const chargeRow = page.locator('.trace-item', { hasText: '3 of 3' });
