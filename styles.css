@@ -724,9 +724,14 @@ button:disabled {
   position: absolute;
   top: 78px;
   right: 12px;
+  bottom: 88px;
   z-index: 30;
   width: 186px;
-  max-height: calc(100vh - 170px);
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  overflow: hidden;
 }
 
 .orbital-ops .info-panel .glass-panel {
@@ -747,6 +752,12 @@ button:disabled {
   color: #d6dce0;
   letter-spacing: 0.06em;
   white-space: nowrap;
+  min-height: 2.2em;
+  min-width: 42em;
+  max-width: min(72vw, 920px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
   pointer-events: none;
 }
 
@@ -1237,6 +1248,16 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.orbital-ops .sensors-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.orbital-ops .controls-panel {
+  flex: 0 0 auto;
+}
+
 .sensor-readings {
   display: flex;
   flex-direction: column;
@@ -1244,15 +1265,28 @@ button:disabled {
 }
 
 .sensor-reading {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 0.92fr 1.08fr;
+  align-items: start;
+  gap: 6px;
   font-size: 0.8rem;
+  min-height: 2.85em;
   padding: 4px 0;
   border-bottom: 1px solid var(--glass-border);
 }
 
+.sensor-reading .sensor-value {
+  text-align: right;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .sensor-reading:last-child {
   border-bottom: none;
+}
+
+.sensor-reading .sensor-label {
+  white-space: nowrap;
 }
 
 .sensor-reading .warning {

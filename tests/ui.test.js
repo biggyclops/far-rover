@@ -1323,6 +1323,45 @@ test.describe('Far Rover UI Tests', () => {
     expect(result.cornerRatio).toBeGreaterThanOrEqual(0.4);
   });
 
+  test('Sidebar controls stay fixed as sensor rows change across ticks', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('#starter-preset-btn');
+    await page.click('#launch-btn');
+    const auto = page.locator('#autopause-mode');
+    if (await auto.count()) {
+      try { await auto.selectOption('off'); } catch { /* ignore */ }
+    }
+    await page.waitForFunction(() => window.__orbitalRenderer?.ready);
+    const measure = () => page.evaluate(() => {
+      const box = (el) => {
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y) };
+      };
+      return {
+        speed: box(document.querySelector('.speed-btn[data-speed="1"]')),
+        reset: box(document.getElementById('reset-view-btn')),
+        auto: box(document.getElementById('autopause-mode')),
+        end: box(document.getElementById('end-run-btn')),
+        trackY: Math.round(document.getElementById('tracking-strip').getBoundingClientRect().y),
+        readingsH: Math.round(document.getElementById('sensor-readings').getBoundingClientRect().height)
+      };
+    });
+    const before = await measure();
+    for (let i = 0; i < 6; i++) {
+      await page.click('#step-btn');
+      await page.waitForTimeout(40);
+    }
+    await expect(page.locator('.tick-indicator')).toContainText('Tick 6');
+    const after = await measure();
+    for (const key of ['speed', 'reset', 'auto', 'end']) {
+      expect(Math.abs(after[key].y - before[key].y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(after[key].x - before[key].x)).toBeLessThanOrEqual(1);
+    }
+    expect(Math.abs(after.trackY - before.trackY)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.readingsH - before.readingsH)).toBeLessThanOrEqual(2);
+  });
+
   test('Reset view and grid toggle do not break the operate canvas', async ({ page }) => {
     await page.goto(BASE_URL);
     await page.click('#start-btn');

@@ -702,7 +702,7 @@ export class OrbitalRenderer {
         this.cloudDisplay[row][col] = lerp(this.cloudFadeFrom[row][col], this.cloudTarget[row][col], e);
       }
     }
-    if (now - (this._lastCloudMask || 0) >= 32 || t >= 1) {
+    if (now - (this._lastCloudMask || 0) >= 16 || t >= 1) {
       this.maskDirty = true;
       this._maskBaseValid = false;
       this._lastCloudMask = now;
@@ -983,13 +983,13 @@ export class OrbitalRenderer {
     for (let row = 0; row < GRID_ROWS; row++) {
       for (let col = 0; col < GRID_COLS; col++) {
         const v = this.cloudDisplay[row][col];
-        if (v >= 0.97) continue;
-        if (v <= CLOUD_CLEAR + 0.04) {
-          this._stampOrganic(seen, col, row, 1.55, 1);
-          this._stampOrganic(full, col, row, 1.08, 1);
-        } else {
-          const k = Math.max(0, Math.min(1, (CLOUD_HIDDEN - v) / (CLOUD_HIDDEN - CLOUD_CAMERA)));
-          this._stampOrganic(seen, col, row, 1.45, Math.max(0.4, k));
+        const reveal = Math.max(0, Math.min(1, (CLOUD_HIDDEN - v) / CLOUD_HIDDEN));
+        if (reveal < 0.02) continue;
+        const camK = Math.max(0, Math.min(1, reveal / (CLOUD_HIDDEN - CLOUD_CAMERA)));
+        this._stampOrganic(seen, col, row, 0.55 + 1.0 * camK, Math.max(0.08, camK));
+        if (v < CLOUD_CAMERA - 0.01) {
+          const clearK = Math.max(0, Math.min(1, (CLOUD_CAMERA - v) / CLOUD_CAMERA));
+          this._stampOrganic(full, col, row, 0.45 + 0.63 * clearK, clearK);
         }
       }
     }
@@ -1119,7 +1119,7 @@ export class OrbitalRenderer {
 
     drawWorld(this.fogImg || this.fullImg);
 
-    if (this.noiseImg && !this.anim?.moving) {
+    if (this.noiseImg) {
       wctx.save();
       wctx.globalAlpha = 0.16;
       const ox = reduce ? 0 : (t * 0.22) % 8;
@@ -1182,7 +1182,7 @@ export class OrbitalRenderer {
     ctx.drawImage(this.world, 0, 0, w, h);
 
     this._drawReticle(ctx, roverCol * scale + tx, roverRow * scale + ty);
-    if (!this._camParity) this._drawGrain(ctx, w, h, t);
+    this._drawGrain(ctx, w, h, t);
     this._drawVignette(ctx, w, h);
     this._drawRoverCam(now, t);
     this._sampleMotion(now, dt);
