@@ -112,6 +112,17 @@ export class OrbitalRenderer {
     this.mastcamImg = null;
     this.noiseImg = null;
     this.grain = makeGrain();
+    this.lidarImg = null;
+    this.thermalImg = null;
+    this.spectralImg = null;
+    this.heightArr = null;
+    this.camColor = null;
+    this.hW = 320;
+    this.hH = 340;
+    this.craterList = [];
+    this.camBuf = null;
+    this.camBufCtx = null;
+    this.lastCam = 0;
 
     this.seenMask = null;
     this.fullMask = null;
@@ -161,6 +172,9 @@ export class OrbitalRenderer {
     this.chuteImg = chute;
     this.mastcamImg = cam;
     this.noiseImg = noise;
+    this._buildAuxMaps();
+    this._collectCraters();
+    this._bakeCratersIntoHeight();
   }
 
   dispose() {
@@ -210,12 +224,24 @@ export class OrbitalRenderer {
   }
 
   setPausedHint(paused) {
-    this.paused = !!paused;
+    const next = !!paused;
+    if (next && !this.paused) this.snapPose();
+    this.paused = next;
+  }
+
+  snapPose() {
+    this.anim = null;
+    if (!this.gameState) return;
+    this.roverCol = this.gameState.col;
+    this.roverRow = this.gameState.row;
+    this.heading = FACE_RAD[this.gameState.facing] ?? this.heading;
+    this._stampTrack(this.roverCol, this.roverRow, this.heading);
   }
 
   setSensorLayer(name, on) {
     if (!(name in this.sensorLayers)) return;
     this.sensorLayers[name] = !!on;
+    if (this.ready) this.render();
   }
 
   setGridForced(on) {
@@ -230,6 +256,8 @@ export class OrbitalRenderer {
 
   updateState(gameState) {
     this.gameState = gameState;
+    this._collectCraters();
+    this._bakeCratersIntoHeight();
     if (gameState && !this.anim) {
       this.roverCol = gameState.col;
       this.roverRow = gameState.row;
@@ -239,26 +267,37 @@ export class OrbitalRenderer {
   }
 
   startAnimation(fromCol, fromRow, toCol, toRow, duration = 120) {
-    const fromH = this.heading;
-    const toH = FACE_RAD[this.gameState?.facing] ?? fromH;
+    const toH = FACE_RAD[this.gameState?.facing] ?? this.heading;
+    let dh = toH - this.heading;
+    while (dh > Math.PI) dh -= Math.PI * 2;
+    while (dh < -Math.PI) dh += Math.PI * 2;
+    const moving = Math.hypot((toCol - this.roverCol), (toRow - this.roverRow)) > 0.001
+      || Math.hypot((toCol - fromCol), (toRow - fromRow)) > 0.001;
+    if (moving) this.driveU += 1;
     this.anim = {
-      fromCol, fromRow, toCol, toRow,
-      fromH, toH,
+      fromCol: this.roverCol,
+      fromRow: this.roverRow,
+      toCol,
+      toRow,
+      fromH: this.heading,
+      toH: this.heading + dh,
       start: performance.now(),
-      duration: Math.max(1, duration)
+      duration: Math.max(16, duration),
+      moving
     };
-    this._stampTrack(fromCol, fromRow, fromH);
-    this.driveU += 1;
+    this._stampTrack(this.roverCol, this.roverRow, this.heading);
   }
 
   _stampTrack(col, row, heading) {
     const last = this.tracks[this.tracks.length - 1];
-    if (last && Math.hypot(last.col - col, last.row - row) < 0.02) {
+    if (last && Math.hypot(last.col - col, last.row - row) < 0.06) {
       last.heading = heading;
+      last.col = col;
+      last.row = row;
       return;
     }
     this.tracks.push({ col, row, heading });
-    if (this.tracks.length > 80) this.tracks.shift();
+    if (this.tracks.length > 220) this.tracks.shift();
   }
 
   syncCloudTargets() {
@@ -342,6 +381,186 @@ export class OrbitalRenderer {
     return s - Math.floor(s);
   }
 
+  _collectCraters() {
+    const terrain = this.gameState?.terrain;
+    if (!terrain) return;
+    const list = [];
+    for (let r = 0; r < GRID_ROWS; r++) {
+      for (let c = 0; c < GRID_COLS; c++) {
+        if (terrain[r][c] === 'crater') list.push({ c: c + 0.5, r: r + 0.5 });
+      }
+    }
+    this.craterList = list;
+  }
+
+  _buildAuxMaps() {
+    const src = this.fullImg;
+    if (!src) return;
+    const lw = Math.max(2, Math.floor(src.width / 2));
+    const lh = Math.max(2, Math.floor(src.height / 2));
+    const srcC = document.createElement('canvas');
+    srcC.width = lw;
+    srcC.height = lh;
+    const sctx = srcC.getContext('2d', { willReadFrequently: true });
+    sctx.drawImage(src, 0, 0, lw, lh);
+    const pix = sctx.getImageData(0, 0, lw, lh);
+    const d = pix.data;
+    const lidar = sctx.createImageData(lw, lh);
+    const therm = sctx.createImageData(lw, lh);
+    const spec = sctx.createImageData(lw, lh);
+    const ld = lidar.data;
+    const td = therm.data;
+    const sd = spec.data;
+    const lumaAt = (x, y) => {
+      const xx = x < 0 ? 0 : x >= lw ? lw - 1 : x;
+      const yy = y < 0 ? 0 : y >= lh ? lh - 1 : y;
+      const i = (yy * lw + xx) * 4;
+      return (d[i] * 0.3 + d[i + 1] * 0.5 + d[i + 2] * 0.2) / 255;
+    };
+    const heatRGB = (t) => {
+      const u = Math.max(0, Math.min(1, t));
+      if (u < 0.28) {
+        const k = u / 0.28;
+        return [18 + 50 * k, 8 + 24 * k, 90 + 110 * k];
+      }
+      if (u < 0.52) {
+        const k = (u - 0.28) / 0.24;
+        return [68 + 90 * k, 32 + 20 * k, 200 - 90 * k];
+      }
+      if (u < 0.76) {
+        const k = (u - 0.52) / 0.24;
+        return [158 + 70 * k, 52 + 90 * k, 110 - 55 * k];
+      }
+      const k = (u - 0.76) / 0.24;
+      return [228 + 27 * k, 142 + 90 * k, 48 + 10 * k];
+    };
+    for (let y = 0; y < lh; y++) {
+      for (let x = 0; x < lw; x++) {
+        const i = (y * lw + x) * 4;
+        const L = lumaAt(x, y);
+        const dx = lumaAt(x + 1, y) - lumaAt(x - 1, y);
+        const dy = lumaAt(x, y + 1) - lumaAt(x, y - 1);
+        const nx = -dx * 5;
+        const ny = -dy * 5;
+        const inv = 1 / Math.hypot(nx, ny, 1);
+        const shade = Math.max(0.08, Math.min(1, -nx * inv * 0.62 + ny * inv * 0.18 + inv * 0.78));
+        let lr = (28 + L * 170) * shade;
+        let lg = (48 + L * 150) * shade;
+        let lb = (88 + L * 90) * shade;
+        const band = Math.abs((L * 16) % 1);
+        if (band < 0.07 || band > 0.93) {
+          lr = lr * 0.35 + 210 * 0.65;
+          lg = lg * 0.35 + 225 * 0.65;
+          lb = lb * 0.35 + 235 * 0.65;
+        }
+        ld[i] = lr;
+        ld[i + 1] = lg;
+        ld[i + 2] = lb;
+        ld[i + 3] = 255;
+        const heat = L * 0.5 + shade * 0.5;
+        const [tr, tg, tb] = heatRGB(heat * 0.88 + 0.04);
+        td[i] = tr;
+        td[i + 1] = tg;
+        td[i + 2] = tb;
+        td[i + 3] = 255;
+        sd[i] = Math.min(255, d[i] * 0.28 + d[i + 1] * 0.95);
+        sd[i + 1] = Math.min(255, d[i] * 0.5 + d[i + 2] * 0.55);
+        sd[i + 2] = Math.min(255, d[i] * 1.15 + 12);
+        sd[i + 3] = 255;
+      }
+    }
+    const toCanvas = (imgData) => {
+      const o = document.createElement('canvas');
+      o.width = lw;
+      o.height = lh;
+      o.getContext('2d').putImageData(imgData, 0, 0);
+      return o;
+    };
+    this.lidarImg = toCanvas(lidar);
+    this.thermalImg = toCanvas(therm);
+    this.spectralImg = toCanvas(spec);
+
+    const hW = this.hW;
+    const hH = this.hH;
+    this.heightArr = new Float32Array(hW * hH);
+    this.camColor = new Uint8ClampedArray(hW * hH * 4);
+    const hc = document.createElement('canvas');
+    hc.width = hW;
+    hc.height = hH;
+    const hctx = hc.getContext('2d', { willReadFrequently: true });
+    hctx.drawImage(src, 0, 0, hW, hH);
+    const hp = hctx.getImageData(0, 0, hW, hH).data;
+    for (let y = 0; y < hH; y++) {
+      for (let x = 0; x < hW; x++) {
+        const i = (y * hW + x) * 4;
+        const L = (hp[i] * 0.3 + hp[i + 1] * 0.5 + hp[i + 2] * 0.2) / 255;
+        this.heightArr[y * hW + x] = L * 0.2;
+        this.camColor[i] = Math.min(255, hp[i] * 1.28 + 20);
+        this.camColor[i + 1] = Math.min(255, hp[i + 1] * 0.8 + 10);
+        this.camColor[i + 2] = Math.min(255, hp[i + 2] * 0.36 + 4);
+        this.camColor[i + 3] = 255;
+      }
+    }
+  }
+
+  _bakeCratersIntoHeight() {
+    if (!this.heightArr || !this.craterList.length || this.heightCratersBaked) return;
+    const hW = this.hW;
+    const hH = this.hH;
+    for (const cr of this.craterList) {
+      const cx = ((cr.c - MAP.originCol) / MAP.texCols) * (hW - 1);
+      const cy = ((cr.r - MAP.originRow) / MAP.texRows) * (hH - 1);
+      const rad = (0.78 / MAP.texCols) * hW;
+      const r0 = Math.max(0, Math.floor(cy - rad - 2));
+      const r1 = Math.min(hH - 1, Math.ceil(cy + rad + 2));
+      const c0 = Math.max(0, Math.floor(cx - rad - 2));
+      const c1 = Math.min(hW - 1, Math.ceil(cx + rad + 2));
+      for (let y = r0; y <= r1; y++) {
+        for (let x = c0; x <= c1; x++) {
+          const d = Math.hypot(x - cx, y - cy) / rad;
+          let add = 0;
+          if (d < 1) add -= 0.78 * (1 - d * d);
+          add += 0.2 * Math.exp(-(((d - 0.9) / 0.14) ** 2));
+          this.heightArr[y * hW + x] += add;
+        }
+      }
+    }
+    this.heightCratersBaked = true;
+  }
+
+  _sampleBilinear(arr, cols, col, row, stride = 1, offset = 0) {
+    const u = ((col - MAP.originCol) / MAP.texCols) * (this.hW - 1);
+    const v = ((row - MAP.originRow) / MAP.texRows) * (this.hH - 1);
+    const x0 = Math.max(0, Math.min(this.hW - 1, Math.floor(u)));
+    const y0 = Math.max(0, Math.min(this.hH - 1, Math.floor(v)));
+    const x1 = Math.min(this.hW - 1, x0 + 1);
+    const y1 = Math.min(this.hH - 1, y0 + 1);
+    const fx = u - x0;
+    const fy = v - y0;
+    const i00 = (y0 * this.hW + x0) * stride + offset;
+    const i10 = (y0 * this.hW + x1) * stride + offset;
+    const i01 = (y1 * this.hW + x0) * stride + offset;
+    const i11 = (y1 * this.hW + x1) * stride + offset;
+    return lerp(lerp(arr[i00], arr[i10], fx), lerp(arr[i01], arr[i11], fx), fy);
+  }
+
+  _heightAt(col, row) {
+    if (!this.heightArr) return 0;
+    return this._sampleBilinear(this.heightArr, this.hW, col, row);
+  }
+
+  _camColorAt(col, row, z) {
+    if (!this.camColor) return 'rgb(150,110,70)';
+    let r = this._sampleBilinear(this.camColor, this.hW, col, row, 4, 0);
+    let g = this._sampleBilinear(this.camColor, this.hW, col, row, 4, 1);
+    let b = this._sampleBilinear(this.camColor, this.hW, col, row, 4, 2);
+    const fog = Math.min(1, Math.max(0, z / 6.4));
+    r = r + (210 - r) * fog * 0.58;
+    g = g + (168 - g) * fog * 0.58;
+    b = b + (110 - b) * fog * 0.58;
+    return `rgb(${r | 0},${g | 0},${b | 0})`;
+  }
+
   rebuildMasks() {
     const seen = this.seenMaskCtx;
     const full = this.fullMaskCtx;
@@ -361,6 +580,12 @@ export class OrbitalRenderer {
     this._stampOrganic(seen, LANDER_COL + 0.8, LANDER_ROW - 0.4, 1.7, 0.85);
     this._stampOrganic(full, LANDER_COL, LANDER_ROW, 1.35, 1);
     this._stampOrganic(full, LANDER_COL + 0.55, LANDER_ROW - 0.15, 0.95, 0.9);
+    if (Number.isFinite(this.roverCol) && Number.isFinite(this.roverRow)) {
+      this._stampOrganic(seen, this.roverCol, this.roverRow, 1.65, 1);
+      this._stampOrganic(full, this.roverCol, this.roverRow, 1.12, 0.95);
+      this._maskRoverCol = this.roverCol;
+      this._maskRoverRow = this.roverRow;
+    }
 
     for (let row = 0; row < GRID_ROWS; row++) {
       for (let col = 0; col < GRID_COLS; col++) {
@@ -393,12 +618,17 @@ export class OrbitalRenderer {
     while (dh > Math.PI) dh -= Math.PI * 2;
     while (dh < -Math.PI) dh += Math.PI * 2;
     this.heading = a.fromH + dh * e;
+    if (a.moving) this._stampTrack(this.roverCol, this.roverRow, this.heading);
+    if (Math.hypot(this.roverCol - (this._maskRoverCol ?? 99), this.roverRow - (this._maskRoverRow ?? 99)) > 0.05) {
+      this.maskDirty = true;
+    }
     if (t >= 1) {
       this._stampTrack(a.toCol, a.toRow, a.toH);
       this.roverCol = a.toCol;
       this.roverRow = a.toRow;
       this.heading = a.toH;
       this.anim = null;
+      this.maskDirty = true;
     }
     return true;
   }
@@ -471,7 +701,32 @@ export class OrbitalRenderer {
     };
 
     blitMasked(this.seenImg || this.fullImg, this.seenMask);
-    blitMasked(this.fullImg, this.fullMask);
+    if (this.sensorLayers.camera !== false) {
+      blitMasked(this.fullImg, this.fullMask);
+    }
+
+    const blitLayer = (img, mask, mode, alpha) => {
+      if (!img || !mask) return;
+      const tctx = this.tmpCtx;
+      tctx.setTransform(1, 0, 0, 1, 0, 0);
+      tctx.clearRect(0, 0, this.tmp.width, this.tmp.height);
+      tctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * tx, dpr * ty);
+      tctx.drawImage(img, MAP.originCol, MAP.originRow, MAP.texCols, MAP.texRows);
+      tctx.globalCompositeOperation = 'destination-in';
+      tctx.drawImage(mask, MAP.originCol, MAP.originRow, MAP.texCols, MAP.texRows);
+      tctx.globalCompositeOperation = 'source-over';
+      wctx.setTransform(1, 0, 0, 1, 0, 0);
+      wctx.save();
+      wctx.globalAlpha = alpha;
+      wctx.globalCompositeOperation = mode;
+      wctx.drawImage(this.tmp, 0, 0);
+      wctx.restore();
+      wctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * tx, dpr * ty);
+    };
+
+    if (this.sensorLayers.lidar) blitLayer(this.lidarImg, this.seenMask, 'source-over', 0.78);
+    if (this.sensorLayers.thermal) blitLayer(this.thermalImg, this.seenMask, 'color', 0.82);
+    if (this.sensorLayers.spectral) blitLayer(this.spectralImg, this.seenMask, 'color', 0.72);
 
     this._drawTracks(wctx);
     this._drawPath(wctx, roverCol, roverRow);
@@ -559,33 +814,33 @@ export class OrbitalRenderer {
     const state = this.gameState;
     if (!state?.terrain) return;
     ctx.save();
-    for (let row = 0; row < GRID_ROWS; row++) {
-      for (let col = 0; col < GRID_COLS; col++) {
-        const known = !!(state.revealed?.[row]?.[col] || state.cameraSeen?.[row]?.[col]);
-        if (!known) continue;
-        const t = state.terrain[row][col];
-        const cx = col + 0.5;
-        const cy = row + 0.5;
-        if (this.sensorLayers.lidar && t === 'crater') {
-          ctx.strokeStyle = 'rgba(80, 220, 255, 0.7)';
-          ctx.lineWidth = 0.05;
+    if (this.sensorLayers.spectral) {
+      for (let row = 0; row < GRID_ROWS; row++) {
+        for (let col = 0; col < GRID_COLS; col++) {
+          if (this.cloudTarget[row][col] !== CLOUD_CLEAR) continue;
+          if (state.terrain[row][col] !== 'ore') continue;
+          const cx = col + 0.5;
+          const cy = row + 0.5;
+          ctx.fillStyle = state.drilled?.[row]?.[col] ? 'rgba(180,170,140,0.28)' : 'rgba(40, 255, 210, 0.55)';
           ctx.beginPath();
-          ctx.arc(cx, cy, 0.38, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        if (this.sensorLayers.spectral && t === 'ore') {
-          ctx.fillStyle = state.drilled?.[row]?.[col] ? 'rgba(160,160,150,0.25)' : 'rgba(80, 210, 255, 0.22)';
-          ctx.beginPath();
-          ctx.arc(cx, cy, 0.22, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        if (this.sensorLayers.thermal && t === 'dust') {
-          ctx.fillStyle = 'rgba(255, 140, 70, 0.22)';
-          ctx.beginPath();
-          ctx.arc(cx, cy, 0.28, 0, Math.PI * 2);
+          ctx.ellipse(cx, cy, 0.32, 0.24, 0.4, 0, Math.PI * 2);
           ctx.fill();
         }
       }
+    }
+    if (this.sensorLayers.thermal) {
+      const glow = (x, y, r) => {
+        const g = ctx.createRadialGradient(x, y, 0.04, x, y, r);
+        g.addColorStop(0, 'rgba(255, 230, 160, 0.85)');
+        g.addColorStop(0.35, 'rgba(255, 120, 40, 0.45)');
+        g.addColorStop(1, 'rgba(255, 40, 0, 0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      };
+      glow(this.roverCol + 0.5, this.roverRow + 0.42, 0.55);
+      glow(LANDER_COL + 0.5, LANDER_ROW + 0.72, 0.7);
     }
     ctx.restore();
   }
@@ -666,47 +921,101 @@ export class OrbitalRenderer {
   _drawRoverCam(now, t) {
     const canvas = document.getElementById('rover-cam-canvas');
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const out = canvas.getContext('2d');
     const w = canvas.width;
     const h = canvas.height;
-    const img = this.mastcamImg;
-    if (!img) {
-      ctx.fillStyle = '#3a2418';
-      ctx.fillRect(0, 0, w, h);
-      return;
+    const cheap = typeof navigator !== 'undefined' && navigator.webdriver;
+    const cw = cheap ? 160 : 240;
+    const ch = cheap ? 90 : 136;
+    if (!this.camBuf) {
+      this.camBuf = document.createElement('canvas');
+      this.camBuf.width = cw;
+      this.camBuf.height = ch;
+      this.camBufCtx = this.camBuf.getContext('2d');
     }
-    const moving = !!this.anim;
-    const bob = (moving ? 6.2 * Math.sin(t * 13) : 0) + 3.2 * Math.sin(t * 2.3);
-    const pan = Math.sin(this.heading) * 18;
-    const creep = Math.min(80, this.driveU * 7 + (moving ? 10 : 0));
-    const srcW = img.width * 0.62;
-    const srcH = srcW * (h / w);
-    const sx = Math.max(0, Math.min(img.width - srcW, (img.width - srcW) / 2 + pan));
-    const sy = Math.max(0, Math.min(img.height - srcH, img.height * 0.22 + bob + creep * 0.35));
-    ctx.save();
-    ctx.drawImage(img, sx, sy, srcW, srcH, 0, 0, w, h);
-    ctx.fillStyle = 'rgba(40, 18, 8, 0.08)';
-    ctx.fillRect(0, 0, w, h);
-    const vg = ctx.createRadialGradient(w / 2, h / 2, h * 0.2, w / 2, h / 2, h * 0.75);
-    vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(1, 'rgba(0,0,0,0.28)');
-    ctx.fillStyle = vg;
-    ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = 'rgba(240,244,246,0.55)';
-    ctx.lineWidth = 1;
+    const minDt = cheap ? 80 : ((this.playbackSpeed || 1) >= 16 ? 48 : 30);
+    const moving = !!(this.anim && this.anim.moving);
+    if (now - this.lastCam >= minDt || !this.lastCam) {
+      this.lastCam = now;
+      const ctx = this.camBufCtx;
+      const sky = ctx.createLinearGradient(0, 0, 0, ch);
+      sky.addColorStop(0, '#b88958');
+      sky.addColorStop(0.38, '#d4a56a');
+      sky.addColorStop(0.7, '#e6bf88');
+      sky.addColorStop(1, '#c99664');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, cw, ch);
+      const col = this.roverCol + 0.5;
+      const row = this.roverRow + 0.42;
+      const heading = this.heading;
+      const fwdC = Math.cos(heading);
+      const fwdR = Math.sin(heading);
+      const rightC = -Math.sin(heading);
+      const rightR = Math.cos(heading);
+      const bob = (moving && !this.reduceMotion) ? Math.sin(t * 17) * 0.014 : 0;
+      const eyeH = 0.18 + bob;
+      const horizon = ch * 0.36;
+      const zNear = 0.1;
+      const zFar = 6.4;
+      const steps = cheap ? 28 : 56;
+      const fov = 1.22;
+      for (let x = 0; x < cw; x++) {
+        let yBuf = ch;
+        const camX = (x / cw - 0.5) * fov;
+        for (let i = 0; i < steps; i++) {
+          const u = i / (steps - 1);
+          const z = zNear + (zFar - zNear) * u * u;
+          const wx = col + fwdC * z + rightC * camX * z;
+          const wy = row + fwdR * z + rightR * camX * z;
+          const ht = this._heightAt(wx, wy);
+          const sy = horizon - ((ht - eyeH) / z) * ch * 0.9;
+          const y0 = sy < 0 ? 0 : sy > ch ? ch : (sy | 0);
+          if (y0 < yBuf) {
+            ctx.fillStyle = this._camColorAt(wx, wy, z);
+            ctx.fillRect(x, y0, 1, yBuf - y0);
+            yBuf = y0;
+          }
+        }
+      }
+      ctx.save();
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = '#4a2810';
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.restore();
+    }
+    out.save();
+    const bobY = moving ? 2.4 * Math.sin(t * 16) : 0.6 * Math.sin(t * 2.1);
+    out.fillStyle = '#2a1c12';
+    out.fillRect(0, 0, w, h);
+    out.drawImage(this.camBuf, 0, bobY, w, h);
+    out.globalAlpha = 0.1;
+    const vg = out.createLinearGradient(0, 0, 0, h);
+    vg.addColorStop(0, '#000');
+    vg.addColorStop(0.4, 'transparent');
+    vg.addColorStop(1, '#1a1008');
+    out.fillStyle = vg;
+    out.fillRect(0, 0, w, h);
+    out.globalAlpha = 1;
+    out.strokeStyle = 'rgba(240,244,246,0.55)';
+    out.lineWidth = 1;
     const cx = w / 2;
     const cy = h / 2;
-    ctx.beginPath();
-    ctx.moveTo(cx - 12, cy);
-    ctx.lineTo(cx - 4, cy);
-    ctx.moveTo(cx + 4, cy);
-    ctx.lineTo(cx + 12, cy);
-    ctx.moveTo(cx, cy - 12);
-    ctx.lineTo(cx, cy - 4);
-    ctx.moveTo(cx, cy + 4);
-    ctx.lineTo(cx, cy + 12);
-    ctx.stroke();
-    ctx.restore();
+    out.beginPath();
+    out.moveTo(cx - 12, cy);
+    out.lineTo(cx - 4, cy);
+    out.moveTo(cx + 4, cy);
+    out.lineTo(cx + 12, cy);
+    out.moveTo(cx, cy - 12);
+    out.lineTo(cx, cy - 4);
+    out.moveTo(cx, cy + 4);
+    out.lineTo(cx, cy + 12);
+    out.stroke();
+    out.font = '9px "IBM Plex Mono", ui-monospace, monospace';
+    out.fillStyle = 'rgba(236, 240, 242, 0.82)';
+    const facing = this.gameState?.facing || 'north';
+    out.fillText(`NAVCAM  ${facing.toUpperCase()}`, 8, 14);
+    out.fillText('SOL 0  14:02:11', 8, h - 8);
+    out.restore();
   }
 }
 

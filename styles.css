@@ -626,10 +626,16 @@ button:disabled {
   color: #afb6ba;
   font-family: inherit;
   text-transform: none;
+  cursor: pointer;
+}
+
+.orbital-ops .instrument-toggle:focus-visible {
+  outline: 2px solid rgba(220, 228, 232, 0.95);
+  outline-offset: 2px;
 }
 
 .orbital-ops .instrument-toggle.standby-only {
-  cursor: default;
+  cursor: pointer;
   opacity: 0.92;
 }
 
@@ -637,6 +643,7 @@ button:disabled {
   background: rgba(38, 44, 48, 0.82);
   border: 2px solid rgba(210, 220, 225, 0.9);
   color: #e8ecee;
+  box-shadow: inset 0 0 0 1px rgba(96, 214, 120, 0.25);
 }
 
 .instrument-copy {
@@ -1934,8 +1941,8 @@ button:disabled {
   }
 
   .orbital-ops .instrument-toggle {
-    min-height: 36px;
-    padding: 4px 8px;
+    min-height: 44px;
+    padding: 6px 8px;
   }
   
   .auto-pause-toast {

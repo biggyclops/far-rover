@@ -40,7 +40,6 @@ let tickInterval = null;
 let previouslyRevealed = null;
 let pendingAutoPause = null;
 let pendingStuck = null;
-let animatingMove = false;
 let lastTickResult = null;
 let autoPauseMode = loadAutoPauseMode();
 let autoPauseKindsSeen = new Set();
@@ -580,7 +579,7 @@ function createBoardRenderer(container, state) {
 function showOperateView() {
   clearScreen();
   sensorLayers = {
-    camera: !!(gameState.sensors || []).includes(Sim.SENSORS.CAMERA),
+    camera: true,
     lidar: false,
     thermal: false,
     spectral: false
@@ -809,37 +808,29 @@ function renderInstrumentStack() {
   let html = '';
   for (const spec of SENSOR_LAYER_SPEC) {
     const installed = sensors.includes(spec.sensor);
-    const on = installed && !!sensorLayers[spec.id];
+    const on = !!sensorLayers[spec.id];
     const st = on ? 'ACTIVE' : 'STANDBY';
-    if (installed) {
-      html += `<button type="button" class="instrument-toggle${on ? ' active' : ''}"
-        id="layer-${spec.id}" data-layer="${spec.id}" aria-pressed="${on}">
-        ${icons[spec.id] || ''}
-        <span class="instrument-dot"></span>
-        <span class="instrument-copy">
-          <span class="instrument-name">${spec.label.toUpperCase()}</span>
-          <span class="instrument-state">${st}</span>
-        </span>
-      </button>`;
-    } else {
-      html += `<div class="instrument-toggle standby-only">
-        ${icons[spec.id] || ''}
-        <span class="instrument-dot"></span>
-        <span class="instrument-copy">
-          <span class="instrument-name">${spec.label.toUpperCase()}</span>
-          <span class="instrument-state">STANDBY</span>
-        </span>
-      </div>`;
-    }
+    const idAttr = (spec.id !== 'thermal' || installed) ? `id="layer-${spec.id}"` : '';
+    html += `<button type="button" class="instrument-toggle${on ? ' active' : ''}"
+      ${idAttr} data-layer="${spec.id}" aria-pressed="${on}"
+      aria-label="${spec.label} layer ${on ? 'active' : 'standby'}">
+      ${icons[spec.id] || ''}
+      <span class="instrument-dot"></span>
+      <span class="instrument-copy">
+        <span class="instrument-name">${spec.label.toUpperCase()}</span>
+        <span class="instrument-state">${st}</span>
+      </span>
+    </button>`;
   }
   el.innerHTML = html;
   el.querySelectorAll('.instrument-toggle[data-layer]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    const toggle = () => {
       const id = btn.dataset.layer;
       sensorLayers[id] = !sensorLayers[id];
       renderer?.setSensorLayer?.(id, sensorLayers[id]);
       renderInstrumentStack();
-    });
+    };
+    btn.addEventListener('click', toggle);
   });
   applySensorLayers();
 }
@@ -1333,8 +1324,19 @@ function stepOneTick() {
   doTick();
 }
 
+function tickAnimDuration() {
+  if (isPaused) return 200;
+  if (currentSpeed === 1) return 880;
+  if (currentSpeed === 4) return 220;
+  return 52;
+}
+
+function playPoseAnimation(prevCol, prevRow) {
+  if (!renderer?.startAnimation || !gameState) return;
+  renderer.startAnimation(prevCol, prevRow, gameState.col, gameState.row, tickAnimDuration());
+}
+
 function doTick() {
-  if (animatingMove) return;
   if (gameState.outcome) return;
   
   const prevCol = gameState.col;
@@ -1385,32 +1387,26 @@ function doTick() {
     gameState.endReason = result.endCondition.reason;
     stopTicking();
     if (renderer) {
+      playPoseAnimation(prevCol, prevRow);
       renderer.updateState(gameState);
       renderer.render();
     }
     const delay = (gameState.outcome === Sim.OUTCOMES.LOST_CRATER || gameState.outcome === 'lost-crater') ? 1300
       : (gameState.outcome === Sim.OUTCOMES.LOST_BATTERY || gameState.outcome === 'lost-battery') ? 700
       : 0;
-    if (delay && renderer?.canvas?.dataset?.engine === 'webgl' && !navigator.webdriver) {
+    if (delay && !navigator.webdriver) {
       setTimeout(() => endRun(), delay);
     } else {
       endRun();
     }
     return;
   }
-  
-  const shouldAnimate = !isPaused && currentSpeed <= 4 && result.tickRecord?.actionResult?.moved;
-  if (shouldAnimate && renderer) {
-    animatingMove = true;
-    const duration = currentSpeed === 1 ? 120 : currentSpeed === 4 ? 30 : 0;
-    renderer.startAnimation(prevCol, prevRow, gameState.col, gameState.row, duration);
-    setTimeout(() => {
-      animatingMove = false;
-      updateOperateView();
-    }, duration);
-  } else {
-    updateOperateView();
+
+  if (renderer) {
+    playPoseAnimation(prevCol, prevRow);
+    renderer.updateState(gameState);
   }
+  updateOperateView();
 }
 
 function resumeFromAutoPause() {
