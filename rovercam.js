@@ -236,13 +236,13 @@ function drawEjecta(ctx, renderer, cx, cy, rw, rh, dist) {
   ctx.save();
   for (let i = 0; i < n; i++) {
     const ang = 0.35 + i * 0.82 + dist * 0.05;
-    const onNear = Math.sin(ang) > -0.15;
+    if (Math.sin(ang) < 0.12) continue;
     const rad = 0.92 + (i % 3) * 0.08;
     const ex = cx + Math.cos(ang) * rw * rad;
-    const ey = cy + Math.sin(ang) * rh * (rad + (onNear ? 0.12 : -0.04));
+    const ey = cy + Math.sin(ang) * rh * (rad + 0.12);
     const chip = (i % 4) * 128;
     const s = (14 + (i % 3) * 7) * Math.min(2.4, 1.85 / dist);
-    ctx.globalAlpha = onNear ? 0.78 : 0.42;
+    ctx.globalAlpha = 0.78;
     ctx.drawImage(img, chip, 24, 128, 80, ex - s / 2, ey - s * 0.55, s, s * 0.7);
   }
   ctx.restore();
@@ -254,10 +254,11 @@ function drawCraterOverlay(ctx, renderer, w, h, horizon) {
   const dist = Math.max(0.22, hit.along);
   const grow = Math.min(2.45, 2.05 / dist);
   const cx = w / 2 + hit.side * (w * 0.5) / dist;
-  const cy = horizon + h * (0.06 + 0.36 / dist);
+  const farRimY = horizon + h * 0.01;
   const rw = Math.min(w * 1.12, grow * w * 0.50);
-  const squash = 0.36 + 0.22 * Math.min(1, 1.15 / dist);
-  const rh = Math.min(h * 0.92, rw * squash);
+  const squash = 0.40 + 0.18 * Math.min(1, 1.15 / dist);
+  const rh = Math.min(h - farRimY - 2, Math.min(h * 0.82, rw * squash));
+  const cy = farRimY + rh;
   const { c, ctx: o, w: ow, h: oh } = craterScratch(renderer, rw, rh);
   o.setTransform(1, 0, 0, 1, 0, 0);
   o.clearRect(0, 0, ow, oh);
@@ -269,53 +270,61 @@ function drawCraterOverlay(ctx, renderer, w, h, horizon) {
   o.clip();
   const ground = renderer.camNear || renderer.mastcamImg;
   if (ground) {
-    o.drawImage(ground, ocx - rw * 1.25, ocy - rh * 0.35, rw * 2.5, rh * 2.15);
+    o.drawImage(ground, ocx - rw * 1.25, ocy - rh * 0.08, rw * 2.5, rh * 2.15);
   }
   const plate = renderer.camCrater;
   if (plate) {
-    o.globalAlpha = 0.92;
     o.drawImage(plate, ocx - rw, ocy - rh, rw * 2, rh * 2);
-    o.globalAlpha = 1;
   }
-  const farWall = o.createLinearGradient(ocx, ocy - rh, ocx, ocy + rh * 0.15);
-  farWall.addColorStop(0, 'rgba(10, 5, 2, 0.55)');
-  farWall.addColorStop(0.42, 'rgba(32, 14, 6, 0.22)');
+  const farWall = o.createLinearGradient(ocx, ocy - rh * 0.72, ocx, ocy + rh * 0.1);
+  farWall.addColorStop(0, 'rgba(10, 5, 2, 0.38)');
+  farWall.addColorStop(0.45, 'rgba(32, 14, 6, 0.12)');
   farWall.addColorStop(1, 'rgba(0, 0, 0, 0)');
   o.fillStyle = farWall;
   o.fillRect(0, 0, ow, oh);
   const nearLit = o.createRadialGradient(ocx - rw * 0.12, ocy + rh * 0.42, rh * 0.04, ocx, ocy + rh * 0.22, rh * 0.85);
-  nearLit.addColorStop(0, 'rgba(236, 198, 148, 0.28)');
-  nearLit.addColorStop(0.55, 'rgba(180, 120, 70, 0.08)');
+  nearLit.addColorStop(0, 'rgba(236, 198, 148, 0.22)');
+  nearLit.addColorStop(0.55, 'rgba(180, 120, 70, 0.06)');
   nearLit.addColorStop(1, 'rgba(0, 0, 0, 0)');
   o.fillStyle = nearLit;
   o.fillRect(0, 0, ow, oh);
-  o.save();
-  o.beginPath();
-  o.ellipse(ocx, ocy, rw, rh, 0, 0, Math.PI * 2);
-  o.ellipse(ocx, ocy + rh * 0.02, rw * 0.86, rh * 0.82, 0, 0, Math.PI * 2, true);
-  o.clip();
-  const lip = o.createLinearGradient(ocx, ocy - rh, ocx, ocy + rh);
-  lip.addColorStop(0, 'rgba(18, 8, 4, 0.28)');
-  lip.addColorStop(0.5, 'rgba(0, 0, 0, 0)');
-  lip.addColorStop(0.8, 'rgba(236, 198, 148, 0.26)');
-  lip.addColorStop(1, 'rgba(255, 224, 176, 0.1)');
-  o.fillStyle = lip;
-  o.fillRect(0, 0, ow, oh);
-  o.restore();
   o.restore();
   o.save();
   o.globalCompositeOperation = 'destination-in';
-  const mask = o.createRadialGradient(ocx, ocy + rh * 0.06, Math.min(rw, rh) * 0.18, ocx, ocy, Math.max(rw, rh) * 1.02);
+  const mask = o.createRadialGradient(
+    ocx, ocy + rh * 0.32, Math.min(rw, rh) * 0.18,
+    ocx, ocy + rh * 0.16, Math.max(rw, rh) * 1.08
+  );
   mask.addColorStop(0, 'rgba(255,255,255,1)');
-  mask.addColorStop(0.58, 'rgba(255,255,255,0.95)');
-  mask.addColorStop(0.8, 'rgba(255,255,255,0.5)');
+  mask.addColorStop(0.64, 'rgba(255,255,255,0.96)');
+  mask.addColorStop(0.86, 'rgba(255,255,255,0.4)');
   mask.addColorStop(1, 'rgba(255,255,255,0)');
   o.fillStyle = mask;
   o.fillRect(0, 0, ow, oh);
   o.restore();
+  o.save();
+  o.globalCompositeOperation = 'destination-out';
+  const skyCut = o.createLinearGradient(0, 0, 0, Math.max(4, rh * 0.04));
+  skyCut.addColorStop(0, 'rgba(0,0,0,0.8)');
+  skyCut.addColorStop(1, 'rgba(0,0,0,0)');
+  o.fillStyle = skyCut;
+  o.fillRect(0, 0, ow, rh * 0.045);
+  o.restore();
   ctx.drawImage(c, cx - rw, cy - rh);
   drawEjecta(ctx, renderer, cx, cy, rw, rh, dist);
   return hit;
+}
+
+function landerScratch(renderer, dw, dh) {
+  const w = Math.max(8, Math.ceil(dw));
+  const h = Math.max(8, Math.ceil(dh));
+  if (!renderer._landerOff || renderer._landerOff.width !== w || renderer._landerOff.height !== h) {
+    renderer._landerOff = document.createElement('canvas');
+    renderer._landerOff.width = w;
+    renderer._landerOff.height = h;
+    renderer._landerCtx = renderer._landerOff.getContext('2d');
+  }
+  return { c: renderer._landerOff, ctx: renderer._landerCtx, w, h };
 }
 
 function drawLanderBillboard(ctx, renderer, w, h, horizon) {
@@ -325,18 +334,33 @@ function drawLanderBillboard(ctx, renderer, w, h, horizon) {
   const img = renderer.landerFwdImg || renderer.landerImg;
   if (!img) return;
   const z = hit.along;
-  const bw = Math.min(w * 0.72, (1.4 / z) * w * 0.44);
-  const bh = bw * 0.92;
+  const natW = img.naturalWidth || img.width || 1;
+  const natH = img.naturalHeight || img.height || 1;
+  const aspect = natH / natW;
+  const bw = Math.min(w * 0.58, (1.15 / z) * w * 0.40);
+  const bh = bw * aspect;
   const x = w / 2 + (hit.side / z) * w * 0.52 - bw / 2;
-  const y = horizon + (0.18 / z) * h + h * 0.02;
+  const groundY = horizon + (0.46 / z) * h + h * 0.14;
+  const y = groundY - bh * 0.90;
+  const fog = Math.min(0.34, Math.max(0, (z - 1.05) / 7.2));
   ctx.save();
-  ctx.fillStyle = 'rgba(14, 7, 3, 0.48)';
+  ctx.fillStyle = `rgba(10, 5, 2, ${0.58 * (1 - fog * 0.45)})`;
   ctx.beginPath();
-  ctx.ellipse(x + bw * 0.52, y + bh * 0.88, bw * 0.4, Math.max(4, bh * 0.085), 0.12, 0, Math.PI * 2);
+  ctx.ellipse(x + bw * 0.5, y + bh * 0.9, bw * 0.34, Math.max(4, bh * 0.08), 0.08, 0, Math.PI * 2);
   ctx.fill();
-  ctx.filter = 'sepia(0.28) saturate(0.82) brightness(0.9) contrast(0.96)';
-  ctx.drawImage(img, x, y, bw, bh);
-  ctx.filter = 'none';
+  const { c, ctx: o } = landerScratch(renderer, bw, bh);
+  o.setTransform(1, 0, 0, 1, 0, 0);
+  o.clearRect(0, 0, bw, bh);
+  o.imageSmoothingEnabled = true;
+  o.imageSmoothingQuality = 'high';
+  o.drawImage(img, 0, 0, bw, bh);
+  if (fog > 0.02) {
+    o.globalCompositeOperation = 'source-atop';
+    o.fillStyle = `rgba(210, 168, 118, ${fog})`;
+    o.fillRect(0, 0, bw, bh);
+    o.globalCompositeOperation = 'source-over';
+  }
+  ctx.drawImage(c, x, y, bw, bh);
   ctx.restore();
 }
 
