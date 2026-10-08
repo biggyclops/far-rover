@@ -11,7 +11,7 @@ import {
   CLOUD_CAMERA,
   CLOUD_CLEAR
 } from './renderer.js';
-import { drawRoverCam, resolveCamMode, persistCamMode, CAM_MODES } from './rovercam.js';
+import { drawRoverCam, prewarmRoverCam, resolveCamMode, persistCamMode, CAM_MODES } from './rovercam.js';
 
 const GRID_COLS = 12;
 const GRID_ROWS = 12;
@@ -49,31 +49,94 @@ function wrapAngle(a) {
   return a;
 }
 
-function hermiteEaseIn(t, k) {
-  if (t <= 0) return 0;
-  if (t >= k) return t;
-  const u = t / k;
-  return k * (-u * u * u + 2 * u * u);
-}
-
-function hermiteEaseOut(t, k) {
-  if (t >= 1) return 1;
-  if (t <= 1 - k) return t;
-  const t0 = 1 - k;
-  const u = (t - t0) / k;
-  const h00 = 2 * u * u * u - 3 * u * u + 1;
-  const h10 = u * u * u - 2 * u * u + u;
-  const h01 = -2 * u * u * u + 3 * u * u;
-  return h00 * t0 + h10 * k + h01;
-}
-
+// Trapezoid speed: accel/decel ramps whose peak is ≤ 1.1 tiles / duration.
 function posEase(t, easeIn, easeOut) {
   t = Math.min(1, Math.max(0, t));
-  const k = 0.24;
-  if (easeIn && easeOut) return t * t * (3 - 2 * t);
-  if (easeIn) return hermiteEaseIn(t, k);
-  if (easeOut) return hermiteEaseOut(t, k);
-  return t;
+  if (!easeIn && !easeOut) return t;
+  if (easeIn && easeOut) {
+    const k = 0.09;
+    const v = 1 / (1 - k);
+    if (t < k) return 0.5 * v * t * t / k;
+    if (t > 1 - k) {
+      const u = 1 - t;
+      return 1 - 0.5 * v * u * u / k;
+    }
+    return 0.5 * v * k + v * (t - k);
+  }
+  const k = 0.18;
+  const v = 1 / (1 - 0.5 * k);
+  if (easeIn) {
+    if (t < k) return 0.5 * v * t * t / k;
+    return 0.5 * v * k + v * (t - k);
+  }
+  if (t <= 1 - k) return v * t;
+  const u = t - (1 - k);
+  return v * (1 - k) + v * u - 0.5 * (v / k) * u * u;
+}
+
+function camFollow(col, row) {
+  const f = 0.54;
+  return {
+    x: lerp(LANDER_COL + 3.05, col + 2.85, f),
+    y: lerp(LANDER_ROW - 0.15, row + 0.35, f)
+  };
+}
+
+function camDrift(t, reduce) {
+  if (reduce) return { x: 0, y: 0 };
+  return {
+    x: 0.34 * Math.sin(t * 0.11) + 0.14 * Math.sin(t * 0.031),
+    y: 0.2 * Math.cos(t * 0.09) + 0.1 * Math.cos(t * 0.047)
+  };
+}
+
+function camZoomPulse(t, reduce) {
+  if (reduce) return 1;
+  return 0.97 + 0.045 * smoothstep(0, 1, (Math.sin(t * 0.07) + 1) / 2);
+}
+
+function buildCornerPts(x0, y0, x1, y1, inDx, inDy, dx, dy) {
+  const il = Math.hypot(inDx, inDy) || 1;
+  const ol = Math.hypot(dx, dy) || 1;
+  const m = 0.26;
+  const p1x = x0 + (inDx / il) * m;
+  const p1y = y0 + (inDy / il) * m;
+  const p2x = x1 - (dx / ol) * m;
+  const p2y = y1 - (dy / ol) * m;
+  const n = 20;
+  const pts = [];
+  let acc = 0;
+  let px = x0;
+  let py = y0;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const u = 1 - t;
+    const x = u * u * u * x0 + 3 * u * u * t * p1x + 3 * u * t * t * p2x + t * t * t * x1;
+    const y = u * u * u * y0 + 3 * u * u * t * p1y + 3 * u * t * t * p2y + t * t * t * y1;
+    if (i) acc += Math.hypot(x - px, y - py);
+    pts.push({ x, y, d: acc });
+    px = x;
+    py = y;
+  }
+  return pts;
+}
+
+function sampleCorner(pts, u) {
+  if (!pts || !pts.length) return { x: 0, y: 0 };
+  const target = Math.min(1, Math.max(0, u)) * pts[pts.length - 1].d;
+  if (target <= 0) return { x: pts[0].x, y: pts[0].y };
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i].d >= target) {
+      const span = pts[i].d - pts[i - 1].d || 1;
+      const f = (target - pts[i - 1].d) / span;
+      return {
+        x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * f,
+        y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * f
+      };
+    }
+  }
+  const last = pts[pts.length - 1];
+  return { x: last.x, y: last.y };
 }
 
 function headingEase(t, mode) {
@@ -100,10 +163,54 @@ function summarizeMotionLog(log) {
 function loadImage(src) {
   return new Promise((resolve) => {
     const img = new Image();
-    img.onload = () => resolve(img);
+    img.decoding = 'async';
+    img.onload = () => {
+      if (img.decode) {
+        img.decode().then(() => resolve(img)).catch(() => resolve(img));
+      } else resolve(img);
+    };
     img.onerror = () => resolve(null);
     img.src = src;
   });
+}
+
+const ART_BASE = 'assets/art/';
+const ART_FILES = {
+  full: 'hirise-board.jpg',
+  seen: 'hirise-seen.jpg',
+  fog: 'hirise-fog.jpg',
+  rover: 'rover-nadir.png',
+  lander: 'lander-insight.png',
+  chute: 'chute.png',
+  cam: 'mastcam.jpg',
+  noise: 'edge-noise.png',
+  sky: 'cam-sky.jpg',
+  far: 'cam-far.jpg',
+  mid: 'cam-mid.jpg',
+  near: 'cam-near.jpg',
+  alt: 'cam-alt.jpg',
+  pano: 'cam-pano.jpg',
+  rocks: 'cam-rocks.png',
+  landerFwd: 'lander-cam.png',
+  oreTile: 'tile-ore.png',
+  dustTile: 'tile-dust.png',
+  crater: 'cam-crater.png'
+};
+
+let artWarmPromise = null;
+
+export function warmupOrbitalArt() {
+  if (!artWarmPromise) {
+    artWarmPromise = Promise.all(
+      Object.values(ART_FILES).map((name) => loadImage(ART_BASE + name))
+    ).then((imgs) => {
+      const keys = Object.keys(ART_FILES);
+      const bundle = {};
+      keys.forEach((k, i) => { bundle[k] = imgs[i]; });
+      return bundle;
+    });
+  }
+  return artWarmPromise;
 }
 
 function makeGrain(size = 128) {
@@ -165,9 +272,11 @@ export class OrbitalRenderer {
     this._grainPat = null;
     this._scanOverlay = null;
     this._camParity = 0;
-    this.camX = LANDER_COL + 3.1;
-    this.camY = LANDER_ROW - 0.15;
-    this.camZoom = 1;
+    const launchCam = camFollow(this.roverCol, this.roverRow);
+    const launchDrift = camDrift(0, this.reduceMotion);
+    this.camX = launchCam.x + launchDrift.x;
+    this.camY = launchCam.y + launchDrift.y;
+    this.camZoom = camZoomPulse(0, this.reduceMotion);
     this.ready = false;
 
     this.fullImg = null;
@@ -229,57 +338,42 @@ export class OrbitalRenderer {
         // ignore
       }
     }
+    warmupOrbitalArt();
     this.loadArt().then(() => {
       if (this.disposed) return;
       this.ready = true;
       this.maskDirty = true;
-      this.render();
+      this._warmGpu();
+      this._prewarmCam();
+      this.render(this.now(), 16);
+      this.loop();
+    }).catch((err) => {
+      console.warn('Orbital art failed', err);
+      if (!this.disposed) this.loop();
     });
-    this.loop();
   }
 
   async loadArt() {
-    const base = 'assets/art/';
-    const [full, seen, fog, rover, lander, chute, cam, noise, sky, far, mid, near, alt, pano, rocks, landerFwd, oreTile, dustTile, crater] = await Promise.all([
-      loadImage(base + 'hirise-board.jpg'),
-      loadImage(base + 'hirise-seen.jpg'),
-      loadImage(base + 'hirise-fog.jpg'),
-      loadImage(base + 'rover-nadir.png'),
-      loadImage(base + 'lander-insight.png'),
-      loadImage(base + 'chute.png'),
-      loadImage(base + 'mastcam.jpg'),
-      loadImage(base + 'edge-noise.png'),
-      loadImage(base + 'cam-sky.jpg'),
-      loadImage(base + 'cam-far.jpg'),
-      loadImage(base + 'cam-mid.jpg'),
-      loadImage(base + 'cam-near.jpg'),
-      loadImage(base + 'cam-alt.jpg'),
-      loadImage(base + 'cam-pano.jpg'),
-      loadImage(base + 'cam-rocks.png'),
-      loadImage(base + 'lander-cam.png'),
-      loadImage(base + 'tile-ore.png'),
-      loadImage(base + 'tile-dust.png'),
-      loadImage(base + 'cam-crater.png')
-    ]);
-    this.fullImg = full;
-    this.seenImg = seen;
-    this.fogImg = fog;
-    this.roverImg = rover;
-    this.landerImg = lander;
-    this.chuteImg = chute;
-    this.mastcamImg = cam;
-    this.noiseImg = noise;
-    this.camSky = sky;
-    this.camFar = far;
-    this.camMid = mid;
-    this.camNear = near;
-    this.camAlt = alt;
-    this.camPano = pano;
-    this.camRocks = rocks;
-    this.landerFwdImg = landerFwd;
-    this.oreTileImg = oreTile;
-    this.dustTileImg = dustTile;
-    this.camCrater = crater;
+    const bundle = await warmupOrbitalArt();
+    this.fullImg = bundle.full;
+    this.seenImg = bundle.seen;
+    this.fogImg = bundle.fog;
+    this.roverImg = bundle.rover;
+    this.landerImg = bundle.lander;
+    this.chuteImg = bundle.chute;
+    this.mastcamImg = bundle.cam;
+    this.noiseImg = bundle.noise;
+    this.camSky = bundle.sky;
+    this.camFar = bundle.far;
+    this.camMid = bundle.mid;
+    this.camNear = bundle.near;
+    this.camAlt = bundle.alt;
+    this.camPano = bundle.pano;
+    this.camRocks = bundle.rocks;
+    this.landerFwdImg = bundle.landerFwd;
+    this.oreTileImg = bundle.oreTile;
+    this.dustTileImg = bundle.dustTile;
+    this.camCrater = bundle.crater;
     this.lastCam = 0;
     this._camTexReady = false;
     this._camPoseKey = '';
@@ -289,6 +383,50 @@ export class OrbitalRenderer {
       this._bakeCratersIntoHeight();
     } catch (err) {
       console.warn('Orbital aux maps failed', err);
+    }
+    this.maskDirty = true;
+    this.rebuildMasks();
+  }
+
+  _warmGpu() {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 64;
+      c.height = 64;
+      const x = c.getContext('2d');
+      if (!x) return;
+      const imgs = [
+        this.fullImg, this.seenImg, this.fogImg, this.roverImg, this.landerImg,
+        this.chuteImg, this.mastcamImg, this.camSky, this.camFar, this.camMid,
+        this.camNear, this.camAlt, this.camPano, this.camRocks, this.landerFwdImg,
+        this.oreTileImg, this.dustTileImg, this.camCrater, this.lidarImg,
+        this.thermalImg, this.spectralImg
+      ];
+      for (const img of imgs) {
+        if (img) x.drawImage(img, 0, 0, 64, 64);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  _prewarmCam() {
+    this._warming = true;
+    try {
+      if (this.ctx) {
+        this._drawGrain(this.ctx, this.width, this.height, 0);
+        this._drawVignette(this.ctx, this.width, this.height);
+      }
+      this.lastCam = 0;
+      prewarmRoverCam(this, this.now());
+      this.render(this.now(), 16);
+      this.lastCam = 0;
+      prewarmRoverCam(this, this.now() + 40);
+      this.render(this.now() + 40, 16);
+    } catch (err) {
+      console.warn('Rover-cam prewarm failed', err);
+    } finally {
+      this._warming = false;
     }
   }
 
@@ -389,9 +527,12 @@ export class OrbitalRenderer {
   }
 
   resetView() {
-    this.camX = (this.roverCol ?? LANDER_COL) + 3.1;
-    this.camY = (this.roverRow ?? LANDER_ROW) - 0.15;
-    this.camZoom = 1;
+    const cam = camFollow(this.roverCol ?? LANDER_COL, this.roverRow ?? LANDER_ROW);
+    const t = (this.now() - this.t0) / 1000;
+    const drift = camDrift(t, this.reduceMotion);
+    this.camX = cam.x + drift.x;
+    this.camY = cam.y + drift.y;
+    this.camZoom = camZoomPulse(t, this.reduceMotion);
   }
 
   updateState(gameState) {
@@ -422,7 +563,7 @@ export class OrbitalRenderer {
     let dx = toCol - fromC;
     let dy = toRow - fromR;
     const prev = this._cruise;
-    const recent = !!(prev && (this.anim || (t0 - (prev.endedAt || 0)) < 48));
+    const recent = !!(prev && (this.anim || (t0 - (prev.endedAt || 0)) < 80));
     const sameDir = !!(prev && prev.moving && moving && recent
       && Math.sign(dx || 0) === Math.sign(prev.dx || 0)
       && Math.sign(dy || 0) === Math.sign(prev.dy || 0)
@@ -448,23 +589,23 @@ export class OrbitalRenderer {
     const peekDx = peek ? (peek.col ?? toCol) - toCol : 0;
     const peekDy = peek ? (peek.row ?? toRow) - toRow : 0;
     const peekMove = Math.hypot(peekDx, peekDy) > 0.01;
-    const peekSameDir = peekMove
-      && Math.sign(peekDx || 0) === Math.sign(dx || 0)
-      && Math.sign(peekDy || 0) === Math.sign(dy || 0);
     const turning = Math.abs(dh) > 0.2;
-    const sidestep = moving && Math.abs(dx * Math.cos(fromH) + dy * Math.sin(fromH)) < 0.35
-      && Math.hypot(dx, dy) > 0.5;
     const reverse = !!(prev && prev.moving && moving
       && (dx * (prev.dx || 0) + dy * (prev.dy || 0)) < -0.2);
-    const fromCorner = !!(prev && prev.turnArc && moving && recent);
-    const easeIn = (moving && !(sameDir || fromCorner)) || reverse || sidestep;
-    const easeOut = moving && (!peekSameDir || reverse || sidestep || (turning && !peekMove));
+    const continueMotion = !!(prev && prev.moving && moving && recent && !reverse);
+    const corner = !!(continueMotion && !sameDir);
+    const easeIn = moving && !continueMotion;
+    // Carry cruise through a corner; a following drill/turn-in-place
+    // is a real stop after the arc, not a mid-corner ease-out.
+    const easeOut = moving && !corner && (!peekMove || reverse);
     let headingMode = 'linear';
     if (!moving && turning) headingMode = peekMove ? 'early' : 'full';
     else if (moving && peek && !peekMove && Math.abs(wrapAngle((FACE_RAD[peek.facing] ?? toH) - facingH)) > 0.2) {
       headingMode = 'late';
     } else if (moving && turning) headingMode = 'full';
     if (moving) this.driveU += 1;
+    const inDx = prev && prev.moving ? prev.dx : dx;
+    const inDy = prev && prev.moving ? prev.dy : dy;
     this.anim = {
       fromCol: fromC,
       fromRow: fromR,
@@ -478,13 +619,15 @@ export class OrbitalRenderer {
       easeIn,
       easeOut,
       headingMode,
-      turnArc: (!moving && turning) || sidestep,
+      corner,
+      pts: corner ? buildCornerPts(fromC, fromR, toCol, toRow, inDx, inDy, dx, dy) : null,
+      turnArc: (!moving && turning),
       peekCol: peekMove ? peek.col : toCol,
       peekRow: peekMove ? peek.row : toRow
     };
     this._cruise = {
       moving,
-      turnArc: (!moving && turning) || sidestep,
+      turnArc: (!moving && turning) || corner,
       dx: moving ? dx : 0,
       dy: moving ? dy : 0,
       heading: toH,
@@ -882,11 +1025,19 @@ export class OrbitalRenderer {
     const t = Math.min(1, (now - a.start) / a.duration);
     const e = posEase(t, !!a.easeIn, !!a.easeOut);
     const ht = headingEase(t, a.headingMode || 'linear');
-    let col = lerp(a.fromCol, a.toCol, e);
-    let row = lerp(a.fromRow, a.toRow, e);
-    if (a.turnArc) {
+    let col;
+    let row;
+    if (a.corner && a.pts) {
+      const p = sampleCorner(a.pts, e);
+      col = p.x;
+      row = p.y;
+    } else {
+      col = lerp(a.fromCol, a.toCol, e);
+      row = lerp(a.fromRow, a.toRow, e);
+    }
+    if (a.turnArc && !a.corner) {
       const dh = a.toH - a.fromH;
-      const inset = 0.16 * Math.sin(Math.PI * t);
+      const inset = 0.12 * Math.sin(Math.PI * t);
       const fx = Math.cos(a.fromH);
       const fy = Math.sin(a.fromH);
       const rx = -Math.sin(a.fromH);
@@ -930,15 +1081,15 @@ export class OrbitalRenderer {
     const roverCol = this.roverCol;
     const roverRow = this.roverRow;
 
-    const follow = 0.32;
-    const wantX = lerp(LANDER_COL + 3.05, roverCol + 2.85, follow + 0.22);
-    const wantY = lerp(LANDER_ROW - 0.15, roverRow + 0.35, follow + 0.22);
-    const driftX = reduce ? 0 : 0.34 * Math.sin(t * 0.11) + 0.14 * Math.sin(t * 0.031);
-    const driftY = reduce ? 0 : 0.2 * Math.cos(t * 0.09) + 0.1 * Math.cos(t * 0.047);
-    const zoomPulse = reduce ? 1 : 0.97 + 0.045 * smoothstep(0, 1, (Math.sin(t * 0.07) + 1) / 2);
-    this.camX = lerp(this.camX, wantX + driftX, reduce ? 1 : 0.04);
-    this.camY = lerp(this.camY, wantY + driftY, reduce ? 1 : 0.04);
-    this.camZoom = lerp(this.camZoom, zoomPulse, reduce ? 1 : 0.035);
+    const want = camFollow(roverCol, roverRow);
+    const drift = camDrift(t, reduce);
+    const zoomPulse = camZoomPulse(t, reduce);
+    const tau = 0.7;
+    const camDt = Math.min(33, Math.max(dt, 1));
+    const camK = reduce ? 1 : (1 - Math.exp(-(camDt / 1000) / tau));
+    this.camX = lerp(this.camX, want.x + drift.x, camK);
+    this.camY = lerp(this.camY, want.y + drift.y, camK);
+    this.camZoom = lerp(this.camZoom, zoomPulse, reduce ? 1 : camK * 0.85);
 
     const fit = Math.min(w / 16.8, h / 13.4);
     const scale = fit * this.camZoom;
@@ -1345,7 +1496,7 @@ export class OrbitalRenderer {
   }
 
   _sampleMotion(now, dt) {
-    if (!this._motionLogOn) return;
+    if (!this._motionLogOn || this._warming) return;
     const view = this._view;
     const sx = view ? this.roverCol * view.scale + view.tx : 0;
     const sy = view ? this.roverRow * view.scale + view.ty : 0;

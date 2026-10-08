@@ -1246,10 +1246,14 @@ test.describe('Far Rover UI Tests', () => {
       const startRow = samples[0]?.row ?? 12;
       const between = speeds.filter((s) => s.row < startRow - 0.25 && s.row > startRow - 2.75);
       const minBetween = between.reduce((a, s) => Math.min(a, s.speed), Infinity);
+      const mid = between.map((s) => s.speed).sort((a, b) => a - b);
+      const cruise = mid.length ? mid[Math.floor(mid.length / 2)] : peak;
       return {
         peak,
         minBetween,
+        cruise,
         ratio: peak > 0 ? minBetween / peak : 0,
+        overshoot: cruise > 0 ? peak / cruise : 0,
         n: between.length,
         ticks: document.querySelector('.tick-indicator')?.textContent || ''
       };
@@ -1258,6 +1262,65 @@ test.describe('Far Rover UI Tests', () => {
     expect(result.n).toBeGreaterThan(8);
     expect(result.peak).toBeGreaterThan(1);
     expect(result.ratio).toBeGreaterThanOrEqual(0.5);
+    expect(result.overshoot).toBeLessThanOrEqual(1.1);
+  });
+
+  test('Starter corner keeps speed and peak stays near cruise', async ({ page }) => {
+    await page.goto(BASE_URL);
+    await page.click('#start-btn');
+    await page.click('#starter-preset-btn');
+    await page.click('#launch-btn');
+    const auto = page.locator('#autopause-mode');
+    if (await auto.count()) {
+      try { await auto.selectOption('off'); } catch { /* ignore */ }
+    }
+    await page.waitForFunction(() => window.__farRoverMotion && window.__orbitalRenderer);
+    const result = await page.evaluate(() => {
+      const m = window.__farRoverMotion;
+      const r = window.__orbitalRenderer;
+      m.freeze(true);
+      m.startLog();
+      const stepBtn = document.getElementById('step-btn');
+      for (let i = 0; i < 5; i++) {
+        stepBtn.click();
+        const dur = r.anim?.duration || 200;
+        const start = m.now();
+        const u0 = i === 0 ? 0 : 10;
+        for (let u = u0; u <= dur; u += 10) m.pump(start + u, 10);
+      }
+      const log = m.stopLog();
+      const speeds = [];
+      for (let i = 1; i < log.length; i++) {
+        const dt = log[i].now - log[i - 1].now;
+        if (dt < 1) continue;
+        const d = Math.hypot(log[i].col - log[i - 1].col, log[i].row - log[i - 1].row);
+        speeds.push({
+          speed: d / (dt / 1000),
+          row: log[i].row,
+          col: log[i].col,
+          now: log[i].now
+        });
+      }
+      const north = speeds.filter((s) => s.col < 5.2 && s.row < 10.6 && s.row > 8.4);
+      const northSp = north.map((s) => s.speed).sort((a, b) => a - b);
+      const cruise = northSp.length ? northSp[Math.floor(northSp.length / 2)] : 0;
+      const peak = speeds.reduce((a, s) => Math.max(a, s.speed), 0);
+      const corner = speeds.filter((s) => s.row <= 8.22 && s.row >= 7.62 && s.col >= 5.12 && s.col <= 5.88);
+      const minCorner = corner.reduce((a, s) => Math.min(a, s.speed), Infinity);
+      return {
+        cruise,
+        peak,
+        overshoot: cruise > 0 ? peak / cruise : 0,
+        minCorner,
+        cornerRatio: cruise > 0 ? minCorner / cruise : 0,
+        nCorner: corner.length,
+        ticks: document.querySelector('.tick-indicator')?.textContent || ''
+      };
+    });
+    expect(result.ticks).toContain('Tick 5');
+    expect(result.nCorner).toBeGreaterThan(4);
+    expect(result.overshoot).toBeLessThanOrEqual(1.1);
+    expect(result.cornerRatio).toBeGreaterThanOrEqual(0.4);
   });
 
   test('Reset view and grid toggle do not break the operate canvas', async ({ page }) => {
