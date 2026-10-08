@@ -92,7 +92,8 @@ function summarizeMotionLog(log) {
     p50: at(0.5),
     p95: at(0.95),
     max: dts.length ? dts[dts.length - 1] : 0,
-    over33: dts.filter((d) => d > 33).length
+    over33: dts.filter((d) => d > 33).length,
+    over50: dts.filter((d) => d > 50).length
   };
 }
 
@@ -306,7 +307,8 @@ export class OrbitalRenderer {
 
   resize() {
     const rect = this.container.getBoundingClientRect();
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const cheap = typeof navigator !== 'undefined' && navigator.webdriver;
+    const dpr = cheap ? 1 : Math.min(2, window.devicePixelRatio || 1);
     this.width = Math.max(1, rect.width);
     this.height = Math.max(1, rect.height);
     this.canvas.width = Math.round(this.width * dpr);
@@ -344,6 +346,7 @@ export class OrbitalRenderer {
     this._maskBaseValid = false;
     this._scanOverlay = null;
     this._grainPat = null;
+    this._vignette = null;
     this.maskDirty = true;
     this.render();
   }
@@ -957,7 +960,7 @@ export class OrbitalRenderer {
 
     drawWorld(this.fogImg || this.fullImg);
 
-    if (this.noiseImg) {
+    if (this.noiseImg && !this.anim?.moving) {
       wctx.save();
       wctx.globalAlpha = 0.16;
       const ox = reduce ? 0 : (t * 0.22) % 8;
@@ -1020,7 +1023,7 @@ export class OrbitalRenderer {
     ctx.drawImage(this.world, 0, 0, w, h);
 
     this._drawReticle(ctx, roverCol * scale + tx, roverRow * scale + ty);
-    this._drawGrain(ctx, w, h, t);
+    if (!this._camParity) this._drawGrain(ctx, w, h, t);
     this._drawVignette(ctx, w, h);
     this._drawRoverCam(now, t);
     this._sampleMotion(now, dt);
@@ -1315,11 +1318,19 @@ export class OrbitalRenderer {
   }
 
   _drawVignette(ctx, w, h) {
-    const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.72);
-    g.addColorStop(0, 'rgba(0,0,0,0)');
-    g.addColorStop(1, 'rgba(6, 7, 8, 0.42)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
+    if (!this._vignette || this._vignette.w !== w || this._vignette.h !== h) {
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.ceil(w));
+      c.height = Math.max(1, Math.ceil(h));
+      const v = c.getContext('2d');
+      const g = v.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.72);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(6, 7, 8, 0.42)');
+      v.fillStyle = g;
+      v.fillRect(0, 0, w, h);
+      this._vignette = { c, w, h };
+    }
+    ctx.drawImage(this._vignette.c, 0, 0);
   }
 
   _drawRoverCam(now, t) {

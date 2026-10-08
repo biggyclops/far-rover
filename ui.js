@@ -1403,7 +1403,14 @@ function peekNextPose() {
     const clone = typeof structuredClone === 'function'
       ? structuredClone(gameState)
       : JSON.parse(JSON.stringify(gameState));
-    Sim.runTick(clone, previouslyRevealed);
+    const result = Sim.runTick(clone, previouslyRevealed);
+    if (result?.continueFromStep4 && result.tickRecord) {
+      Sim.continueTickFromStep4(
+        clone,
+        result.tickRecord,
+        clone.readings || result.tickRecord.readings
+      );
+    }
     return { col: clone.col, row: clone.row, facing: clone.facing };
   } catch {
     return null;
