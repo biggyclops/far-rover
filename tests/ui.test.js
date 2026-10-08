@@ -1221,20 +1221,20 @@ test.describe('Far Rover UI Tests', () => {
       for (let i = 0; i < 3; i++) {
         stepBtn.click();
         const dur = r.anim?.duration || 200;
-        const start = t;
-        for (let u = 0; u <= dur; u += 10) {
+        const start = m.now();
+        const u0 = i === 0 ? 0 : 10;
+        for (let u = u0; u <= dur; u += 10) {
           t = start + u;
           m.pump(t, 10);
           const p = m.pose();
           samples.push({ i, u, col: p.col, row: p.row });
         }
-        t = start + dur;
       }
       const log = m.stopLog();
       const speeds = [];
       for (let i = 1; i < log.length; i++) {
-        const dt = log[i].dt || 10;
-        if (dt <= 0) continue;
+        const dt = log[i].now - log[i - 1].now;
+        if (dt < 1) continue;
         const d = Math.hypot(log[i].col - log[i - 1].col, log[i].row - log[i - 1].row);
         speeds.push({
           speed: d / (dt / 1000),
