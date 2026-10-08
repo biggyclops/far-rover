@@ -558,8 +558,13 @@ export class OrbitalRenderer {
     let fromC = this.roverCol;
     let fromR = this.roverRow;
     let fromH = this.heading;
-    const moving = Math.hypot(toCol - fromC, toRow - fromR) > 0.001
-      || Math.hypot(toCol - fromCol, toRow - fromRow) > 0.001;
+    const moving = Math.hypot(toCol - fromCol, toRow - fromRow) > 0.001;
+    if (!moving) {
+      fromC = toCol;
+      fromR = toRow;
+      this.roverCol = toCol;
+      this.roverRow = toRow;
+    }
     let dx = toCol - fromC;
     let dy = toRow - fromR;
     const prev = this._cruise;
@@ -616,6 +621,7 @@ export class OrbitalRenderer {
       start: t0,
       duration: Math.max(16, duration),
       moving,
+      chained: continueMotion,
       easeIn,
       easeOut,
       headingMode,
@@ -1022,7 +1028,9 @@ export class OrbitalRenderer {
   stepAnim(now) {
     if (!this.anim) return false;
     const a = this.anim;
-    const t = Math.min(1, (now - a.start) / a.duration);
+    let elapsed = now - a.start;
+    if (elapsed <= 0 && a.chained) elapsed = Math.min(33, Math.max(1, this._lastDt || 16));
+    const t = Math.min(1, elapsed / a.duration);
     const e = posEase(t, !!a.easeIn, !!a.easeOut);
     const ht = headingEase(t, a.headingMode || 'linear');
     let col;
