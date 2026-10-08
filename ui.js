@@ -38,6 +38,9 @@ let autoPauseCount = 0;
 let currentSpeed = 1;
 let isPaused = true;
 let tickInterval = null;
+let tickRaf = 0;
+let ticksArmed = false;
+let nextTickAt = 0;
 let previouslyRevealed = null;
 let pendingAutoPause = null;
 let pendingStuck = null;
@@ -564,6 +567,7 @@ function createBoardRenderer(container, state) {
       const r = new OrbitalRenderer(container, state);
       r.setPlaybackSpeed(currentSpeed || 1);
       r.setPausedHint?.(isPaused);
+      r.onFrame = onRendererFrame;
       r.mount();
       container.dataset.renderer = shouldUse3D() ? '3d' : '2d';
       return r;
@@ -1060,7 +1064,7 @@ function updateOperateView() {
   if (renderer) {
     renderer.updateState(gameState);
     renderer.setPausedHint?.(isPaused);
-    renderer.render();
+    if (!renderer.ownsLoop) renderer.render();
   }
   
   renderRuleDisplay();
@@ -1337,13 +1341,46 @@ function togglePause() {
   }
 }
 
+function tickPeriodMs() {
+  if (currentSpeed === 1) return 1000;
+  if (currentSpeed === 4) return 250;
+  return 62.5;
+}
+
+function onRendererFrame(now) {
+  if (!ticksArmed || isPaused || !gameState || gameState.outcome) return;
+  const period = tickPeriodMs();
+  if (!nextTickAt) nextTickAt = now + period;
+  let n = 0;
+  while (now + 0.05 >= nextTickAt && n < 3) {
+    doTick(now);
+    nextTickAt += period;
+    n += 1;
+    if (isPaused || gameState?.outcome) break;
+  }
+}
+
 function startTicking() {
   stopTicking();
-  const interval = currentSpeed === 1 ? 1000 : currentSpeed === 4 ? 250 : 62.5;
-  tickInterval = setInterval(doTick, interval);
+  ticksArmed = true;
+  nextTickAt = 0;
+  if (renderer) renderer.onFrame = onRendererFrame;
+  if (!renderer?.ownsLoop) {
+    const pump = (now) => {
+      tickRaf = requestAnimationFrame(pump);
+      onRendererFrame(now);
+    };
+    tickRaf = requestAnimationFrame(pump);
+  }
 }
 
 function stopTicking() {
+  ticksArmed = false;
+  nextTickAt = 0;
+  if (tickRaf) {
+    cancelAnimationFrame(tickRaf);
+    tickRaf = 0;
+  }
   if (tickInterval) {
     clearInterval(tickInterval);
     tickInterval = null;
@@ -1352,22 +1389,48 @@ function stopTicking() {
 
 function stepOneTick() {
   if (!isPaused) return;
-  doTick();
+  doTick(renderer?.now?.() ?? performance.now());
 }
 
 function tickAnimDuration() {
   if (isPaused) return 200;
-  if (currentSpeed === 1) return 880;
-  if (currentSpeed === 4) return 220;
-  return 52;
+  return tickPeriodMs();
 }
 
-function playPoseAnimation(prevCol, prevRow) {
+function peekNextPose() {
+  if (!gameState || gameState.outcome) return null;
+  try {
+    const clone = typeof structuredClone === 'function'
+      ? structuredClone(gameState)
+      : JSON.parse(JSON.stringify(gameState));
+    const result = Sim.runTick(clone, previouslyRevealed);
+    if (result?.continueFromStep4 && result.tickRecord) {
+      Sim.continueTickFromStep4(
+        clone,
+        result.tickRecord,
+        clone.readings || result.tickRecord.readings
+      );
+    }
+    return { col: clone.col, row: clone.row, facing: clone.facing };
+  } catch {
+    return null;
+  }
+}
+
+function playPoseAnimation(prevCol, prevRow, now) {
   if (!renderer?.startAnimation || !gameState) return;
-  renderer.startAnimation(prevCol, prevRow, gameState.col, gameState.row, tickAnimDuration());
+  renderer.startAnimation(
+    prevCol,
+    prevRow,
+    gameState.col,
+    gameState.row,
+    tickAnimDuration(),
+    now,
+    peekNextPose()
+  );
 }
 
-function doTick() {
+function doTick(now) {
   if (gameState.outcome) return;
   
   const prevCol = gameState.col;
@@ -1418,9 +1481,9 @@ function doTick() {
     gameState.endReason = result.endCondition.reason;
     stopTicking();
     if (renderer) {
-      playPoseAnimation(prevCol, prevRow);
+      playPoseAnimation(prevCol, prevRow, now);
       renderer.updateState(gameState);
-      renderer.render();
+      renderer.render(now);
     }
     const delay = (gameState.outcome === Sim.OUTCOMES.LOST_CRATER || gameState.outcome === 'lost-crater') ? 1300
       : (gameState.outcome === Sim.OUTCOMES.LOST_BATTERY || gameState.outcome === 'lost-battery') ? 700
@@ -1434,7 +1497,7 @@ function doTick() {
   }
 
   if (renderer) {
-    playPoseAnimation(prevCol, prevRow);
+    playPoseAnimation(prevCol, prevRow, now);
     renderer.updateState(gameState);
   }
   updateOperateView();
@@ -1445,7 +1508,7 @@ function resumeFromAutoPause() {
     pendingAutoPause.resumed = true;
   }
   isPaused = false;
-  doTick();
+  doTick(renderer?.now?.() ?? performance.now());
   if (!gameState?.outcome && !pendingStuck && !(pendingAutoPause && !pendingAutoPause.resumed)) {
     startTicking();
   }
@@ -1468,6 +1531,12 @@ function abortRun() {
 
 function endRun() {
   stopTicking();
+  if (typeof window !== 'undefined' && renderer?._motionLog?.length) {
+    const stats = renderer.motionStats();
+    window.__farRoverMotionStats = stats;
+    window.__farRoverMotionLog = renderer._motionLog;
+    console.log('MOTION_STATS', JSON.stringify(stats));
+  }
   previousRunEndTime = Date.now();
   
   // Save run to log

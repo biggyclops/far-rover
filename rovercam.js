@@ -626,15 +626,15 @@ function drawVoxel(ctx, renderer, w, h, t) {
 export function drawRoverCam(renderer, now, t) {
   const canvas = document.getElementById('rover-cam-canvas');
   if (!canvas) return;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!canvas._frCtx) canvas._frCtx = canvas.getContext('2d', { willReadFrequently: true });
+  const ctx = canvas._frCtx;
   const w = canvas.width;
   const h = canvas.height;
   const mode = renderer.camMode || DEFAULT_CAM_MODE;
   const cheap = softwareCheap();
   const poseKey = `${mode}|${renderer.roverCol.toFixed(2)}|${renderer.roverRow.toFixed(2)}|${renderer.heading.toFixed(3)}|${(renderer.driveU || 0).toFixed(2)}`;
-  const poseChanged = poseKey !== renderer._camPoseKey;
-  const minDt = cheap ? 48 : ((renderer.playbackSpeed || 1) >= 16 ? 40 : 28);
-  if (!poseChanged && now - (renderer.lastCam || 0) < minDt && renderer.lastCam) {
+  const minDt = cheap ? 50 : ((renderer.playbackSpeed || 1) >= 16 ? 40 : 33);
+  if (renderer.lastCam && now - renderer.lastCam < minDt) {
     return;
   }
   renderer.lastCam = now;
