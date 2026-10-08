@@ -3,7 +3,8 @@
 
 import * as Sim from './simulation.js';
 import { GameRenderer, MinimapRenderer, loadAssets, hasRealArt, getBackgroundImage, getIcon } from './renderer.js';
-import { GameRenderer3D, shouldUse3D } from './renderer3d.js';
+import { shouldUse3D } from './renderer3d.js';
+import { OrbitalRenderer } from './orbital.js';
 
 // === LOCAL STORAGE ===
 const STORAGE_KEY = 'far-rover-demo-v1';
@@ -93,6 +94,18 @@ function displayedBattery() {
   const rec = lastTickResult?.tickRecord;
   if (rec?.readings && rec.readings.battery != null) return rec.readings.battery;
   return gameState?.battery ?? 20;
+}
+
+function headingDeg(facing) {
+  return { north: 0, east: 90, south: 180, west: 270 }[facing] ?? 0;
+}
+
+function trackingText(state) {
+  const u = (state?.col ?? 5) + (state?.row ?? 12) * 0.15;
+  const lat = (-14.5683 - 0.00002 * u).toFixed(4);
+  const lon = (175.2876 + 0.00011 * u).toFixed(4);
+  const hdg = headingDeg(state?.facing).toFixed(0).padStart(3, '0');
+  return `TRACKING: ROVER-1    LAT ${lat}°   LON ${lon}°   ELEV -2,317 m   HDG ${hdg}°`;
 }
 
 function uplinkBlocked() {
@@ -543,16 +556,18 @@ function updateLaunchButton() {
 let minimapRenderer = null;
 
 function createBoardRenderer(container, state) {
-  if (shouldUse3D()) {
+  const force2d = typeof location !== 'undefined' &&
+    new URLSearchParams(location.search).get('renderer') === '2d';
+  if (!force2d) {
     try {
-      const r = new GameRenderer3D(container, state);
+      const r = new OrbitalRenderer(container, state);
       r.setPlaybackSpeed(currentSpeed || 1);
       r.setPausedHint?.(isPaused);
       r.mount();
-      container.dataset.renderer = '3d';
+      container.dataset.renderer = shouldUse3D() ? '3d' : '2d';
       return r;
     } catch (err) {
-      console.warn('WebGL renderer failed, using 2D canvas', err);
+      console.warn('Orbital renderer failed, using 2D canvas', err);
     }
   }
   const r = new GameRenderer(container, state);
@@ -572,54 +587,10 @@ function showOperateView() {
   };
   
   const container = document.getElementById('game-container');
+  const hdg = headingDeg(gameState.facing);
+  const batPct = Math.round(displayedBattery() * 5);
   container.innerHTML = `
     <div class="operate-view orbital-ops">
-      <!-- Top HUD Bar -->
-      <div class="hud-bar">
-        <span class="hud-brand">FAR ROVER</span>
-        <span class="hud-feed">ORBITAL FEED</span>
-        <span class="run-indicator">Run ${runNumber}</span>
-        <span class="hud-live" id="hud-live"><span class="live-dot"></span>LIVE</span>
-        <div class="hud-section hud-sol">
-          <span class="hud-label">Sol</span>
-          <span class="hud-value tick-indicator" id="hud-tick">Tick ${gameState.tick}</span>
-        </div>
-        <div class="hud-section hud-uplink">
-          <span class="hud-icon">📡</span>
-          <span class="hud-value" id="hud-uplink">${gameState.uplink.used ? 'Used' : 'Ready'}</span>
-        </div>
-        <div class="hud-section hud-battery">
-          <span class="hud-icon">🔋</span>
-          <div class="battery-gauge">
-            <div class="battery-fill" id="battery-fill" style="width: ${gameState.battery * 5}%"></div>
-          </div>
-          <span class="hud-value" id="hud-battery">${displayedBattery()}</span>
-        </div>
-        <div class="hud-section hud-ore">
-          <span class="hud-icon">💎</span>
-          <span class="hud-value" id="hud-ore">${gameState.cargo} (goal 3)</span>
-        </div>
-        <div class="hud-section hud-facing">
-          <span class="hud-label">Facing</span>
-          <span class="hud-value" id="hud-facing">${Sim.FACING_LABELS[gameState.facing] || gameState.facing}</span>
-        </div>
-        <div class="hud-section hud-tiles">
-          <span class="hud-icon">🗺️</span>
-          <span class="hud-value" id="hud-tiles">${gameState.tilesScanned}/25</span>
-        </div>
-        <div class="hud-compass" aria-hidden="true">
-          <span>N</span>
-        </div>
-      </div>
-      
-      <!-- Left Panel: Instruments + Rules -->
-      <div class="rules-panel glass-panel">
-        <div class="instrument-stack" id="instrument-stack"></div>
-        <h3>Rover Rules</h3>
-        <div class="rule-display" id="rule-display"></div>
-      </div>
-      
-      <!-- Center: Mars Grid -->
       <div class="map-container" id="map-container">
         <div class="map-grid" id="map-grid">
           <div class="orbital-grain" aria-hidden="true"></div>
@@ -628,19 +599,69 @@ function showOperateView() {
           <div class="rover-tag" id="rover-tag" hidden>ROVER-1</div>
         </div>
         <div class="rover-cam" id="rover-cam">
-          <div class="rover-cam-head"><span class="live-dot"></span>ROVER CAM FORWARD</div>
-          <canvas id="rover-cam-canvas" width="320" height="240"></canvas>
-          <div class="rover-cam-meta"><span>FOV 60°</span><span>RES 320×240</span></div>
+          <div class="rover-cam-head">
+            <span>ROVER CAM FORWARD</span>
+            <span class="rover-cam-nav">NAVCAM</span>
+          </div>
+          <canvas id="rover-cam-canvas" width="528" height="297"></canvas>
+          <div class="rover-cam-meta">
+            <span>FOV 60°</span>
+            <span>RES 1024×576</span>
+            <span>EXP 12.4 ms</span>
+          </div>
         </div>
       </div>
-      
-      <!-- Right Panel: Controls + Sensors -->
+
+      <div class="hud-bar">
+        <div class="hud-left">
+          <div class="hud-title-row">
+            <span class="hud-brand">FAR ROVER</span>
+            <span class="hud-ops">//  ORBITAL OPS</span>
+          </div>
+          <div class="hud-sat">FR-SAT 1  ·  HiRISE-CLASS  ·  NADIR</div>
+        </div>
+        <div class="hud-center">
+          <span class="tick-indicator" id="hud-tick">Tick ${gameState.tick}</span>
+          <div class="hud-playback" id="hud-playback">${isPaused ? 'HOLD' : currentSpeed === 1 ? 'LIVE 1×' : currentSpeed + '×'}</div>
+        </div>
+        <div class="hud-right">
+          <span class="hud-live" id="hud-live"><span class="live-dot"></span>LIVE</span>
+          <span class="hud-feed">ORBITAL FEED // PASS 3</span>
+          <span class="run-indicator">Run ${runNumber}</span>
+        </div>
+      </div>
+
+      <div class="orbital-left">
+        <div class="sensor-layers-panel" id="sensor-layers-panel">
+          <div class="instrument-label">SENSOR LAYERS</div>
+          <div class="instrument-stack" id="instrument-stack"></div>
+          <div class="telemetry-block">
+            <div class="instrument-label">TELEMETRY</div>
+            <div class="tel-row"><span>ALTITUDE</span><span>312.4 km</span></div>
+            <div class="tel-row"><span>GSD</span><span>0.30 m/px</span></div>
+            <div class="tel-row"><span>SUN AZ</span><span>271.6°</span></div>
+            <div class="tel-row"><span>ROVER HDG</span><span id="tel-hdg">${hdg.toFixed(1)}°</span></div>
+            <div class="tel-row"><span>ROVER SPD</span><span id="tel-spd">0.00 m/s</span></div>
+            <div class="tel-row"><span>DRIVE</span><span id="tel-drive">HOLD</span></div>
+            <div class="tel-row"><span>BATTERY</span><span id="hud-battery">${batPct}%</span></div>
+            <div class="tel-row"><span>DATA RATE</span><span id="tel-datarate">2.11 Mbps</span></div>
+            <div class="tel-row tel-game"><span>CARGO</span><span id="hud-ore">${gameState.cargo} (goal 3)</span></div>
+            <div class="tel-row tel-game"><span>TILES</span><span id="hud-tiles">${gameState.tilesScanned}/25</span></div>
+            <div class="tel-row tel-game"><span>UPLINK</span><span id="hud-uplink">${gameState.uplink.used ? 'Used' : 'Ready'}</span></div>
+            <div class="tel-row tel-game"><span>FACING</span><span id="hud-facing">${Sim.FACING_LABELS[gameState.facing] || gameState.facing}</span></div>
+          </div>
+        </div>
+        <div class="rules-panel glass-panel">
+          <h3>Rover Rules</h3>
+          <div class="rule-display" id="rule-display"></div>
+        </div>
+      </div>
+
       <div class="info-panel">
         <div class="sensors-panel glass-panel">
           <h3>Sensor Readings</h3>
           <div class="sensor-readings" id="sensor-readings"></div>
         </div>
-        
         <div class="controls-panel glass-panel">
           <button class="pause-btn" id="pause-btn">${isPaused ? 'Resume' : 'Pause'}</button>
           <div class="speed-controls">
@@ -668,13 +689,18 @@ function showOperateView() {
           <button class="end-run-btn" id="end-run-btn">End Run</button>
         </div>
       </div>
-      
-      <!-- Bottom Left: Minimap -->
+
+      <div class="tracking-strip" id="tracking-strip">${trackingText(gameState)}</div>
+      <div class="credits-line">Terrain: NASA/JPL-Caltech/UArizona HiRISE PIA23289 · Rover cam: NASA/JPL-Caltech/ASU/MSSS Mastcam-Z PIA23727</div>
+      <div class="battery-gauge visual-hidden" aria-hidden="true">
+        <div class="battery-fill" id="battery-fill" style="width: ${gameState.battery * 5}%"></div>
+      </div>
+
       <div class="minimap glass-panel" id="minimap">
         <div class="minimap-label">Surface map</div>
         <canvas id="minimap-canvas" width="108" height="117"></canvas>
       </div>
-      
+
       ${pendingAutoPause && !pendingAutoPause.resumed ? renderAutoPauseToast() : ''}
       ${pendingStuck ? renderStuckToast() : ''}
       ${shownReturnCraterWarning ? '<div class="return-crater-note">Return and charge doesn\'t avoid craters.</div>' : ''}
@@ -774,20 +800,40 @@ function renderInstrumentStack() {
   const el = document.getElementById('instrument-stack');
   if (!el || !gameState) return;
   const sensors = gameState.sensors || [];
-  let html = '<div class="instrument-label">Instruments</div>';
+  const icons = {
+    camera: '<span class="layer-ico ico-cam" aria-hidden="true"></span>',
+    lidar: '<span class="layer-ico ico-lidar" aria-hidden="true"></span>',
+    thermal: '<span class="layer-ico ico-thermal" aria-hidden="true"></span>',
+    spectral: '<span class="layer-ico ico-spectral" aria-hidden="true"></span>'
+  };
+  let html = '';
   for (const spec of SENSOR_LAYER_SPEC) {
     const installed = sensors.includes(spec.sensor);
-    if (!installed) continue;
-    const on = !!sensorLayers[spec.id];
-    html += `<button type="button" class="instrument-toggle${on ? ' active' : ''}"
-      id="layer-${spec.id}" data-layer="${spec.id}" aria-pressed="${on}">
-      <span class="instrument-dot"></span>
-      <span class="instrument-name">${spec.label}</span>
-      ${spec.note ? `<span class="instrument-note">${spec.note}</span>` : ''}
-    </button>`;
+    const on = installed && !!sensorLayers[spec.id];
+    const st = on ? 'ACTIVE' : 'STANDBY';
+    if (installed) {
+      html += `<button type="button" class="instrument-toggle${on ? ' active' : ''}"
+        id="layer-${spec.id}" data-layer="${spec.id}" aria-pressed="${on}">
+        ${icons[spec.id] || ''}
+        <span class="instrument-dot"></span>
+        <span class="instrument-copy">
+          <span class="instrument-name">${spec.label.toUpperCase()}</span>
+          <span class="instrument-state">${st}</span>
+        </span>
+      </button>`;
+    } else {
+      html += `<div class="instrument-toggle standby-only">
+        ${icons[spec.id] || ''}
+        <span class="instrument-dot"></span>
+        <span class="instrument-copy">
+          <span class="instrument-name">${spec.label.toUpperCase()}</span>
+          <span class="instrument-state">STANDBY</span>
+        </span>
+      </div>`;
+    }
   }
   el.innerHTML = html;
-  el.querySelectorAll('.instrument-toggle').forEach(btn => {
+  el.querySelectorAll('.instrument-toggle[data-layer]').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.layer;
       sensorLayers[id] = !sensorLayers[id];
@@ -929,9 +975,27 @@ function updateOperateView() {
   // Update HUD
   const hudTick = document.getElementById('hud-tick');
   if (hudTick) hudTick.textContent = `Tick ${gameState.tick}`;
+
+  const hudPlayback = document.getElementById('hud-playback');
+  if (hudPlayback) {
+    hudPlayback.textContent = isPaused ? 'HOLD' : (currentSpeed === 1 ? 'LIVE 1×' : `${currentSpeed}×`);
+  }
+
+  const moving = !!(renderer?.anim);
+  const hdg = headingDeg(gameState.facing);
+  const telHdg = document.getElementById('tel-hdg');
+  if (telHdg) telHdg.textContent = `${hdg.toFixed(1)}°`;
+  const telSpd = document.getElementById('tel-spd');
+  if (telSpd) telSpd.textContent = moving ? '0.12 m/s' : '0.00 m/s';
+  const telDrive = document.getElementById('tel-drive');
+  if (telDrive) telDrive.textContent = moving && !isPaused ? 'ACTIVE' : 'HOLD';
+  const telRate = document.getElementById('tel-datarate');
+  if (telRate) telRate.textContent = `${(2.11 + 0.03 * Math.sin((gameState.tick || 0) * 1.7)).toFixed(2)} Mbps`;
+  const track = document.getElementById('tracking-strip');
+  if (track) track.textContent = trackingText(gameState);
   
   const hudBattery = document.getElementById('hud-battery');
-  if (hudBattery) hudBattery.textContent = displayedBattery();
+  if (hudBattery) hudBattery.textContent = `${Math.round(displayedBattery() * 5)}%`;
   
   const batteryFill = document.getElementById('battery-fill');
   if (batteryFill) batteryFill.style.width = `${displayedBattery() * 5}%`;

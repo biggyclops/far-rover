@@ -1,0 +1,15 @@
+{
+  "tilePx": 80,
+  "originCol": -2.0,
+  "originRow": -2.0,
+  "texCols": 16,
+  "texRows": 17,
+  "width": 1280,
+  "height": 1360,
+  "landerCol": 5.0,
+  "landerRow": 12.0,
+  "chuteCol": 3.438,
+  "chuteRow": 13.615,
+  "creditTerrain": "NASA/JPL-Caltech/UArizona HiRISE PIA23289",
+  "creditCam": "NASA/JPL-Caltech/ASU/MSSS Mastcam-Z PIA23727"
+}
