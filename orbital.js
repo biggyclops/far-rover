@@ -133,6 +133,7 @@ export class OrbitalRenderer {
     this.camPano = null;
     this.camRocks = null;
     this.landerFwdImg = null;
+    this.camCrater = null;
 
     this.seenMask = null;
     this.fullMask = null;
@@ -165,7 +166,7 @@ export class OrbitalRenderer {
 
   async loadArt() {
     const base = 'assets/art/';
-    const [full, seen, fog, rover, lander, chute, cam, noise, sky, far, mid, near, alt, pano, rocks, landerFwd, oreTile, dustTile] = await Promise.all([
+    const [full, seen, fog, rover, lander, chute, cam, noise, sky, far, mid, near, alt, pano, rocks, landerFwd, oreTile, dustTile, crater] = await Promise.all([
       loadImage(base + 'hirise-board.jpg'),
       loadImage(base + 'hirise-seen.jpg'),
       loadImage(base + 'hirise-fog.jpg'),
@@ -181,9 +182,10 @@ export class OrbitalRenderer {
       loadImage(base + 'cam-alt.jpg'),
       loadImage(base + 'cam-pano.jpg'),
       loadImage(base + 'cam-rocks.png'),
-      loadImage(base + 'lander.png'),
+      loadImage(base + 'lander-cam.png'),
       loadImage(base + 'tile-ore.png'),
-      loadImage(base + 'tile-dust.png')
+      loadImage(base + 'tile-dust.png'),
+      loadImage(base + 'cam-crater.png')
     ]);
     this.fullImg = full;
     this.seenImg = seen;
@@ -203,6 +205,7 @@ export class OrbitalRenderer {
     this.landerFwdImg = landerFwd;
     this.oreTileImg = oreTile;
     this.dustTileImg = dustTile;
+    this.camCrater = crater;
     this.lastCam = 0;
     this._camTexReady = false;
     this._camPoseKey = '';
@@ -900,50 +903,82 @@ export class OrbitalRenderer {
     return String.fromCharCode(65 + col) + (row + 1);
   }
 
-  _stampPhotoMark(ctx, img, col, row, rx, ry) {
-    const cx = col + 0.5;
-    const cy = row + 0.5;
-    if (!img) return false;
+  _idBracket(ctx, cx, cy, label) {
+    const x0 = cx - 0.3;
+    const y0 = cy - 0.26;
+    const x1 = cx + 0.3;
+    const y1 = cy + 0.26;
+    const tick = 0.1;
     ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, rx, ry, -0.18, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.drawImage(img, col, row, 1, 1);
-    ctx.restore();
-    ctx.save();
-    ctx.strokeStyle = 'rgba(248, 228, 196, 0.7)';
+    ctx.strokeStyle = 'rgba(236, 228, 210, 0.88)';
     ctx.lineWidth = 0.035;
+    ctx.lineCap = 'square';
     ctx.beginPath();
-    ctx.ellipse(cx, cy, rx, ry, -0.18, 0, Math.PI * 2);
+    ctx.moveTo(x0, y0 + tick); ctx.lineTo(x0, y0); ctx.lineTo(x0 + tick, y0);
+    ctx.moveTo(x1, y0 + tick); ctx.lineTo(x1, y0); ctx.lineTo(x1 - tick, y0);
+    ctx.moveTo(x0, y1 - tick); ctx.lineTo(x0, y1); ctx.lineTo(x0 + tick, y1);
+    ctx.moveTo(x1, y1 - tick); ctx.lineTo(x1, y1); ctx.lineTo(x1 - tick, y1);
     ctx.stroke();
+    ctx.fillStyle = 'rgba(236, 228, 210, 0.86)';
+    ctx.font = '0.17px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.fillText(label, x0 + 0.02, y1 + 0.16);
     ctx.restore();
-    return true;
   }
 
   _drawOreMark(ctx, col, row, drilled) {
     const cx = col + 0.5;
     const cy = row + 0.5;
-    if (!drilled && this._stampPhotoMark(ctx, this.oreTileImg, col, row, 0.34, 0.28)) return;
-    ctx.fillStyle = drilled ? 'rgba(92, 72, 52, 0.55)' : 'rgba(22, 16, 12, 0.88)';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 0.2, 0.16, -0.35, 0, Math.PI * 2);
-    ctx.fill();
-    if (!drilled) {
-      ctx.fillStyle = 'rgba(228, 214, 186, 0.9)';
+    const n = this._noiseAt(col, row);
+    if (drilled) {
+      ctx.fillStyle = 'rgba(70, 52, 36, 0.4)';
       ctx.beginPath();
-      ctx.arc(cx - 0.04, cy - 0.03, 0.03, 0, Math.PI * 2);
+      ctx.ellipse(cx, cy, 0.09, 0.07, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      this._idBracket(ctx, cx, cy, this._cellName(col, row));
+      return;
+    }
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 236, 196, 0.96)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 0.12, 0.09, n, 0, Math.PI * 2);
+    ctx.fill();
+    for (let i = 0; i < 9; i++) {
+      const dx = (this._noiseAt(col + i * 1.7, row) - 0.5) * 0.26;
+      const dy = (this._noiseAt(col, row + i * 2.1) - 0.5) * 0.2;
+      const px = cx + dx;
+      const py = cy + dy;
+      const r = 0.05 + (i % 3) * 0.028;
+      const nearCore = Math.hypot(dx, dy) < 0.1;
+      ctx.fillStyle = (nearCore || i % 2 === 0)
+        ? 'rgba(248, 236, 210, 0.95)'
+        : 'rgba(42, 28, 18, 0.88)';
+      ctx.beginPath();
+      ctx.ellipse(px, py, r, r * 0.7, n, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.restore();
+    this._idBracket(ctx, cx, cy, this._cellName(col, row));
   }
 
   _drawDustMark(ctx, col, row) {
-    if (this._stampPhotoMark(ctx, this.dustTileImg, col, row, 0.38, 0.26)) return;
     const cx = col + 0.5;
     const cy = row + 0.5;
-    ctx.fillStyle = 'rgba(214, 176, 128, 0.55)';
+    const g = ctx.createRadialGradient(cx, cy, 0.05, cx, cy, 0.4);
+    g.addColorStop(0, 'rgba(214, 176, 126, 0.5)');
+    g.addColorStop(0.55, 'rgba(186, 142, 96, 0.26)');
+    g.addColorStop(1, 'rgba(160, 110, 70, 0)');
+    ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 0.04, 0.32, 0.2, 0.18, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy + 0.02, 0.38, 0.24, 0.12, 0, Math.PI * 2);
     ctx.fill();
+    ctx.save();
+    ctx.strokeStyle = 'rgba(224, 188, 140, 0.78)';
+    ctx.lineWidth = 0.04;
+    ctx.setLineDash([0.04, 0.045]);
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 0.02, 0.34, 0.21, 0.12, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   _drawSensors(ctx) {
