@@ -623,6 +623,19 @@ function drawVoxel(ctx, renderer, w, h, t) {
   drawLanderBillboard(ctx, renderer, w, h, horizon);
 }
 
+export function prewarmRoverCam(renderer, now = 0) {
+  if (!renderer) return;
+  renderer.lastCam = 0;
+  renderer._camPoseKey = '';
+  renderer._camTexReady = false;
+  ensurePhotoTex(renderer);
+  const canvas = document.getElementById('rover-cam-canvas');
+  if (canvas && !canvas._frCtx) canvas._frCtx = canvas.getContext('2d', { willReadFrequently: true });
+  drawRoverCam(renderer, now, 0);
+  renderer.lastCam = 0;
+  drawRoverCam(renderer, now + 40, 0);
+}
+
 export function drawRoverCam(renderer, now, t) {
   const canvas = document.getElementById('rover-cam-canvas');
   if (!canvas) return;
@@ -656,4 +669,4 @@ export function drawRoverCam(renderer, now, t) {
   ctx.restore();
 }
 
-export default { drawRoverCam, resolveCamMode, persistCamMode, CAM_MODES, DEFAULT_CAM_MODE };
+export default { drawRoverCam, prewarmRoverCam, resolveCamMode, persistCamMode, CAM_MODES, DEFAULT_CAM_MODE };

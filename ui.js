@@ -4,7 +4,7 @@
 import * as Sim from './simulation.js';
 import { GameRenderer, MinimapRenderer, loadAssets, hasRealArt, getBackgroundImage, getIcon } from './renderer.js';
 import { shouldUse3D } from './renderer3d.js';
-import { OrbitalRenderer } from './orbital.js';
+import { OrbitalRenderer, warmupOrbitalArt } from './orbital.js';
 import { resolveCamMode, persistCamMode, CAM_MODES } from './rovercam.js';
 
 // === LOCAL STORAGE ===
@@ -136,8 +136,8 @@ let currentRun = null;
 // === INITIALIZATION ===
 
 export async function init() {
-  // Load art assets
-  await loadAssets();
+  // Load art assets (2D kit + orbital board) before the first screen.
+  await Promise.all([loadAssets(), warmupOrbitalArt()]);
   
   // Load existing session or create new
   if (!log.currentSession) {
