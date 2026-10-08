@@ -46,6 +46,40 @@ function blitWrap(ctx, img, ox, y, dw, dh) {
   ctx.drawImage(img, x, y, dw, dh);
 }
 
+function fadeScratch(renderer, dw, dh) {
+  const w = Math.max(8, Math.ceil(dw));
+  const h = Math.max(8, Math.ceil(dh));
+  if (!renderer._fadeOff || renderer._fadeOff.width !== w || renderer._fadeOff.height !== h) {
+    renderer._fadeOff = document.createElement('canvas');
+    renderer._fadeOff.width = w;
+    renderer._fadeOff.height = h;
+    renderer._fadeCtx = renderer._fadeOff.getContext('2d');
+  }
+  return { c: renderer._fadeOff, ctx: renderer._fadeCtx, w, h };
+}
+
+function blitWrapFeather(ctx, renderer, img, ox, y, dw, dh, fadeTop, fadeBot) {
+  if (!img) return;
+  if (!fadeTop && !fadeBot) {
+    blitWrap(ctx, img, ox, y, dw, dh);
+    return;
+  }
+  const { c, ctx: o, w, h } = fadeScratch(renderer, dw, dh);
+  o.setTransform(1, 0, 0, 1, 0, 0);
+  o.clearRect(0, 0, w, h);
+  blitWrap(o, img, ox, 0, dw, dh);
+  o.globalCompositeOperation = 'destination-in';
+  const g = o.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, fadeTop ? 'rgba(255,255,255,0)' : '#fff');
+  if (fadeTop) g.addColorStop(Math.min(0.45, fadeTop), '#fff');
+  if (fadeBot) g.addColorStop(Math.max(0.55, 1 - fadeBot), '#fff');
+  g.addColorStop(1, fadeBot ? 'rgba(255,255,255,0)' : '#fff');
+  o.fillStyle = g;
+  o.fillRect(0, 0, w, h);
+  o.globalCompositeOperation = 'source-over';
+  ctx.drawImage(c, 0, y, dw, dh);
+}
+
 function softwareCheap() {
   try {
     if (new URLSearchParams(location.search).get('camq') === 'full') return false;
@@ -160,61 +194,127 @@ function drawSkyPhoto(ctx, renderer, w, h, pan, bob) {
   const pano = renderer.camPano;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  if (sky) blitWrap(ctx, sky, -pan * 52, -2 + bob * 0.12, w * 1.35, h * 0.42);
-  else {
+  if (sky) {
+    blitWrapFeather(ctx, renderer, sky, -pan * 52, -6 + bob * 0.12, w * 1.38, h * 0.38, 0, 0.55);
+  } else {
     const g = ctx.createLinearGradient(0, 0, 0, h * 0.4);
     g.addColorStop(0, '#d7b07a');
     g.addColorStop(1, '#e4c094');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h * 0.4);
   }
-  if (far) blitWrap(ctx, far, -pan * 110, h * 0.14 + bob * 0.25, w * 1.5, h * 0.46);
-  if (pano) {
+  if (far) {
     ctx.save();
-    ctx.globalAlpha = 0.22;
-    blitWrap(ctx, pano, -pan * 140, h * 0.2 + bob * 0.2, w * 1.65, h * 0.34);
+    ctx.globalAlpha = 0.4;
+    blitWrapFeather(ctx, renderer, far, -pan * 110, h * 0.08 + bob * 0.25, w * 1.52, h * 0.36, 0.28, 0.48);
     ctx.restore();
   }
+  if (pano) {
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    blitWrapFeather(ctx, renderer, pano, -pan * 140, h * 0.16 + bob * 0.2, w * 1.65, h * 0.28, 0.25, 0.4);
+    ctx.restore();
+  }
+}
+
+function craterScratch(renderer, rw, rh) {
+  const w = Math.max(16, Math.ceil(rw * 2 + 4));
+  const h = Math.max(16, Math.ceil(rh * 2 + 4));
+  if (!renderer._craterOff || renderer._craterOff.width !== w || renderer._craterOff.height !== h) {
+    renderer._craterOff = document.createElement('canvas');
+    renderer._craterOff.width = w;
+    renderer._craterOff.height = h;
+    renderer._craterCtx = renderer._craterOff.getContext('2d');
+  }
+  return { c: renderer._craterOff, ctx: renderer._craterCtx, w, h };
+}
+
+function drawEjecta(ctx, renderer, cx, cy, rw, rh, dist) {
+  const img = renderer.camRocks;
+  if (!img) return;
+  const n = 7;
+  ctx.save();
+  for (let i = 0; i < n; i++) {
+    const ang = 0.35 + i * 0.82 + dist * 0.05;
+    const onNear = Math.sin(ang) > -0.15;
+    const rad = 0.92 + (i % 3) * 0.08;
+    const ex = cx + Math.cos(ang) * rw * rad;
+    const ey = cy + Math.sin(ang) * rh * (rad + (onNear ? 0.12 : -0.04));
+    const chip = (i % 4) * 128;
+    const s = (14 + (i % 3) * 7) * Math.min(2.4, 1.85 / dist);
+    ctx.globalAlpha = onNear ? 0.78 : 0.42;
+    ctx.drawImage(img, chip, 24, 128, 80, ex - s / 2, ey - s * 0.55, s, s * 0.7);
+  }
+  ctx.restore();
 }
 
 function drawCraterOverlay(ctx, renderer, w, h, horizon) {
   const hit = lookAheadCrater(renderer);
   if (!hit) return hit;
-  const dist = Math.max(0.28, hit.along);
-  const grow = Math.min(1, 1.7 / dist);
+  const dist = Math.max(0.22, hit.along);
+  const grow = Math.min(2.45, 2.05 / dist);
   const cx = w / 2 + hit.side * (w * 0.5) / dist;
-  const cy = horizon + h * (0.05 + 0.38 / dist);
-  const rw = Math.min(w * 1.02, grow * w * 0.52);
-  const rh = Math.min(h * 0.82, grow * h * 0.44);
-  ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rw, rh, 0, 0, Math.PI * 2);
-  ctx.clip();
-  const bowl = ctx.createRadialGradient(cx, cy + rh * 0.18, rh * 0.06, cx, cy, rh);
-  bowl.addColorStop(0, 'rgba(18, 8, 4, 0.82)');
-  bowl.addColorStop(0.42, 'rgba(58, 26, 12, 0.46)');
-  bowl.addColorStop(0.76, 'rgba(36, 16, 8, 0.2)');
-  bowl.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = bowl;
-  ctx.fillRect(cx - rw, cy - rh, rw * 2, rh * 2);
-  const farWall = ctx.createLinearGradient(cx, cy - rh, cx, cy + rh * 0.1);
-  farWall.addColorStop(0, 'rgba(8, 4, 2, 0.88)');
-  farWall.addColorStop(0.45, 'rgba(28, 12, 6, 0.5)');
+  const cy = horizon + h * (0.06 + 0.36 / dist);
+  const rw = Math.min(w * 1.12, grow * w * 0.50);
+  const squash = 0.36 + 0.22 * Math.min(1, 1.15 / dist);
+  const rh = Math.min(h * 0.92, rw * squash);
+  const { c, ctx: o, w: ow, h: oh } = craterScratch(renderer, rw, rh);
+  o.setTransform(1, 0, 0, 1, 0, 0);
+  o.clearRect(0, 0, ow, oh);
+  const ocx = ow / 2;
+  const ocy = oh / 2;
+  o.save();
+  o.beginPath();
+  o.ellipse(ocx, ocy, rw, rh, 0, 0, Math.PI * 2);
+  o.clip();
+  const ground = renderer.camNear || renderer.mastcamImg;
+  if (ground) {
+    o.drawImage(ground, ocx - rw * 1.25, ocy - rh * 0.35, rw * 2.5, rh * 2.15);
+  }
+  const plate = renderer.camCrater;
+  if (plate) {
+    o.globalAlpha = 0.92;
+    o.drawImage(plate, ocx - rw, ocy - rh, rw * 2, rh * 2);
+    o.globalAlpha = 1;
+  }
+  const farWall = o.createLinearGradient(ocx, ocy - rh, ocx, ocy + rh * 0.15);
+  farWall.addColorStop(0, 'rgba(10, 5, 2, 0.55)');
+  farWall.addColorStop(0.42, 'rgba(32, 14, 6, 0.22)');
   farWall.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = farWall;
-  ctx.fillRect(cx - rw, cy - rh, rw * 2, rh * 1.05);
-  ctx.restore();
-  ctx.save();
-  ctx.strokeStyle = 'rgba(214, 176, 136, 0.6)';
-  ctx.lineWidth = Math.max(2, 8 / dist);
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rw, rh, 0, 0.12, Math.PI - 0.12);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(16, 8, 4, 0.55)';
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rw, rh, 0, Math.PI + 0.18, Math.PI * 2 - 0.18);
-  ctx.stroke();
-  ctx.restore();
+  o.fillStyle = farWall;
+  o.fillRect(0, 0, ow, oh);
+  const nearLit = o.createRadialGradient(ocx - rw * 0.12, ocy + rh * 0.42, rh * 0.04, ocx, ocy + rh * 0.22, rh * 0.85);
+  nearLit.addColorStop(0, 'rgba(236, 198, 148, 0.28)');
+  nearLit.addColorStop(0.55, 'rgba(180, 120, 70, 0.08)');
+  nearLit.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  o.fillStyle = nearLit;
+  o.fillRect(0, 0, ow, oh);
+  o.save();
+  o.beginPath();
+  o.ellipse(ocx, ocy, rw, rh, 0, 0, Math.PI * 2);
+  o.ellipse(ocx, ocy + rh * 0.02, rw * 0.86, rh * 0.82, 0, 0, Math.PI * 2, true);
+  o.clip();
+  const lip = o.createLinearGradient(ocx, ocy - rh, ocx, ocy + rh);
+  lip.addColorStop(0, 'rgba(18, 8, 4, 0.28)');
+  lip.addColorStop(0.5, 'rgba(0, 0, 0, 0)');
+  lip.addColorStop(0.8, 'rgba(236, 198, 148, 0.26)');
+  lip.addColorStop(1, 'rgba(255, 224, 176, 0.1)');
+  o.fillStyle = lip;
+  o.fillRect(0, 0, ow, oh);
+  o.restore();
+  o.restore();
+  o.save();
+  o.globalCompositeOperation = 'destination-in';
+  const mask = o.createRadialGradient(ocx, ocy + rh * 0.06, Math.min(rw, rh) * 0.18, ocx, ocy, Math.max(rw, rh) * 1.02);
+  mask.addColorStop(0, 'rgba(255,255,255,1)');
+  mask.addColorStop(0.58, 'rgba(255,255,255,0.95)');
+  mask.addColorStop(0.8, 'rgba(255,255,255,0.5)');
+  mask.addColorStop(1, 'rgba(255,255,255,0)');
+  o.fillStyle = mask;
+  o.fillRect(0, 0, ow, oh);
+  o.restore();
+  ctx.drawImage(c, cx - rw, cy - rh);
+  drawEjecta(ctx, renderer, cx, cy, rw, rh, dist);
   return hit;
 }
 
@@ -226,12 +326,17 @@ function drawLanderBillboard(ctx, renderer, w, h, horizon) {
   if (!img) return;
   const z = hit.along;
   const bw = Math.min(w * 0.72, (1.4 / z) * w * 0.44);
-  const bh = bw * 1.05;
+  const bh = bw * 0.92;
   const x = w / 2 + (hit.side / z) * w * 0.52 - bw / 2;
-  const y = horizon + (0.2 / z) * h - bh * 0.12;
+  const y = horizon + (0.18 / z) * h + h * 0.02;
   ctx.save();
-  ctx.globalAlpha = 0.96;
+  ctx.fillStyle = 'rgba(14, 7, 3, 0.48)';
+  ctx.beginPath();
+  ctx.ellipse(x + bw * 0.52, y + bh * 0.88, bw * 0.4, Math.max(4, bh * 0.085), 0.12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.filter = 'sepia(0.28) saturate(0.82) brightness(0.9) contrast(0.96)';
   ctx.drawImage(img, x, y, bw, bh);
+  ctx.filter = 'none';
   ctx.restore();
 }
 
@@ -318,20 +423,20 @@ function drawPhoto(ctx, renderer, w, h, t) {
   const alt = renderer.camAlt;
   if (mid) {
     const sc = 1 + Math.min(0.22, drive * 0.045);
-    blitWrap(ctx, mid, -pan * 180 - drive * 36, h * 0.32 + bob * 0.55, w * 1.62 * sc, h * 0.52 * sc);
+    blitWrapFeather(ctx, renderer, mid, -pan * 180 - drive * 36, h * 0.30 + bob * 0.55, w * 1.62 * sc, h * 0.54 * sc, 0.24, 0);
   }
   if (alt) {
     const k = Math.max(0, Math.cos(heading)) * 0.4;
     if (k > 0.04) {
       ctx.save();
       ctx.globalAlpha = k;
-      blitWrap(ctx, alt, -pan * 200 - drive * 10, h * 0.2 + bob * 0.4, w * 1.48, h * 0.8);
+      blitWrapFeather(ctx, renderer, alt, -pan * 200 - drive * 10, h * 0.2 + bob * 0.4, w * 1.48, h * 0.8, 0.12, 0);
       ctx.restore();
     }
   }
   if (near) {
     const sc = 1.06 + Math.min(0.32, drive * 0.07);
-    blitWrap(ctx, near, -pan * 280 - drive * 88, h * 0.46 + bob * 0.95 - drive * 7, w * 1.88 * sc, h * 0.64 * sc);
+    blitWrapFeather(ctx, renderer, near, -pan * 280 - drive * 88, h * 0.44 + bob * 0.95 - drive * 7, w * 1.88 * sc, h * 0.66 * sc, 0.14, 0);
   }
   const horizon = h * 0.34 + bob * 0.2;
   const craterHit = drawCraterOverlay(ctx, renderer, w, h, horizon);
@@ -418,19 +523,39 @@ function floorCast(renderer, img, bw, bh, horizonY, eyeH, cheap) {
   return true;
 }
 
-function drawPerspGround(ctx, img, w, h, horizon, pan, drive, squish, extraY) {
+function perspScratch(renderer, dw, dh) {
+  const w = Math.max(8, Math.ceil(dw));
+  const h = Math.max(8, Math.ceil(dh));
+  if (!renderer._perspOff || renderer._perspOff.width !== w || renderer._perspOff.height !== h) {
+    renderer._perspOff = document.createElement('canvas');
+    renderer._perspOff.width = w;
+    renderer._perspOff.height = h;
+    renderer._perspCtx = renderer._perspOff.getContext('2d');
+  }
+  return { c: renderer._perspOff, ctx: renderer._perspCtx, w, h };
+}
+
+function drawPerspGround(ctx, renderer, img, w, h, horizon, pan, drive, squish, extraY) {
   if (!img) return;
-  ctx.save();
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.beginPath();
-  ctx.rect(0, horizon - 6, w, h - horizon + 6);
-  ctx.clip();
-  ctx.translate(w / 2, h);
-  ctx.transform(1 + Math.min(0.2, drive * 0.04), 0, 0, squish, 0, 0);
-  ctx.translate(-w / 2, -(h * 0.7) + extraY);
-  blitWrap(ctx, img, -pan * 230 - drive * 72, 0, w * 1.75, h * 0.92);
-  ctx.restore();
+  const { c, ctx: o } = perspScratch(renderer, w, h);
+  o.setTransform(1, 0, 0, 1, 0, 0);
+  o.clearRect(0, 0, w, h);
+  o.imageSmoothingEnabled = true;
+  o.imageSmoothingQuality = 'high';
+  o.save();
+  o.translate(w / 2, h);
+  o.transform(1 + Math.min(0.2, drive * 0.04), 0, 0, squish, 0, 0);
+  o.translate(-w / 2, -(h * 0.7) + extraY);
+  blitWrap(o, img, -pan * 230 - drive * 72, 0, w * 1.75, h * 0.92);
+  o.restore();
+  o.globalCompositeOperation = 'destination-in';
+  const g = o.createLinearGradient(0, Math.max(0, horizon - 22), 0, horizon + h * 0.18);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(1, '#fff');
+  o.fillStyle = g;
+  o.fillRect(0, 0, w, h);
+  o.globalCompositeOperation = 'source-over';
+  ctx.drawImage(c, 0, 0);
 }
 
 function drawHybrid(ctx, renderer, w, h, t) {
@@ -440,13 +565,16 @@ function drawHybrid(ctx, renderer, w, h, t) {
   const bob = (moving && !renderer.reduceMotion ? Math.sin(t * 16) * 2.4 : 0.5);
   const drive = driveAmt(renderer);
   const horizon = h * 0.34 + bob * 0.15;
-  ctx.fillStyle = '#2a1c12';
+  ctx.fillStyle = '#d0ae82';
   ctx.fillRect(0, 0, w, h);
   drawSkyPhoto(ctx, renderer, w, h, pan + drive * 0.08, bob);
   const mid = renderer.camMid || renderer.mastcamImg;
   const near = renderer.camNear || renderer.mastcamImg;
-  drawPerspGround(ctx, mid, w, h, horizon, pan, drive, 0.62, -8);
-  drawPerspGround(ctx, near, w, h, horizon + 8, pan, drive, 0.48, 10);
+  if (mid) {
+    const sc = 1 + Math.min(0.18, drive * 0.04);
+    blitWrapFeather(ctx, renderer, mid, -pan * 180 - drive * 36, h * 0.28 + bob * 0.4, w * 1.62 * sc, h * 0.5 * sc, 0.3, 0.08);
+  }
+  drawPerspGround(ctx, renderer, near, w, h, horizon + 12, pan, drive, 0.5, 8);
   drawCraterOverlay(ctx, renderer, w, h, horizon);
   drawLanderBillboard(ctx, renderer, w, h, horizon);
 }
@@ -458,13 +586,15 @@ function drawVoxel(ctx, renderer, w, h, t) {
   const bob = (moving && !renderer.reduceMotion ? Math.sin(t * 17) * 2.2 : 0.4);
   const drive = driveAmt(renderer);
   const horizon = h * 0.34 + bob * 0.12;
-  ctx.fillStyle = '#c9a070';
+  ctx.fillStyle = '#d4b48a';
   ctx.fillRect(0, 0, w, h);
   drawSkyPhoto(ctx, renderer, w, h, pan, bob);
   const near = renderer.camNear || renderer.mastcamImg;
   const mid = renderer.camMid || renderer.mastcamImg;
-  drawPerspGround(ctx, mid, w, h, horizon, pan, drive, 0.58, -6);
-  drawPerspGround(ctx, near, w, h, horizon + 6, pan, drive, 0.44, 12);
+  if (mid) {
+    blitWrapFeather(ctx, renderer, mid, -pan * 160 - drive * 28, h * 0.26 + bob * 0.3, w * 1.55, h * 0.48, 0.32, 0.1);
+  }
+  drawPerspGround(ctx, renderer, near, w, h, horizon + 10, pan, drive, 0.46, 10);
   drawCraterOverlay(ctx, renderer, w, h, horizon);
   drawLanderBillboard(ctx, renderer, w, h, horizon);
 }

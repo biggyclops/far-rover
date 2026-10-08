@@ -15,6 +15,8 @@
 | cam-alt.jpg | Alternate heading landscape (PIA24543) |
 | cam-pano.jpg | Navcam pan strip (PIA24422) |
 | cam-rocks.png | Rock chips for billboards |
+| cam-crater.png | PIA08813 crater bowl, graded to Mastcam-Z, used in the rover-cam overlay |
+| lander-cam.png | Forward PiP lander (shadow stripped from lander.png) |
 | edge-noise.png | Organic reveal / haze noise |
 | orbital-map.json | Tile mapping constants |
 
