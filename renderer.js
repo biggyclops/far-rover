@@ -202,7 +202,7 @@ export function cloudFadeDuration(speed) {
   const s = speed || 1;
   if (s >= 16) return 70;
   if (s >= 4) return 160;
-  return 420;
+  return 450;
 }
 
 // Pre-rendered tile cache
