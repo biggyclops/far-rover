@@ -1,4 +1,27 @@
-# Far Rover photo-real art set (reskin)
+# Far Rover photo-real art set
+
+## Orbital ops (live board)
+
+| File | Use |
+|---|---|
+| hirise-board.jpg | Processed HiRISE PIA23289, warped to the 12×12 + lander play area |
+| hirise-seen.jpg | Camera-seen grade (dimmer, greyer) |
+| hirise-fog.jpg | Unexplored grade (dark grey, blurred) |
+| rover-nadir.png | Top-down rover sprite |
+| lander-insight.png | InSight-style lander |
+| chute.png | Parachute + backshell |
+| mastcam.jpg | Perseverance Mastcam-Z crop for rover-cam PiP |
+| edge-noise.png | Organic reveal / haze noise |
+| orbital-map.json | Tile mapping constants |
+
+Credit: NASA/JPL-Caltech/UArizona (terrain), NASA/JPL-Caltech/ASU/MSSS (rover cam). See `/CREDITS.md`.
+
+Regenerate with `python3 tools/bake-orbital.py` (needs numpy, opencv-python-headless, Pillow).
+
+---
+
+# Legacy tile reskin
+
 
 Target look: `reskin/gameplay-mockup-v2-realism.png`. All PNGs are final. Source scripts and intermediates are in `/workspace/far-rover/art-src/`.
 
