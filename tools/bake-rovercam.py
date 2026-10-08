@@ -76,10 +76,10 @@ def main():
     # Rock chips from the Mastcam near field (readable stones for billboards)
     rocks = Image.new('RGBA', (512, 128), (0, 0, 0, 0))
     chips = [
-        (620, 980, 220, 140),
-        (1180, 920, 200, 130),
-        (240, 1040, 180, 120),
-        (1540, 860, 190, 125),
+        (200, 520, 220, 160),
+        (700, 560, 280, 200),
+        (1100, 600, 280, 200),
+        (40, 700, 240, 200),
     ]
     mast = Image.open(OUT / 'mastcam.jpg').convert('RGBA')
     mw, mh = mast.size

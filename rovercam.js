@@ -78,7 +78,7 @@ function lookAheadCrater(renderer) {
   let best = null;
   for (const cr of renderer.craterList || []) {
     const hit = lookAt(renderer, cr.c, cr.r);
-    if (hit.along < 0.12 || hit.along > 5.6) continue;
+    if (hit.along < 0.12 || hit.along > 3.7) continue;
     if (Math.abs(hit.side) > 0.85 + hit.along * 0.38) continue;
     if (!best || hit.along < best.along) best = hit;
   }
@@ -190,10 +190,6 @@ function drawCraterOverlay(ctx, renderer, w, h, horizon) {
   ctx.beginPath();
   ctx.ellipse(cx, cy, rw, rh, 0, 0, Math.PI * 2);
   ctx.clip();
-  const near = renderer.camNear || renderer.mastcamImg;
-  if (near) {
-    ctx.drawImage(near, cx - rw * 1.2, cy - rh * 0.9, rw * 2.4, rh * 2.2);
-  }
   const bowl = ctx.createRadialGradient(cx, cy + rh * 0.18, rh * 0.06, cx, cy, rh);
   bowl.addColorStop(0, 'rgba(18, 8, 4, 0.82)');
   bowl.addColorStop(0.42, 'rgba(58, 26, 12, 0.46)');
@@ -240,6 +236,7 @@ function drawLanderBillboard(ctx, renderer, w, h, horizon) {
 }
 
 function drawRockBillboards(ctx, renderer, w, h, horizon, craterHit) {
+  if ((renderer.camMode || 'photo') === 'photo') return;
   const img = renderer.camRocks;
   if (!img) return;
   const col = renderer.roverCol;
@@ -249,11 +246,11 @@ function drawRockBillboards(ctx, renderer, w, h, horizon, craterHit) {
   const fwdR = Math.sin(hdg);
   const rightC = -Math.sin(hdg);
   const rightR = Math.cos(hdg);
-  for (let i = 0; i < 10; i++) {
-    const z = 0.5 + i * 0.4;
+  for (let i = 0; i < 6; i++) {
+    const z = 0.7 + i * 0.55;
     if (craterHit && Math.abs(z - craterHit.along) < 0.5) continue;
     const n = renderer._noiseAt(col * 3.1 + i * 7.2, row * 2.7 + i);
-    if (n < 0.28) continue;
+    if (n < 0.42) continue;
     const side = (n - 0.62) * 1.55;
     const sx = w / 2 + side * (w * 0.5) / z;
     const sy = horizon + (0.15 / z) * h + 8;
@@ -421,119 +418,55 @@ function floorCast(renderer, img, bw, bh, horizonY, eyeH, cheap) {
   return true;
 }
 
+function drawPerspGround(ctx, img, w, h, horizon, pan, drive, squish, extraY) {
+  if (!img) return;
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.beginPath();
+  ctx.rect(0, horizon - 6, w, h - horizon + 6);
+  ctx.clip();
+  ctx.translate(w / 2, h);
+  ctx.transform(1 + Math.min(0.2, drive * 0.04), 0, 0, squish, 0, 0);
+  ctx.translate(-w / 2, -(h * 0.7) + extraY);
+  blitWrap(ctx, img, -pan * 230 - drive * 72, 0, w * 1.75, h * 0.92);
+  ctx.restore();
+}
+
 function drawHybrid(ctx, renderer, w, h, t) {
-  const cheap = softwareCheap();
   const heading = renderer.heading;
   const pan = heading + Math.PI / 2;
   const moving = !!(renderer.anim && renderer.anim.moving);
   const bob = (moving && !renderer.reduceMotion ? Math.sin(t * 16) * 2.4 : 0.5);
   const drive = driveAmt(renderer);
-  const eyeH = 0.17 + (moving ? Math.sin(t * 16) * 0.01 : 0);
   const horizon = h * 0.34 + bob * 0.15;
   ctx.fillStyle = '#2a1c12';
   ctx.fillRect(0, 0, w, h);
   drawSkyPhoto(ctx, renderer, w, h, pan + drive * 0.08, bob);
-  const scale = cheap ? 4 : 2;
-  const bw = Math.max(120, Math.round(w / scale));
-  const bh = Math.max(68, Math.round(h / scale));
-  const buf = camBuf(renderer, bw, bh);
-  const hz = horizon * (bh / h);
-  if (floorCast(renderer, buf.img, bw, bh, hz, eyeH, cheap)) {
-    buf.ctx.putImageData(buf.img, 0, 0);
-    ctx.save();
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = cheap ? 'medium' : 'high';
-    ctx.drawImage(buf.canvas, 0, 0, w, h);
-    ctx.restore();
-  } else {
-    const near = renderer.camNear || renderer.mastcamImg;
-    if (near) blitWrap(ctx, near, -pan * 220 - drive * 55, h * 0.48 + bob, w * 1.7, h * 0.58);
-  }
-  const craterHit = drawCraterOverlay(ctx, renderer, w, h, horizon);
-  drawRockBillboards(ctx, renderer, w, h, horizon, craterHit);
+  const mid = renderer.camMid || renderer.mastcamImg;
+  const near = renderer.camNear || renderer.mastcamImg;
+  drawPerspGround(ctx, mid, w, h, horizon, pan, drive, 0.62, -8);
+  drawPerspGround(ctx, near, w, h, horizon + 8, pan, drive, 0.48, 10);
+  drawCraterOverlay(ctx, renderer, w, h, horizon);
   drawLanderBillboard(ctx, renderer, w, h, horizon);
 }
 
 function drawVoxel(ctx, renderer, w, h, t) {
-  const cheap = softwareCheap();
-  const scale = cheap ? 3 : 1;
-  const cw = Math.max(160, Math.round(w / scale));
-  const ch = Math.max(90, Math.round(h / scale));
-  const moving = !!(renderer.anim && renderer.anim.moving);
-  const bob = (moving && !renderer.reduceMotion) ? Math.sin(t * 17) * 0.012 : 0;
-  const eyeH = 0.18 + bob;
-  const horizon = ch * 0.34;
-  const zNear = 0.08;
-  const zFar = 6.6;
-  const steps = cheap ? 28 : 88;
-  const fov = 1.2;
-  const col = renderer.roverCol + 0.5;
-  const row = renderer.roverRow + 0.42;
   const heading = renderer.heading;
-  const fwdC = Math.cos(heading);
-  const fwdR = Math.sin(heading);
-  const rightC = -Math.sin(heading);
-  const rightR = Math.cos(heading);
   const pan = heading + Math.PI / 2;
+  const moving = !!(renderer.anim && renderer.anim.moving);
+  const bob = (moving && !renderer.reduceMotion ? Math.sin(t * 17) * 2.2 : 0.4);
+  const drive = driveAmt(renderer);
+  const horizon = h * 0.34 + bob * 0.12;
   ctx.fillStyle = '#c9a070';
   ctx.fillRect(0, 0, w, h);
-  drawSkyPhoto(ctx, renderer, w, h, pan, bob * 40);
-  const buf = camBuf(renderer, cw, ch);
-  const img = buf.img;
-  const data = img.data;
-  data.fill(0);
-  const mips = ensurePhotoTex(renderer);
-  const ybuf = new Int16Array(cw);
-  ybuf.fill(ch);
-  for (let i = 0; i < steps; i++) {
-    const u = i / (steps - 1);
-    const z = zNear + (zFar - zNear) * u * u;
-    const mip = z > 3.1 ? 2 : z > 1.55 ? 1 : 0;
-    const tex = mips ? mips[cheap ? Math.min(2, mip + 1) : mip] : null;
-    for (let x = 0; x < cw; x++) {
-      const camX = (x / cw - 0.5) * fov;
-      const wx = col + fwdC * z + rightC * camX * z;
-      const wy = row + fwdR * z + rightR * camX * z;
-      const ht = renderer._heightAt(wx, wy);
-      const sy = horizon - ((ht - eyeH) / z) * ch * 0.95;
-      const y0 = sy < 0 ? 0 : sy > ch ? ch : (sy | 0);
-      if (y0 >= ybuf[x]) continue;
-      let r;
-      let g;
-      let b;
-      if (tex) {
-        [r, g, b] = sampleWrap(tex, wx * 118 + heading * 70, wy * 92 + 40);
-      } else if (renderer.camColor) {
-        r = renderer._sampleBilinear(renderer.camColor, renderer.hW, wx, wy, 4, 0);
-        g = renderer._sampleBilinear(renderer.camColor, renderer.hW, wx, wy, 4, 1);
-        b = renderer._sampleBilinear(renderer.camColor, renderer.hW, wx, wy, 4, 2);
-      } else {
-        r = 168; g = 118; b = 72;
-      }
-      [r, g, b] = shadeGround(renderer, wx, wy, fwdC, fwdR, r, g, b, z);
-      const ir = r | 0;
-      const ig = g | 0;
-      const ib = b | 0;
-      for (let y = y0; y < ybuf[x]; y++) {
-        const p = (y * cw + x) * 4;
-        data[p] = ir;
-        data[p + 1] = ig;
-        data[p + 2] = ib;
-        data[p + 3] = 255;
-      }
-      ybuf[x] = y0;
-    }
-  }
-  buf.ctx.putImageData(img, 0, 0);
-  ctx.save();
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = cheap ? 'medium' : 'high';
-  ctx.drawImage(buf.canvas, 0, 0, w, h);
-  ctx.restore();
-  const craterHit = lookAheadCrater(renderer);
-  drawCraterOverlay(ctx, renderer, w, h, h * 0.34);
-  drawRockBillboards(ctx, renderer, w, h, h * 0.34, craterHit);
-  drawLanderBillboard(ctx, renderer, w, h, h * 0.34);
+  drawSkyPhoto(ctx, renderer, w, h, pan, bob);
+  const near = renderer.camNear || renderer.mastcamImg;
+  const mid = renderer.camMid || renderer.mastcamImg;
+  drawPerspGround(ctx, mid, w, h, horizon, pan, drive, 0.58, -6);
+  drawPerspGround(ctx, near, w, h, horizon + 6, pan, drive, 0.44, 12);
+  drawCraterOverlay(ctx, renderer, w, h, horizon);
+  drawLanderBillboard(ctx, renderer, w, h, horizon);
 }
 
 export function drawRoverCam(renderer, now, t) {

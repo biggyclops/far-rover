@@ -153,6 +153,7 @@ export class OrbitalRenderer {
       this.motionQuery.addEventListener?.('change', this.onMotion);
     }
     this.syncCloudTargets();
+    if (typeof window !== 'undefined') window.__orbitalRenderer = this;
     this.loadArt().then(() => {
       if (this.disposed) return;
       this.ready = true;
@@ -213,6 +214,9 @@ export class OrbitalRenderer {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    if (typeof window !== 'undefined' && window.__orbitalRenderer === this) {
+      window.__orbitalRenderer = null;
+    }
     if (this.raf) cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.onResize);
     this.motionQuery?.removeEventListener?.('change', this.onMotion);

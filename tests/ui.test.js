@@ -960,7 +960,8 @@ test.describe('Far Rover UI Tests', () => {
     const sampleCam = () => page.evaluate(() => {
       const c = document.getElementById('rover-cam-canvas');
       const ctx = c.getContext('2d');
-      const { data } = ctx.getImageData(48, 48, 220, 140);
+      // Lower field: sky is mostly static, pose shows up in the near ground.
+      const { data } = ctx.getImageData(40, 130, 240, 120);
       let r = 0, g = 0, b = 0, n = 0;
       for (let i = 0; i < data.length; i += 4) {
         r += data[i];
@@ -993,20 +994,11 @@ test.describe('Far Rover UI Tests', () => {
       const before = await sampleCam();
       await page.click('#step-btn');
       await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
-      await page.waitForFunction((prev) => {
-        const c = document.getElementById('rover-cam-canvas');
-        if (!c) return false;
-        const { data } = c.getContext('2d').getImageData(48, 48, 220, 140);
-        let r = 0, g = 0, b = 0, n = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          r += data[i];
-          g += data[i + 1];
-          b += data[i + 2];
-          n++;
-        }
-        r /= n; g /= n; b /= n;
-        return Math.hypot(r - prev.r, g - prev.g, b - prev.b) > 3;
-      }, before, { timeout: 8000 });
+      await page.waitForFunction(() => {
+        const r = window.__orbitalRenderer;
+        return r && !r.anim;
+      }, null, { timeout: 8000 });
+      await page.waitForTimeout(80);
       const after = await sampleCam();
       expect(dist(before, after)).toBeGreaterThan(3);
       await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
