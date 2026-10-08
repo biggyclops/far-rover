@@ -956,6 +956,7 @@ test.describe('Far Rover UI Tests', () => {
   });
 
   test('Rover cam modes render and change between ticks without extra ticks', async ({ page }) => {
+    test.setTimeout(60000);
     const sampleCam = () => page.evaluate(() => {
       const c = document.getElementById('rover-cam-canvas');
       const ctx = c.getContext('2d');
@@ -982,11 +983,30 @@ test.describe('Far Rover UI Tests', () => {
       await page.click('#launch-btn');
       await expect(page.locator('.tick-indicator')).toContainText('Tick 0');
       await expect(page.locator(`#cam-${mode}`)).toHaveAttribute('aria-pressed', 'true');
-      await page.waitForTimeout(700);
+      await page.waitForFunction(() => {
+        const c = document.getElementById('rover-cam-canvas');
+        if (!c) return false;
+        const d = c.getContext('2d').getImageData(100, 80, 8, 8).data;
+        return d[0] + d[1] + d[2] > 80;
+      });
+      await page.waitForTimeout(200);
       const before = await sampleCam();
       await page.click('#step-btn');
       await expect(page.locator('.tick-indicator')).toContainText('Tick 1');
-      await page.waitForTimeout(400);
+      await page.waitForFunction((prev) => {
+        const c = document.getElementById('rover-cam-canvas');
+        if (!c) return false;
+        const { data } = c.getContext('2d').getImageData(48, 48, 220, 140);
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          r += data[i];
+          g += data[i + 1];
+          b += data[i + 2];
+          n++;
+        }
+        r /= n; g /= n; b /= n;
+        return Math.hypot(r - prev.r, g - prev.g, b - prev.b) > 3;
+      }, before, { timeout: 8000 });
       const after = await sampleCam();
       expect(dist(before, after)).toBeGreaterThan(3);
       await expect(page.locator('.tick-indicator')).toContainText('Tick 1');

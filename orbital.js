@@ -199,6 +199,8 @@ export class OrbitalRenderer {
     this.camRocks = rocks;
     this.landerFwdImg = landerFwd;
     this.lastCam = 0;
+    this._camTexReady = false;
+    this._camPoseKey = '';
     try {
       this._buildAuxMaps();
       this._collectCraters();
@@ -325,6 +327,7 @@ export class OrbitalRenderer {
       moving
     };
     this._stampTrack(this.roverCol, this.roverRow, this.heading);
+    this.lastCam = 0;
   }
 
   _stampTrack(col, row, heading) {

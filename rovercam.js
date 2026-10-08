@@ -46,6 +46,17 @@ function blitWrap(ctx, img, ox, y, dw, dh) {
   ctx.drawImage(img, x, y, dw, dh);
 }
 
+function softwareCheap() {
+  try {
+    if (new URLSearchParams(location.search).get('camq') === 'full') return false;
+  } catch {
+    // ignore
+  }
+  if (typeof navigator !== 'undefined' && navigator.webdriver) return true;
+  if (typeof window !== 'undefined' && window.innerWidth < 700) return true;
+  return false;
+}
+
 function lookAt(renderer, tx, ty) {
   const col = renderer.roverCol + 0.5;
   const row = renderer.roverRow + 0.42;
@@ -67,34 +78,101 @@ function lookAheadCrater(renderer) {
   let best = null;
   for (const cr of renderer.craterList || []) {
     const hit = lookAt(renderer, cr.c, cr.r);
-    if (hit.along < 0.18 || hit.along > 4.2) continue;
-    if (Math.abs(hit.side) > 0.7 + hit.along * 0.35) continue;
+    if (hit.along < 0.12 || hit.along > 5.6) continue;
+    if (Math.abs(hit.side) > 0.85 + hit.along * 0.38) continue;
     if (!best || hit.along < best.along) best = hit;
   }
   return best;
 }
 
-function softwareCheap() {
-  return typeof navigator !== 'undefined' && !!(navigator.webdriver);
+function pixelsOf(img) {
+  if (!img) return null;
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  if (!w || !h) return null;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, w, h);
+  return { data: ctx.getImageData(0, 0, w, h).data, w, h };
+}
+
+function makeMip(src) {
+  const w = Math.max(1, src.w >> 1);
+  const h = Math.max(1, src.h >> 1);
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.min(src.w - 1, x * 2);
+      const y0 = Math.min(src.h - 1, y * 2);
+      const x1 = Math.min(src.w - 1, x0 + 1);
+      const y1 = Math.min(src.h - 1, y0 + 1);
+      const i00 = (y0 * src.w + x0) * 4;
+      const i10 = (y0 * src.w + x1) * 4;
+      const i01 = (y1 * src.w + x0) * 4;
+      const i11 = (y1 * src.w + x1) * 4;
+      const o = (y * w + x) * 4;
+      data[o] = (src.data[i00] + src.data[i10] + src.data[i01] + src.data[i11]) >> 2;
+      data[o + 1] = (src.data[i00 + 1] + src.data[i10 + 1] + src.data[i01 + 1] + src.data[i11 + 1]) >> 2;
+      data[o + 2] = (src.data[i00 + 2] + src.data[i10 + 2] + src.data[i01 + 2] + src.data[i11 + 2]) >> 2;
+      data[o + 3] = 255;
+    }
+  }
+  return { data, w, h };
+}
+
+function ensurePhotoTex(renderer) {
+  if (renderer._camTexReady) return renderer._camTex;
+  const src = pixelsOf(renderer.camNear || renderer.mastcamImg);
+  if (!src) return null;
+  const mip1 = makeMip(src);
+  const mip2 = makeMip(mip1);
+  renderer._camTex = [src, mip1, mip2];
+  renderer._camTexReady = true;
+  return renderer._camTex;
+}
+
+function sampleWrap(tex, u, v) {
+  const x = wrap(u, tex.w) | 0;
+  const y = wrap(v, tex.h) | 0;
+  const i = (y * tex.w + x) * 4;
+  return [tex.data[i], tex.data[i + 1], tex.data[i + 2]];
+}
+
+function camBuf(renderer, bw, bh) {
+  if (!renderer._camOff || renderer._camOff.width !== bw || renderer._camOff.height !== bh) {
+    renderer._camOff = document.createElement('canvas');
+    renderer._camOff.width = bw;
+    renderer._camOff.height = bh;
+    renderer._camOffCtx = renderer._camOff.getContext('2d', { willReadFrequently: true });
+    renderer._camImg = renderer._camOffCtx.createImageData(bw, bh);
+  }
+  if (!renderer._camImg || renderer._camImg.width !== bw) {
+    renderer._camImg = renderer._camOffCtx.createImageData(bw, bh);
+  }
+  return { canvas: renderer._camOff, ctx: renderer._camOffCtx, img: renderer._camImg, bw, bh };
 }
 
 function drawSkyPhoto(ctx, renderer, w, h, pan, bob) {
   const sky = renderer.camSky || renderer.mastcamImg;
   const far = renderer.camFar || renderer.mastcamImg;
   const pano = renderer.camPano;
-  if (sky) blitWrap(ctx, sky, -pan * 48, -6 + bob * 0.12, w * 1.45, h * 0.44);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  if (sky) blitWrap(ctx, sky, -pan * 52, -2 + bob * 0.12, w * 1.35, h * 0.42);
   else {
     const g = ctx.createLinearGradient(0, 0, 0, h * 0.4);
-    g.addColorStop(0, '#c9a06a');
-    g.addColorStop(1, '#e0b888');
+    g.addColorStop(0, '#d7b07a');
+    g.addColorStop(1, '#e4c094');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h * 0.4);
   }
-  if (far) blitWrap(ctx, far, -pan * 96, h * 0.16 + bob * 0.25, w * 1.55, h * 0.44);
+  if (far) blitWrap(ctx, far, -pan * 110, h * 0.14 + bob * 0.25, w * 1.5, h * 0.46);
   if (pano) {
     ctx.save();
-    ctx.globalAlpha = 0.28;
-    blitWrap(ctx, pano, -pan * 120, h * 0.2 + bob * 0.2, w * 1.7, h * 0.36);
+    ctx.globalAlpha = 0.22;
+    blitWrap(ctx, pano, -pan * 140, h * 0.2 + bob * 0.2, w * 1.65, h * 0.34);
     ctx.restore();
   }
 }
@@ -102,42 +180,43 @@ function drawSkyPhoto(ctx, renderer, w, h, pan, bob) {
 function drawCraterOverlay(ctx, renderer, w, h, horizon) {
   const hit = lookAheadCrater(renderer);
   if (!hit) return hit;
-  const dist = Math.max(0.32, hit.along);
-  const cx = w / 2 + hit.side * (w * 0.48) / dist;
-  const cy = horizon + h * (0.08 + 0.34 / dist);
-  const rw = Math.min(w * 0.98, (1.55 / dist) * w * 0.48);
-  const rh = Math.min(h * 0.78, (1.25 / dist) * h * 0.42);
+  const dist = Math.max(0.28, hit.along);
+  const grow = Math.min(1, 1.7 / dist);
+  const cx = w / 2 + hit.side * (w * 0.5) / dist;
+  const cy = horizon + h * (0.05 + 0.38 / dist);
+  const rw = Math.min(w * 1.02, grow * w * 0.52);
+  const rh = Math.min(h * 0.82, grow * h * 0.44);
   ctx.save();
   ctx.beginPath();
   ctx.ellipse(cx, cy, rw, rh, 0, 0, Math.PI * 2);
   ctx.clip();
   const near = renderer.camNear || renderer.mastcamImg;
   if (near) {
-    ctx.drawImage(near, cx - rw * 1.15, cy - rh * 0.85, rw * 2.3, rh * 2.1);
+    ctx.drawImage(near, cx - rw * 1.2, cy - rh * 0.9, rw * 2.4, rh * 2.2);
   }
-  const bowl = ctx.createRadialGradient(cx, cy + rh * 0.12, rh * 0.08, cx, cy, rh);
-  bowl.addColorStop(0, 'rgba(28, 12, 6, 0.72)');
-  bowl.addColorStop(0.45, 'rgba(70, 32, 14, 0.38)');
-  bowl.addColorStop(0.78, 'rgba(40, 18, 8, 0.18)');
+  const bowl = ctx.createRadialGradient(cx, cy + rh * 0.18, rh * 0.06, cx, cy, rh);
+  bowl.addColorStop(0, 'rgba(18, 8, 4, 0.82)');
+  bowl.addColorStop(0.42, 'rgba(58, 26, 12, 0.46)');
+  bowl.addColorStop(0.76, 'rgba(36, 16, 8, 0.2)');
   bowl.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = bowl;
   ctx.fillRect(cx - rw, cy - rh, rw * 2, rh * 2);
-  const farWall = ctx.createLinearGradient(cx, cy - rh, cx, cy);
-  farWall.addColorStop(0, 'rgba(12, 6, 4, 0.78)');
-  farWall.addColorStop(0.55, 'rgba(30, 14, 8, 0.35)');
+  const farWall = ctx.createLinearGradient(cx, cy - rh, cx, cy + rh * 0.1);
+  farWall.addColorStop(0, 'rgba(8, 4, 2, 0.88)');
+  farWall.addColorStop(0.45, 'rgba(28, 12, 6, 0.5)');
   farWall.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = farWall;
-  ctx.fillRect(cx - rw, cy - rh, rw * 2, rh);
+  ctx.fillRect(cx - rw, cy - rh, rw * 2, rh * 1.05);
   ctx.restore();
   ctx.save();
-  ctx.strokeStyle = 'rgba(210, 170, 130, 0.55)';
-  ctx.lineWidth = Math.max(2, 7 / dist);
+  ctx.strokeStyle = 'rgba(214, 176, 136, 0.6)';
+  ctx.lineWidth = Math.max(2, 8 / dist);
   ctx.beginPath();
-  ctx.ellipse(cx, cy, rw, rh, 0, 0.15, Math.PI - 0.15);
+  ctx.ellipse(cx, cy, rw, rh, 0, 0.12, Math.PI - 0.12);
   ctx.stroke();
-  ctx.strokeStyle = 'rgba(20, 10, 6, 0.45)';
+  ctx.strokeStyle = 'rgba(16, 8, 4, 0.55)';
   ctx.beginPath();
-  ctx.ellipse(cx, cy, rw, rh, 0, Math.PI + 0.2, Math.PI * 2 - 0.2);
+  ctx.ellipse(cx, cy, rw, rh, 0, Math.PI + 0.18, Math.PI * 2 - 0.18);
   ctx.stroke();
   ctx.restore();
   return hit;
@@ -145,15 +224,15 @@ function drawCraterOverlay(ctx, renderer, w, h, horizon) {
 
 function drawLanderBillboard(ctx, renderer, w, h, horizon) {
   const hit = lookAt(renderer, LANDER_COL + 0.5, LANDER_ROW + 0.72);
-  if (hit.along < 0.35 || hit.along > 5.5) return;
-  if (Math.abs(hit.side) > 1.1 + hit.along * 0.4) return;
+  if (hit.along < 0.55 || hit.along > 5.6 || hit.dist < 0.8) return;
+  if (Math.abs(hit.side) > 1.05 + hit.along * 0.38) return;
   const img = renderer.landerFwdImg || renderer.landerImg;
   if (!img) return;
   const z = hit.along;
-  const bw = Math.min(w * 0.7, (1.35 / z) * w * 0.42);
+  const bw = Math.min(w * 0.72, (1.4 / z) * w * 0.44);
   const bh = bw * 1.05;
   const x = w / 2 + (hit.side / z) * w * 0.52 - bw / 2;
-  const y = horizon + (0.22 / z) * h - bh * 0.15;
+  const y = horizon + (0.2 / z) * h - bh * 0.12;
   ctx.save();
   ctx.globalAlpha = 0.96;
   ctx.drawImage(img, x, y, bw, bh);
@@ -171,17 +250,15 @@ function drawRockBillboards(ctx, renderer, w, h, horizon, craterHit) {
   const rightC = -Math.sin(hdg);
   const rightR = Math.cos(hdg);
   for (let i = 0; i < 10; i++) {
-    const z = 0.55 + i * 0.42;
-    if (craterHit && Math.abs(z - craterHit.along) < 0.55) continue;
+    const z = 0.5 + i * 0.4;
+    if (craterHit && Math.abs(z - craterHit.along) < 0.5) continue;
     const n = renderer._noiseAt(col * 3.1 + i * 7.2, row * 2.7 + i);
     if (n < 0.28) continue;
-    const side = (n - 0.62) * 1.6;
-    const wx = col + 0.5 + fwdC * z + rightC * side;
-    const wy = row + 0.42 + fwdR * z + rightR * side;
+    const side = (n - 0.62) * 1.55;
     const sx = w / 2 + side * (w * 0.5) / z;
-    const sy = horizon + (0.16 / z) * h + 8;
+    const sy = horizon + (0.15 / z) * h + 8;
     const chip = (Math.floor(n * 12) % 4) * 128;
-    const rw = (38 + n * 28) / z;
+    const rw = (40 + n * 30) / z;
     const rh = rw * 0.72;
     ctx.drawImage(img, chip, 24, 128, 80, sx - rw / 2, sy - rh, rw, rh);
   }
@@ -225,13 +302,17 @@ function drawGrain(ctx, renderer, w, h, t) {
   ctx.restore();
 }
 
+function driveAmt(renderer) {
+  return (renderer.driveU || 0)
+    + Math.hypot(renderer.roverCol - LANDER_COL, renderer.roverRow - LANDER_ROW);
+}
+
 function drawPhoto(ctx, renderer, w, h, t) {
   const heading = renderer.heading;
   const pan = heading + Math.PI / 2;
   const moving = !!(renderer.anim && renderer.anim.moving);
   const bob = (moving && !renderer.reduceMotion ? Math.sin(t * 16) * 3.2 : Math.sin(t * 2.1) * 0.8);
-  const drive = (renderer.driveU || 0) * 0.12
-    + Math.hypot(renderer.roverCol - LANDER_COL, renderer.roverRow - LANDER_ROW) * 0.1;
+  const drive = driveAmt(renderer);
   ctx.fillStyle = '#2a1c12';
   ctx.fillRect(0, 0, w, h);
   drawSkyPhoto(ctx, renderer, w, h, pan, bob);
@@ -239,31 +320,61 @@ function drawPhoto(ctx, renderer, w, h, t) {
   const near = renderer.camNear || renderer.mastcamImg;
   const alt = renderer.camAlt;
   if (mid) {
-    const sc = 1 + Math.min(0.18, drive * 0.04);
-    blitWrap(ctx, mid, -pan * 170 - drive * 10, h * 0.34 + bob * 0.55, w * 1.65 * sc, h * 0.5 * sc);
+    const sc = 1 + Math.min(0.22, drive * 0.045);
+    blitWrap(ctx, mid, -pan * 180 - drive * 36, h * 0.32 + bob * 0.55, w * 1.62 * sc, h * 0.52 * sc);
   }
   if (alt) {
-    const k = Math.max(0, Math.cos(heading)) * 0.42;
+    const k = Math.max(0, Math.cos(heading)) * 0.4;
     if (k > 0.04) {
       ctx.save();
       ctx.globalAlpha = k;
-      blitWrap(ctx, alt, -pan * 190 - drive * 6, h * 0.22 + bob * 0.4, w * 1.5, h * 0.78);
+      blitWrap(ctx, alt, -pan * 200 - drive * 10, h * 0.2 + bob * 0.4, w * 1.48, h * 0.8);
       ctx.restore();
     }
   }
   if (near) {
-    const sc = 1.05 + Math.min(0.28, drive * 0.06);
-    blitWrap(ctx, near, -pan * 260 - drive * 22, h * 0.5 + bob * 0.9, w * 1.85 * sc, h * 0.62 * sc);
+    const sc = 1.06 + Math.min(0.32, drive * 0.07);
+    blitWrap(ctx, near, -pan * 280 - drive * 88, h * 0.46 + bob * 0.95 - drive * 7, w * 1.88 * sc, h * 0.64 * sc);
   }
-  const horizon = h * 0.36 + bob * 0.2;
+  const horizon = h * 0.34 + bob * 0.2;
   const craterHit = drawCraterOverlay(ctx, renderer, w, h, horizon);
   drawRockBillboards(ctx, renderer, w, h, horizon, craterHit);
   drawLanderBillboard(ctx, renderer, w, h, horizon);
 }
 
-function fillGroundScan(renderer, img, w, h, horizon, eyeH, cheap) {
-  if (!renderer.camColor || !img) return;
+function shadeGround(renderer, wx, wy, fwdC, fwdR, r, g, b, z) {
+  if (!renderer.heightArr) {
+    const fog = Math.min(1, z / 6.4);
+    return [
+      r + (210 - r) * fog * 0.42,
+      g + (168 - g) * fog * 0.42,
+      b + (110 - b) * fog * 0.42
+    ];
+  }
+  const ht = renderer._heightAt(wx, wy);
+  const htF = renderer._heightAt(wx + fwdC * 0.1, wy + fwdR * 0.1);
+  const hx = renderer._heightAt(wx + 0.06, wy) - renderer._heightAt(wx - 0.06, wy);
+  let shade = Math.max(0.38, Math.min(1.18, 0.8 - hx * 3.1));
+  if (ht < -0.08) {
+    const k = Math.min(1, (-ht - 0.08) / 0.55);
+    shade *= 1 - 0.48 * k;
+    if (htF > ht + 0.012) shade *= 0.55;
+  }
+  r *= shade;
+  g *= shade;
+  b *= shade;
+  const fog = Math.min(1, z / 6.4);
+  r = r + (210 - r) * fog * 0.45;
+  g = g + (168 - g) * fog * 0.45;
+  b = b + (110 - b) * fog * 0.45;
+  return [r, g, b];
+}
+
+function floorCast(renderer, img, bw, bh, horizonY, eyeH, cheap) {
+  const mips = ensurePhotoTex(renderer);
+  if (!mips) return false;
   const data = img.data;
+  data.fill(0);
   const col = renderer.roverCol + 0.5;
   const row = renderer.roverRow + 0.42;
   const heading = renderer.heading;
@@ -271,37 +382,35 @@ function fillGroundScan(renderer, img, w, h, horizon, eyeH, cheap) {
   const fwdR = Math.sin(heading);
   const rightC = -Math.sin(heading);
   const rightR = Math.cos(heading);
-  const fov = 1.18;
+  const fov = 1.16;
   const stepX = cheap ? 2 : 1;
-  for (let sy = Math.floor(horizon); sy < h; sy += 1) {
-    const z = (eyeH * h * 0.78) / Math.max(1.2, sy - horizon);
-    if (z > 7.5) continue;
-    const mip = z > 3.2 ? 2 : z > 1.6 ? 1 : 0;
-    for (let sx = 0; sx < w; sx += stepX) {
-      const camX = (sx / w - 0.5) * fov;
+  const y0 = Math.max(0, Math.floor(horizonY));
+  for (let sy = 0; sy < bh; sy++) {
+    if (sy < y0) {
+      for (let sx = 0; sx < bw; sx++) {
+        const i = (sy * bw + sx) * 4;
+        data[i + 3] = 0;
+      }
+      continue;
+    }
+    const z = (eyeH * bh * 0.82) / Math.max(1.15, sy - horizonY);
+    if (z > 7.4) continue;
+    const mip = z > 3.1 ? 2 : z > 1.55 ? 1 : 0;
+    const tex = mips[cheap ? Math.min(2, mip + 1) : mip];
+    for (let sx = 0; sx < bw; sx += stepX) {
+      const camX = (sx / bw - 0.5) * fov;
       const wx = col + fwdC * z + rightC * camX * z;
       const wy = row + fwdR * z + rightR * camX * z;
-      const ht = renderer._heightAt(wx, wy);
-      const shade = Math.max(0.45, Math.min(1.15, 0.82 + ht * 0.7));
-      let r = renderer._sampleBilinear(renderer.camColor, renderer.hW, wx, wy, 4, 0) * shade;
-      let g = renderer._sampleBilinear(renderer.camColor, renderer.hW, wx, wy, 4, 1) * shade;
-      let b = renderer._sampleBilinear(renderer.camColor, renderer.hW, wx, wy, 4, 2) * shade;
-      if (ht < -0.12) {
-        const k = Math.min(1, (-ht - 0.12) / 0.55);
-        r *= 1 - 0.55 * k;
-        g *= 1 - 0.45 * k;
-        b *= 1 - 0.25 * k;
-      }
-      const fog = Math.min(1, z / 6.5);
-      r = r + (210 - r) * fog * 0.5;
-      g = g + (168 - g) * fog * 0.5;
-      b = b + (110 - b) * fog * 0.5;
-      const i = (sy * w + sx) * 4;
+      const u = wx * 118 + heading * 70;
+      const v = wy * 92 + 40;
+      let [r, g, b] = sampleWrap(tex, u, v);
+      [r, g, b] = shadeGround(renderer, wx, wy, fwdC, fwdR, r, g, b, z);
+      const i = (sy * bw + sx) * 4;
       data[i] = r;
       data[i + 1] = g;
       data[i + 2] = b;
       data[i + 3] = 255;
-      if (stepX === 2 && sx + 1 < w) {
+      if (stepX === 2 && sx + 1 < bw) {
         data[i + 4] = r;
         data[i + 5] = g;
         data[i + 6] = b;
@@ -309,21 +418,37 @@ function fillGroundScan(renderer, img, w, h, horizon, eyeH, cheap) {
       }
     }
   }
+  return true;
 }
 
 function drawHybrid(ctx, renderer, w, h, t) {
+  const cheap = softwareCheap();
   const heading = renderer.heading;
   const pan = heading + Math.PI / 2;
   const moving = !!(renderer.anim && renderer.anim.moving);
   const bob = (moving && !renderer.reduceMotion ? Math.sin(t * 16) * 2.4 : 0.5);
+  const drive = driveAmt(renderer);
   const eyeH = 0.17 + (moving ? Math.sin(t * 16) * 0.01 : 0);
-  const horizon = h * 0.36 + bob * 0.15;
+  const horizon = h * 0.34 + bob * 0.15;
   ctx.fillStyle = '#2a1c12';
   ctx.fillRect(0, 0, w, h);
-  drawSkyPhoto(ctx, renderer, w, h, pan, bob);
-  const frame = ctx.getImageData(0, 0, w, h);
-  fillGroundScan(renderer, frame, w, h, horizon, eyeH, softwareCheap());
-  ctx.putImageData(frame, 0, 0);
+  drawSkyPhoto(ctx, renderer, w, h, pan + drive * 0.08, bob);
+  const scale = cheap ? 4 : 2;
+  const bw = Math.max(120, Math.round(w / scale));
+  const bh = Math.max(68, Math.round(h / scale));
+  const buf = camBuf(renderer, bw, bh);
+  const hz = horizon * (bh / h);
+  if (floorCast(renderer, buf.img, bw, bh, hz, eyeH, cheap)) {
+    buf.ctx.putImageData(buf.img, 0, 0);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = cheap ? 'medium' : 'high';
+    ctx.drawImage(buf.canvas, 0, 0, w, h);
+    ctx.restore();
+  } else {
+    const near = renderer.camNear || renderer.mastcamImg;
+    if (near) blitWrap(ctx, near, -pan * 220 - drive * 55, h * 0.48 + bob, w * 1.7, h * 0.58);
+  }
   const craterHit = drawCraterOverlay(ctx, renderer, w, h, horizon);
   drawRockBillboards(ctx, renderer, w, h, horizon, craterHit);
   drawLanderBillboard(ctx, renderer, w, h, horizon);
@@ -331,15 +456,16 @@ function drawHybrid(ctx, renderer, w, h, t) {
 
 function drawVoxel(ctx, renderer, w, h, t) {
   const cheap = softwareCheap();
-  const cw = w;
-  const ch = h;
+  const scale = cheap ? 3 : 1;
+  const cw = Math.max(160, Math.round(w / scale));
+  const ch = Math.max(90, Math.round(h / scale));
   const moving = !!(renderer.anim && renderer.anim.moving);
   const bob = (moving && !renderer.reduceMotion) ? Math.sin(t * 17) * 0.012 : 0;
   const eyeH = 0.18 + bob;
-  const horizon = ch * 0.36;
+  const horizon = ch * 0.34;
   const zNear = 0.08;
   const zFar = 6.6;
-  const steps = cheap ? 42 : 88;
+  const steps = cheap ? 28 : 88;
   const fov = 1.2;
   const col = renderer.roverCol + 0.5;
   const row = renderer.roverRow + 0.42;
@@ -348,25 +474,22 @@ function drawVoxel(ctx, renderer, w, h, t) {
   const fwdR = Math.sin(heading);
   const rightC = -Math.sin(heading);
   const rightR = Math.cos(heading);
-  const sky = ctx.createLinearGradient(0, 0, 0, ch);
-  sky.addColorStop(0, '#c4a070');
-  sky.addColorStop(0.45, '#e0b888');
-  sky.addColorStop(1, '#c99664');
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, cw, ch);
-  if (renderer.camSky) {
-    ctx.save();
-    ctx.globalAlpha = 0.55;
-    blitWrap(ctx, renderer.camSky, -(heading + Math.PI / 2) * 50, -4, cw * 1.4, ch * 0.4);
-    ctx.restore();
-  }
-  const img = ctx.getImageData(0, 0, cw, ch);
+  const pan = heading + Math.PI / 2;
+  ctx.fillStyle = '#c9a070';
+  ctx.fillRect(0, 0, w, h);
+  drawSkyPhoto(ctx, renderer, w, h, pan, bob * 40);
+  const buf = camBuf(renderer, cw, ch);
+  const img = buf.img;
   const data = img.data;
+  data.fill(0);
+  const mips = ensurePhotoTex(renderer);
   const ybuf = new Int16Array(cw);
   ybuf.fill(ch);
   for (let i = 0; i < steps; i++) {
     const u = i / (steps - 1);
     const z = zNear + (zFar - zNear) * u * u;
+    const mip = z > 3.1 ? 2 : z > 1.55 ? 1 : 0;
+    const tex = mips ? mips[cheap ? Math.min(2, mip + 1) : mip] : null;
     for (let x = 0; x < cw; x++) {
       const camX = (x / cw - 0.5) * fov;
       const wx = col + fwdC * z + rightC * camX * z;
@@ -375,24 +498,19 @@ function drawVoxel(ctx, renderer, w, h, t) {
       const sy = horizon - ((ht - eyeH) / z) * ch * 0.95;
       const y0 = sy < 0 ? 0 : sy > ch ? ch : (sy | 0);
       if (y0 >= ybuf[x]) continue;
-      let r = renderer._sampleBilinear(renderer.camColor, renderer.hW, wx, wy, 4, 0);
-      let g = renderer._sampleBilinear(renderer.camColor, renderer.hW, wx, wy, 4, 1);
-      let b = renderer._sampleBilinear(renderer.camColor, renderer.hW, wx, wy, 4, 2);
-      const hx = renderer._heightAt(wx + 0.06, wy) - renderer._heightAt(wx - 0.06, wy);
-      const shade = Math.max(0.35, Math.min(1.2, 0.78 - hx * 3.4));
-      r *= shade;
-      g *= shade;
-      b *= shade;
-      if (ht < -0.1) {
-        const k = Math.min(1, (-ht - 0.1) / 0.55);
-        r *= 1 - 0.52 * k;
-        g *= 1 - 0.42 * k;
-        b *= 1 - 0.22 * k;
+      let r;
+      let g;
+      let b;
+      if (tex) {
+        [r, g, b] = sampleWrap(tex, wx * 118 + heading * 70, wy * 92 + 40);
+      } else if (renderer.camColor) {
+        r = renderer._sampleBilinear(renderer.camColor, renderer.hW, wx, wy, 4, 0);
+        g = renderer._sampleBilinear(renderer.camColor, renderer.hW, wx, wy, 4, 1);
+        b = renderer._sampleBilinear(renderer.camColor, renderer.hW, wx, wy, 4, 2);
+      } else {
+        r = 168; g = 118; b = 72;
       }
-      const fog = Math.min(1, z / 6.4);
-      r = r + (210 - r) * fog * 0.5;
-      g = g + (168 - g) * fog * 0.5;
-      b = b + (110 - b) * fog * 0.5;
+      [r, g, b] = shadeGround(renderer, wx, wy, fwdC, fwdR, r, g, b, z);
       const ir = r | 0;
       const ig = g | 0;
       const ib = b | 0;
@@ -406,25 +524,34 @@ function drawVoxel(ctx, renderer, w, h, t) {
       ybuf[x] = y0;
     }
   }
-  ctx.putImageData(img, 0, 0);
+  buf.ctx.putImageData(img, 0, 0);
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = cheap ? 'medium' : 'high';
+  ctx.drawImage(buf.canvas, 0, 0, w, h);
+  ctx.restore();
   const craterHit = lookAheadCrater(renderer);
-  drawRockBillboards(ctx, renderer, w, h, horizon, craterHit);
-  drawLanderBillboard(ctx, renderer, w, h, horizon);
+  drawCraterOverlay(ctx, renderer, w, h, h * 0.34);
+  drawRockBillboards(ctx, renderer, w, h, h * 0.34, craterHit);
+  drawLanderBillboard(ctx, renderer, w, h, h * 0.34);
 }
 
 export function drawRoverCam(renderer, now, t) {
   const canvas = document.getElementById('rover-cam-canvas');
   if (!canvas) return;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const w = canvas.width;
   const h = canvas.height;
   const mode = renderer.camMode || DEFAULT_CAM_MODE;
   const cheap = softwareCheap();
-  const minDt = cheap ? 70 : ((renderer.playbackSpeed || 1) >= 16 ? 40 : 28);
-  if (now - (renderer.lastCam || 0) < minDt && renderer.lastCam) {
+  const poseKey = `${mode}|${renderer.roverCol.toFixed(2)}|${renderer.roverRow.toFixed(2)}|${renderer.heading.toFixed(3)}|${(renderer.driveU || 0).toFixed(2)}`;
+  const poseChanged = poseKey !== renderer._camPoseKey;
+  const minDt = cheap ? 48 : ((renderer.playbackSpeed || 1) >= 16 ? 40 : 28);
+  if (!poseChanged && now - (renderer.lastCam || 0) < minDt && renderer.lastCam) {
     return;
   }
   renderer.lastCam = now;
+  renderer._camPoseKey = poseKey;
   ctx.save();
   if (mode === 'hybrid') drawHybrid(ctx, renderer, w, h, t);
   else if (mode === '3d') drawVoxel(ctx, renderer, w, h, t);

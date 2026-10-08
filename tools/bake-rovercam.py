@@ -28,13 +28,37 @@ def save_jpeg(im: Image.Image, name: str, quality=84):
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    src = Image.open(SRC23727 if SRC23727.exists() else FALLBACK).convert('RGB')
+    def trim_letterbox(im, thresh=14):
+        g = im.convert('L')
+        w, h = g.size
+        pix = g.load()
+        step = max(1, w // 80)
+
+        def row_mean(y):
+            acc = 0
+            n = 0
+            for x in range(0, w, step):
+                acc += pix[x, y]
+                n += 1
+            return acc / max(1, n)
+
+        top = 0
+        while top < h and row_mean(top) < thresh:
+            top += 1
+        bot = h - 1
+        while bot > top and row_mean(bot) < thresh:
+            bot -= 1
+        return im.crop((0, top, w, bot + 1)) if bot > top else im
+
+    # Prefer the already-cropped mastcam plate (no PIA letterbox), else the upload.
+    src = Image.open(FALLBACK if FALLBACK.exists() else SRC23727).convert('RGB')
+    src = trim_letterbox(src)
     w, h = src.size
-    # Layered planes from PIA23727
-    save_jpeg(src.crop((0, 0, w, int(h * 0.28))).resize((1600, 280), Image.Resampling.LANCZOS), 'cam-sky.jpg')
-    save_jpeg(src.crop((0, int(h * 0.14), w, int(h * 0.52))).resize((1600, 420), Image.Resampling.LANCZOS), 'cam-far.jpg')
-    save_jpeg(src.crop((0, int(h * 0.38), w, int(h * 0.82))).resize((1600, 520), Image.Resampling.LANCZOS), 'cam-mid.jpg')
-    save_jpeg(src.crop((0, int(h * 0.58), w, h)).resize((1600, 560), Image.Resampling.LANCZOS), 'cam-near.jpg')
+    # Layered planes from PIA23727 — skip letterbox / black bars.
+    save_jpeg(src.crop((0, 0, w, int(h * 0.24))).resize((1600, 280), Image.Resampling.LANCZOS), 'cam-sky.jpg')
+    save_jpeg(src.crop((0, int(h * 0.12), w, int(h * 0.50))).resize((1600, 420), Image.Resampling.LANCZOS), 'cam-far.jpg')
+    save_jpeg(src.crop((0, int(h * 0.36), w, int(h * 0.80))).resize((1600, 520), Image.Resampling.LANCZOS), 'cam-mid.jpg')
+    save_jpeg(src.crop((0, int(h * 0.54), w, int(h * 0.98))).resize((1600, 560), Image.Resampling.LANCZOS), 'cam-near.jpg')
     if SRC24543.exists():
         alt = Image.open(SRC24543).convert('RGB')
         aw, ah = alt.size
