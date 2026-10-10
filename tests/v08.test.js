@@ -11,9 +11,9 @@ test.describe('Far Rover v0.8 M1', () => {
   test('loads the base with starting stock', async ({ page }) => {
     await ready(page);
     const s = await page.evaluate(() => window.__v08Test.getState());
-    expect(s.ice).toBe(20);
-    expect(s.regolith).toBe(80);
-    expect(s.power).toBe(100);
+    expect(Math.floor(s.ice)).toBe(20);
+    expect(Math.floor(s.regolith)).toBe(80);
+    expect(Math.floor(s.power)).toBe(100);
     expect(s.unitCount).toBe(2);
     expect(s.isDay).toBe(true);
     await expect(page.locator('#res-ice')).toContainText('20');

@@ -177,7 +177,7 @@ export function createRenderer(canvas, assets, game) {
     const c = worldToScreen((h.tx + 1) * C.tileSize, (h.ty + 1) * C.tileSize);
     ctx.save();
     ctx.strokeStyle = C.playerAccent;
-    ctx.globalAlpha = 0.45;
+    ctx.globalAlpha = 0.7;
     ctx.lineWidth = 1.5;
     ctx.setLineDash([7, 6]);
     ctx.beginPath();

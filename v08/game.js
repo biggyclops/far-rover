@@ -76,7 +76,7 @@ export function createGame() {
     buildGhost: null,
     haulPick: null,
     armedOrder: null,
-    camera: { x: 0, y: 0, zoom: 1 },
+    camera: { x: 0, y: 0, zoom: C.defaultZoom },
     events: [],
     muted: false,
     stats: { notifies: 0, patches: 0, usedTunnel: false, usedHaulers: true },

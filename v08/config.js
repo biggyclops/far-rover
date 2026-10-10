@@ -6,6 +6,7 @@ export const CONFIG = {
   mapWidth: 40, // Proposed (Game Designer)
   mapHeight: 40, // Proposed (Game Designer)
   tileSize: 64, // 64 px per tile at 1x; 128 px sources are @2x
+  defaultZoom: 0.7,
   sourcePixelsPerTile: 128,
   commandRangeRadius: 14, // Proposed (Game Designer) — drawn in M1, cosmetic until M3
   commandRangeCosmetic: true, // M1: ring only; hand-direct everywhere on the home map
