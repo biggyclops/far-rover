@@ -11,8 +11,8 @@ export const CONFIG = {
   maxZoom: 2,
   unitClickRadius: 36, // world px; ~36 CSS px at default zoom so a hauler is easy to click
   sourcePixelsPerTile: 128,
-  commandRangeRadius: 14, // Proposed (Game Designer) — drawn in M1, cosmetic until M3
-  commandRangeCosmetic: true, // M1: ring only; hand-direct everywhere on the home map
+  commandRangeRadius: 14, // Proposed (Game Designer) — Deep Ice sits on this ring toward the expedition
+  commandRangeCosmetic: false,
 
   // Habitat footprint is 2x2. Anchor is the north-west tile.
   habitatTileX: 18,
@@ -132,35 +132,38 @@ export const CONFIG = {
   vaultBuildSeconds: 10, // Proposed (Game Designer)
   vaultIceCapacity: 150, // Proposed (Game Designer)
 
-  // --- Notify (M3 — wired only) ---
+  // --- Notify (M3) ---
   notifyUsesTick: true, // Proposed (Game Designer)
   notifyRoverHolds: true, // Proposed (Game Designer)
   notifyOncePerNewFind: true, // Proposed (Game Designer)
   notifyRepeatWithNothingNewIsWait: true, // Proposed (Game Designer)
   notifyConditionsFromExistingSensors: true,
+  notifyLinkDelaySeconds: 2, // Proposed (Game Designer) — ping on the base map after the link delay
 
-  // --- Deep Ice node (M3/M4 — wired only) ---
+  // --- Deep Ice node (M3/M4) ---
   deepIceTilesFromStartStorage: 22, // Proposed (Game Designer) — ~22 from start storage
   deepIceAmount: 200, // Proposed (Game Designer)
   // First ice confirm unlocks this node at the edge of command range toward the expedition site.
+  expeditionTileX: 37, // Proposed (Game Designer) — map-edge marker beyond the command ring
+  expeditionTileY: 7,
 
-  // --- Ice confirm (M3 — wired only) ---
+  // --- Ice confirm (M3) ---
   paperMapOreTilesAreIce: true, // Proposed (Game Designer)
   iceConfirmNeedsScoutOnIceAndNotify: true, // no sample/drill
   iceConfirmUnlocksDeepIceNode: true,
 
-  // --- Recall (M3 — wired only) ---
+  // --- Recall (M3) ---
   recallFreePerExpedition: 1, // Proposed (Game Designer)
   recallRefund: false, // Proposed (Game Designer)
   recallScoutDrivesHomeOnOwnEngine: true,
   recallEndsExpedition: true,
   recallConfirmedFindsStay: true,
 
-  // --- Rule patch (M3 — wired only) ---
+  // --- Rule patch (M3) ---
   patchDelaySeconds: 2, // Proposed (Game Designer)
   patchesPerSol: 1, // Proposed (Game Designer)
 
-  // --- Goal (M4 — wired only) ---
+  // --- Goal (M4) ---
   goalIceInStorage: 60, // Proposed (Game Designer)
   goalPowerInStorage: 50, // Proposed (Game Designer)
   // Both at once → "Land crew" button.

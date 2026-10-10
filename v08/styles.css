@@ -143,3 +143,99 @@ button.active {
 #toast.show {
   opacity: 1;
 }
+
+#objectives {
+  position: fixed;
+  top: 64px;
+  left: 12px;
+  z-index: 3;
+  width: 260px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  pointer-events: none;
+}
+#objectives .obj-title {
+  color: var(--accent);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+#objectives ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+#objectives li + li { margin-top: 4px; }
+
+.expedition-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.badge.delay {
+  background: rgba(63, 216, 255, 0.14);
+  color: var(--warn);
+}
+
+#scout-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: #0a0806;
+}
+#scout-overlay[hidden] { display: none !important; }
+#scout-back {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 30;
+  background: rgba(8, 8, 10, 0.86);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+#win-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 8, 12, 0.72);
+}
+#win-overlay[hidden] { display: none !important; }
+.win-card {
+  width: min(420px, 90vw);
+  padding: 28px 24px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  text-align: center;
+}
+.win-card h2 {
+  color: var(--accent);
+  margin-bottom: 14px;
+  letter-spacing: 0.04em;
+}
+.win-card p {
+  color: var(--text);
+  font-size: 14px;
+  margin: 6px 0;
+}
+#btn-play-again {
+  margin-top: 18px;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+#btn-land-crew {
+  border-color: var(--accent);
+  color: var(--accent);
+}

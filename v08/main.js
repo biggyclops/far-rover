@@ -5,6 +5,11 @@ import { createGame } from './game.js';
 import { createRenderer } from './renderer.js';
 import { bindInput } from './input.js';
 import { bindHud } from './hud.js';
+import { bindScout } from './scout.js';
+import {
+  onHostedPatch,
+  setHostedPatchInfo,
+} from '../ui.js';
 
 const canvas = document.getElementById('board');
 const game = createGame();
@@ -16,26 +21,48 @@ audio.setMuted(game.state.muted);
 const renderer = createRenderer(canvas, assets, game);
 renderer.centerOnHabitat();
 
+const scout = bindScout(document, game);
+
 const hud = bindHud(document, game, {
   onMute: (muted) => audio.setMuted(muted),
+  onBuildScout: () => { scout.openBuild(); },
+  onRecall: () => { game.startRecall(); },
+  onLandCrew: () => { game.landCrew(); },
 });
 
-const { pumpPan } = bindInput(canvas, game, renderer);
+onHostedPatch((slot, condition, action) => game.queuePatch(slot, condition, action));
+setHostedPatchInfo(() => ({
+  left: game.patchesLeft(),
+  pending: !!game.state.expedition.pendingPatch,
+}));
+
+const { pumpPan } = bindInput(canvas, game, renderer, {
+  onExpedition: () => { scout.openOperate(); },
+});
 
 let last = performance.now();
+
+function handleEvents(evs) {
+  for (const ev of evs) {
+    if (ev.type === 'select') audio.play(C.sfxSelect);
+    if (ev.type === 'order') audio.play(C.sfxOrder);
+    if (ev.type === 'build-complete') audio.play(C.sfxBuildComplete);
+    if (ev.type === 'notify-ping') audio.play(C.sfxNotify);
+    if (ev.type === 'patch-applied') scout.applyIncomingPatch(ev);
+  }
+}
 
 function frame(now) {
   const raw = Math.min(0.05, (now - last) / 1000);
   last = now;
   pumpPan(raw);
   const dt = raw * game.state.speed;
-  if (dt > 0) game.update(dt);
-  audio.setDigLoop(game.isDigging());
-  for (const ev of game.flushEvents()) {
-    if (ev.type === 'select') audio.play(C.sfxSelect);
-    if (ev.type === 'order') audio.play(C.sfxOrder);
-    if (ev.type === 'build-complete') audio.play(C.sfxBuildComplete);
+  if (dt > 0) {
+    game.update(dt);
+    scout.pump(dt);
   }
+  audio.setDigLoop(game.isDigging());
+  handleEvents(game.flushEvents());
   renderer.draw();
   hud.sync();
   requestAnimationFrame(frame);
@@ -61,6 +88,7 @@ function serialize() {
     unitCount: game.state.units.length,
     units: game.state.units.map((u) => ({
       id: u.id,
+      kind: u.kind,
       x: u.x,
       y: u.y,
       battery: u.battery,
@@ -105,6 +133,32 @@ function serialize() {
       packets: game.state.tunnel.packets.map((p) => ({ ...p })),
       ready: game.tunnelReady(),
     },
+    expedition: {
+      launched: game.state.expedition.launched,
+      ended: game.state.expedition.ended,
+      recalling: game.state.expedition.recalling,
+      recallUsed: game.state.expedition.recallUsed,
+      marker: { ...game.state.expedition.marker },
+      pendingPatch: !!game.state.expedition.pendingPatch,
+      patchDelay: game.state.expedition.pendingPatch?.remaining ?? 0,
+      pendingPings: game.state.expedition.pendingPings.length,
+      activePings: game.state.expedition.activePings.length,
+      log: game.state.expedition.log.map((e) => e.text),
+    },
+    deepIce: { ...game.state.deepIce },
+    deepIceTile: game.state.deepIce.unlocked
+      ? {
+          type: game.tileAt(game.state.deepIce.tx, game.state.deepIce.ty)?.type || null,
+          remaining: game.tileAt(game.state.deepIce.tx, game.state.deepIce.ty)?.iceRemaining || 0,
+        }
+      : null,
+    patchesLeft: game.patchesLeft(),
+    canLandCrew: game.canLandCrew(),
+    won: game.state.won,
+    win: game.state.win ? { ...game.state.win } : null,
+    scoutOpen: scout.isOpen(),
+    scoutTick: scout.getSim()?.tick ?? 0,
+    iceConfirmed: !!scout.getSim()?.iceConfirmed,
   };
 }
 
@@ -114,9 +168,10 @@ function advance(seconds) {
   while (left > 0) {
     const dt = Math.min(step, left);
     game.update(dt);
+    scout.pump(dt);
+    handleEvents(game.flushEvents());
     left -= dt;
   }
-  game.flushEvents();
 }
 
 function clientPosForWorld(wx, wy) {
@@ -178,6 +233,23 @@ window.__v08Test = {
   setUnitPos: (id, x, y) => {
     const u = game.unitById(id);
     if (u) { u.x = x; u.y = y; }
+  },
+  launchProgram: (sensors, rules) => scout.launchProgram(sensors, rules),
+  tickScout: (n) => scout.tickScout(n),
+  confirmOnOre: () => scout.confirmOnOre(),
+  openOperate: () => scout.openOperate(),
+  openBuild: () => scout.openBuild(),
+  hideOverlay: () => scout.hideOverlay(),
+  queuePatch: (slot, condition, action) => game.queuePatch(slot, condition, action),
+  startRecall: () => game.startRecall(),
+  landCrew: () => game.landCrew(),
+  unlockDeepIce: () => game.unlockDeepIce(),
+  syncHud: () => hud.sync(),
+  centerOnTile: (tx, ty) => {
+    const { w, h } = renderer.viewSize();
+    const c = game.tileCenter(tx, ty);
+    game.state.camera.x = c.x - (w / game.state.camera.zoom) / 2;
+    game.state.camera.y = c.y - (h / game.state.camera.zoom) / 2;
   },
   config: C,
 };

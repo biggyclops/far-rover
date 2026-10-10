@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Far Rover v0.8 — Base</title>
   <link rel="icon" type="image/png" href="../favicon.png">
+  <link rel="stylesheet" href="../styles.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -36,8 +37,17 @@
         <button id="speed-16" type="button">16×</button>
         <button id="view-toggle" type="button">Underground</button>
         <button id="mute-btn" type="button">Mute</button>
+        <button id="btn-land-crew" type="button" hidden>Land crew</button>
       </div>
     </header>
+
+    <aside id="objectives" data-testid="objectives">
+      <div class="obj-title">First goal</div>
+      <ol>
+        <li>Build a scout and confirm ice.</li>
+        <li>Bring 60 ice and 50 power home.</li>
+      </ol>
+    </aside>
 
     <canvas id="board"></canvas>
 
@@ -56,11 +66,32 @@
         <button id="build-hub" type="button">Tunnel hub <small>20 reg · 10s</small></button>
         <button id="build-vault" type="button">Vault <small>40 reg · 10s</small></button>
         <button id="print-hauler" type="button">Print hauler <small>25 reg · 10 pwr · 20s</small></button>
+        <button id="btn-build-scout" type="button">Build Scout</button>
+        <button id="btn-recall" type="button" hidden>Recall</button>
+      </div>
+      <div class="expedition-meta">
+        <span id="patch-badge" class="badge delay" hidden>Link delay</span>
+        <span id="patches-left">Patches 1</span>
+        <span id="expedition-log"></span>
       </div>
       <div id="sel-info">Click a hauler · drag a box · right-click an order</div>
     </footer>
   </div>
   <div id="toast" role="status" aria-live="polite"></div>
+  <div id="scout-overlay" hidden>
+    <button id="scout-back" type="button">Back to base</button>
+    <div id="game-container"></div>
+  </div>
+  <div id="win-overlay" hidden data-testid="win-overlay">
+    <div class="win-card">
+      <h2>Crew landed</h2>
+      <p id="win-time"></p>
+      <p id="win-logistics"></p>
+      <p id="win-notifies"></p>
+      <p id="win-patches"></p>
+      <button id="btn-play-again" type="button">Play again</button>
+    </div>
+  </div>
   <script type="module" src="main.js"></script>
 </body>
 </html>

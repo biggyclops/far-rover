@@ -421,3 +421,135 @@ test.describe('Far Rover v0.8 M2', () => {
     expect(result.label).toBe('Ice storage full');
   });
 });
+
+test.describe('Far Rover v0.8 M3/M4', () => {
+  test('Build Scout opens the imported build screen', async ({ page }) => {
+    await ready(page);
+    await page.click('#btn-build-scout');
+    await expect(page.locator('#scout-overlay')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.build-screen')).toBeVisible();
+    await expect(page.locator('.action-select').first()).toHaveValue('');
+    const notify = page.locator('.action-select').first().locator('option[value="notify"]');
+    await expect(notify).toHaveCount(1);
+  });
+
+  test('scout confirm unlocks Deep Ice, then the goal shows the win screen', async ({ page }) => {
+    await ready(page);
+    await expect(page.locator('#objectives')).toContainText('Build a scout and confirm ice');
+    await expect(page.locator('#objectives')).toContainText('Bring 60 ice and 50 power home');
+    const result = await page.evaluate(() => {
+      window.__v08Test.launchProgram(['spectral'], [
+        { condition: { type: 'on_ore' }, action: { type: 'notify' } },
+        { condition: { type: 'always' }, action: { type: 'wait' } },
+      ]);
+      const confirmed = window.__v08Test.confirmOnOre();
+      const before = window.__v08Test.getState();
+      window.__v08Test.advance(2.1);
+      const after = window.__v08Test.getState();
+      window.__v08Test.setResources({ ice: 60, power: 50 });
+      window.__v08Test.syncHud();
+      return { confirmed, before, after };
+    });
+    expect(result.confirmed).toBe(true);
+    expect(result.before.deepIce.unlocked).toBe(false);
+    expect(result.after.deepIce.unlocked).toBe(true);
+    expect(result.after.deepIceTile.type).toBe('ice');
+    expect(result.after.deepIceTile.remaining).toBe(200);
+    expect(result.after.stats.notifies).toBeGreaterThanOrEqual(1);
+    expect(result.after.toast).toMatch(/Ice confirmed|Notify/);
+    await expect(page.locator('#btn-land-crew')).toBeVisible();
+    await page.locator('#btn-land-crew').click({ force: true });
+    await expect(page.locator('#win-overlay')).toBeVisible();
+    await expect(page.locator('#win-logistics')).toContainText('haulers only');
+    await expect(page.locator('#win-notifies')).toContainText('1');
+    await expect(page.locator('#btn-play-again')).toBeVisible();
+  });
+
+  test('operate view is the imported demo view', async ({ page }) => {
+    await ready(page);
+    await page.evaluate(() => {
+      window.__v08Test.launchProgram(['spectral', 'distance'], [
+        { condition: { type: 'always' }, action: { type: 'wait' } },
+      ]);
+    });
+    await page.evaluate(() => window.__v08Test.openOperate());
+    await expect(page.locator('.operate-view')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('#pause-btn')).toBeVisible();
+    await expect(page.locator('.speed-btn[data-speed="1"]')).toBeVisible();
+    await expect(page.locator('.speed-btn[data-speed="4"]')).toBeVisible();
+    await expect(page.locator('.speed-btn[data-speed="16"]')).toBeVisible();
+    await expect(page.locator('#rule-display')).toBeVisible();
+    await page.click('#scout-back');
+    await expect(page.locator('#scout-overlay')).toBeHidden();
+  });
+
+  test('one free Recall drives the scout home and ends the expedition', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      window.__v08Test.launchProgram(['spectral'], [
+        { condition: { type: 'always' }, action: { type: 'wait' } },
+      ]);
+      window.__v08Test.confirmOnOre();
+      window.__v08Test.advance(2.1);
+      const unlocked = window.__v08Test.getState().deepIce.unlocked;
+      const scout = window.__v08Test.startRecall();
+      const second = window.__v08Test.startRecall();
+      window.__v08Test.advance(30);
+      const end = window.__v08Test.getState();
+      return {
+        unlocked,
+        scoutId: scout && scout.id,
+        second,
+        ended: end.expedition.ended,
+        recallUsed: end.expedition.recallUsed,
+        stillUnlocked: end.deepIce.unlocked,
+        kind: end.units.find((u) => u.id === (scout && scout.id))?.kind,
+      };
+    });
+    expect(result.unlocked).toBe(true);
+    expect(result.scoutId).toBeTruthy();
+    expect(result.second).toBeNull();
+    expect(result.ended).toBe(true);
+    expect(result.recallUsed).toBe(true);
+    expect(result.stillUnlocked).toBe(true);
+    expect(result.kind).toBe('scout');
+  });
+
+  test('one rule patch per sol with a 2s link delay', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      window.__v08Test.launchProgram(['spectral'], [
+        { condition: { type: 'always' }, action: { type: 'explore' } },
+      ]);
+      const queued = window.__v08Test.queuePatch(0, { type: 'always' }, { type: 'wait' });
+      const mid = window.__v08Test.getState();
+      window.__v08Test.advance(1.0);
+      const linking = window.__v08Test.getState();
+      const during = window.__v08Test.queuePatch(1, { type: 'always' }, { type: 'wait' });
+      window.__v08Test.advance(1.2);
+      const applied = window.__v08Test.getState();
+      const sameSol = window.__v08Test.queuePatch(1, { type: 'always' }, { type: 'notify' });
+      window.__v08Test.setTime(window.__v08Test.config.solSecondsAt1x + 1);
+      const nextSol = window.__v08Test.queuePatch(1, { type: 'always' }, { type: 'notify' });
+      return {
+        queued,
+        pendingMid: mid.expedition.pendingPatch,
+        pendingLinking: linking.expedition.pendingPatch,
+        during,
+        patches: applied.stats.patches,
+        pendingAfter: applied.expedition.pendingPatch,
+        sameSol,
+        nextSol,
+        leftAfter: applied.patchesLeft,
+      };
+    });
+    expect(result.queued).toBe(true);
+    expect(result.pendingMid).toBe(true);
+    expect(result.pendingLinking).toBe(true);
+    expect(result.during).toBe(false);
+    expect(result.patches).toBe(1);
+    expect(result.pendingAfter).toBe(false);
+    expect(result.sameSol).toBe(false);
+    expect(result.nextSol).toBe(true);
+  });
+});
