@@ -354,12 +354,115 @@ export function createRenderer(canvas, assets, game) {
       const y = (a.ty + (b.ty - a.ty) * frac + 0.5) * C.tileSize;
       const s = worldToScreen(x, y);
       ctx.save();
-      ctx.fillStyle = C.warningNotify;
+      ctx.fillStyle = '#E8F2F6';
+      ctx.strokeStyle = C.playerAccent;
+      ctx.lineWidth = Math.max(1, 1.2 * z);
       ctx.beginPath();
       ctx.arc(s.x, s.y, Math.max(3, 4 * z), 0, Math.PI * 2);
       ctx.fill();
+      ctx.stroke();
       ctx.restore();
     }
+  }
+
+  function drawExpedition(z) {
+    const exp = game.state.expedition;
+    const m = exp.marker;
+    const c = worldToScreen((m.tx + 0.5) * C.tileSize, (m.ty + 0.5) * C.tileSize);
+    const size = C.tileSize * z;
+    const scoutImg = img('scout');
+    if (scoutImg && exp.launched && !exp.ended && !exp.recalling) {
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(scoutImg, c.x - size / 2, c.y - size / 2, size, size);
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.strokeStyle = '#E8F2F6';
+    ctx.lineWidth = Math.max(1.5, 2 * z);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, size * 0.42, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    drawEdgeBeacon(m.tx, m.ty, z);
+  }
+
+  function drawEdgeBeacon(tx, ty, z) {
+    const { w, h } = viewSize();
+    const wx = (tx + 0.5) * C.tileSize;
+    const wy = (ty + 0.5) * C.tileSize;
+    const s = worldToScreen(wx, wy);
+    const pad = 18;
+    const onScreen = s.x >= pad && s.x <= w - pad && s.y >= pad && s.y <= h - pad;
+    let bx = s.x;
+    let by = s.y;
+    if (!onScreen) {
+      bx = Math.max(pad, Math.min(w - pad, s.x));
+      by = Math.max(pad, Math.min(h - pad, s.y));
+    } else {
+      // Keep a small mark on the nearer map edge even when the site is visible.
+      const toRight = w - s.x;
+      const toBottom = h - s.y;
+      const nearest = Math.min(s.x, s.y, toRight, toBottom);
+      if (nearest === s.x) bx = pad;
+      else if (nearest === toRight) bx = w - pad;
+      else if (nearest === s.y) by = pad;
+      else by = h - pad;
+    }
+    const pulse = 0.65 + 0.35 * Math.sin(game.state.time * 4);
+    ctx.save();
+    ctx.fillStyle = '#E8F2F6';
+    ctx.globalAlpha = pulse;
+    ctx.beginPath();
+    ctx.arc(bx, by, Math.max(4, 5 * z), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = C.playerAccent;
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawNotifyPings(z) {
+    for (const p of game.state.expedition.activePings) {
+      const s = worldToScreen((p.tx + 0.5) * C.tileSize, (p.ty + 0.5) * C.tileSize);
+      const frame = Math.min(5, Math.max(0, Math.floor((p.age / 1.2) * 6)));
+      const im = img(`notify-${frame}`) || img('icon-notify');
+      const size = C.tileSize * 1.4 * z;
+      if (im) ctx.drawImage(im, s.x - size / 2, s.y - size / 2, size, size);
+      else {
+        ctx.save();
+        ctx.strokeStyle = C.warningNotify;
+        ctx.globalAlpha = Math.max(0, 1 - p.age / 1.2);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, (12 + p.age * 28) * z, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  function drawDeepIce(z) {
+    const d = game.state.deepIce;
+    if (!d.unlocked || d.tx == null) return;
+    const s = worldToScreen((d.tx + 0.5) * C.tileSize, (d.ty + 0.5) * C.tileSize);
+    const size = C.tileSize * z;
+    ctx.save();
+    ctx.strokeStyle = '#E8F2F6';
+    ctx.lineWidth = Math.max(2, 2.4 * z);
+    ctx.setLineDash([5, 4]);
+    ctx.strokeRect(s.x - size / 2 + 3, s.y - size / 2 + 3, size - 6, size - 6);
+    ctx.setLineDash([]);
+    ctx.font = `600 ${Math.max(10, 11 * z)}px "IBM Plex Mono", ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(8, 8, 10, 0.75)';
+    ctx.strokeText('Deep Ice', s.x, s.y - size * 0.52);
+    ctx.fillStyle = '#E8F2F6';
+    ctx.fillText('Deep Ice', s.x, s.y - size * 0.52);
+    ctx.restore();
   }
 
   function drawBox() {
@@ -419,6 +522,9 @@ export function createRenderer(canvas, assets, game) {
         if (game.state.selectedIds.includes(u.id)) drawSelection(u, z);
       }
       for (const u of game.state.units) drawUnitLabel(u, z);
+      drawExpedition(z);
+      drawDeepIce(z);
+      drawNotifyPings(z);
     }
     drawOrderMarker(z);
     drawGhost(z);

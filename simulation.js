@@ -126,7 +126,8 @@ export const ACTIONS = {
   SIDESTEP: 'sidestep',
   GO_TO_ORE: 'go_to_ore',
   DRILL: 'drill',
-  WAIT: 'wait'
+  WAIT: 'wait',
+  NOTIFY: 'notify'
 };
 
 // Which sensor each action needs
@@ -136,7 +137,8 @@ export const ACTION_SENSORS = {
   [ACTIONS.SIDESTEP]: null,
   [ACTIONS.GO_TO_ORE]: SENSORS.SPECTRAL,
   [ACTIONS.DRILL]: null,
-  [ACTIONS.WAIT]: null
+  [ACTIONS.WAIT]: null,
+  [ACTIONS.NOTIFY]: null
 };
 
 // === CONSTANTS ===
@@ -191,7 +193,13 @@ export function createInitialState(sensors, rules) {
     trace: [],
     
     // Readings cache
-    readings: {}
+    readings: {},
+
+    // Notify (M3): rover holds; ping once per new ice (paper-map ore) find
+    notifySeen: Object.create(null),
+    notifyCount: 0,
+    iceConfirmed: false,
+    lastNotify: null
   };
 }
 
@@ -586,6 +594,39 @@ function executeWait() {
   return { waited: true };
 }
 
+function executeNotify(state) {
+  // Hold still (same as Wait). Ping once per new paper-map ore tile (ice).
+  const onGrid = isOnGrid(state.col, state.row);
+  const onIce = onGrid && state.terrain[state.row][state.col] === TERRAIN.ORE;
+  const key = `${state.col},${state.row}`;
+  let ping = false;
+  let confirmedIce = false;
+  if (onIce && !state.notifySeen[key]) {
+    state.notifySeen[key] = true;
+    state.notifyCount = (state.notifyCount || 0) + 1;
+    ping = true;
+    if (!state.iceConfirmed) {
+      state.iceConfirmed = true;
+      confirmedIce = true;
+    }
+  }
+  state.lastNotify = {
+    col: state.col,
+    row: state.row,
+    cell: onGrid ? formatCell(state.col, state.row) : 'Lander',
+    tick: state.tick,
+    ping,
+    confirmedIce
+  };
+  return {
+    waited: true,
+    notified: true,
+    ping,
+    confirmedIce,
+    cell: onGrid ? formatCell(state.col, state.row) : 'Lander'
+  };
+}
+
 export function executeAction(action, state) {
   switch (action.type) {
     case ACTIONS.EXPLORE:
@@ -600,6 +641,8 @@ export function executeAction(action, state) {
       return executeDrill(state);
     case ACTIONS.WAIT:
       return executeWait();
+    case ACTIONS.NOTIFY:
+      return executeNotify(state);
     default:
       return { error: 'unknown action' };
   }
@@ -1168,7 +1211,8 @@ function formatActionResult(action, result) {
     [ACTIONS.SIDESTEP]: 'Sidestep',
     [ACTIONS.GO_TO_ORE]: 'Go to ore',
     [ACTIONS.DRILL]: 'Drill',
-    [ACTIONS.WAIT]: 'Wait'
+    [ACTIONS.WAIT]: 'Wait',
+    [ACTIONS.NOTIFY]: 'Notify'
   };
   
   const name = actionNames[action.type] || action.type;
@@ -1187,6 +1231,12 @@ function formatActionResult(action, result) {
   }
   if (result.drilled) {
     return `${name}: drilled ore`;
+  }
+  if (result.notified && result.ping) {
+    return `${name}: ice at ${result.cell}`;
+  }
+  if (result.notified) {
+    return `${name}: nothing new (wait)`;
   }
   if (result.waited) {
     return `${name}: waiting`;
@@ -1268,8 +1318,21 @@ export const ACTION_NAMES = {
   [ACTIONS.SIDESTEP]: 'Sidestep',
   [ACTIONS.GO_TO_ORE]: 'Go to ore',
   [ACTIONS.DRILL]: 'Drill',
-  [ACTIONS.WAIT]: 'Wait'
+  [ACTIONS.WAIT]: 'Wait',
+  [ACTIONS.NOTIFY]: 'Notify'
 };
+
+export function applyPatch(state, slot, newCondition, newAction) {
+  if (!state || state.outcome) return false;
+  const condition = { ...newCondition };
+  if (condition.type === CONDITIONS.BATTERY_BELOW) {
+    condition.n = clampBatteryN(condition.n);
+  }
+  const action = { ...newAction };
+  state.rules[slot] = { condition, action };
+  state.patchCount = (state.patchCount || 0) + 1;
+  return true;
+}
 
 // Export terrain constants for map verification
 export const TERRAIN_DATA = {

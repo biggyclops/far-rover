@@ -8,6 +8,10 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
   let panning = false;
   let panLast = null;
 
+  function blocked() {
+    return document.body.classList.contains('scout-open') || game.state.won;
+  }
+
   function cssPos(ev) {
     const r = canvas.getBoundingClientRect();
     return { x: ev.clientX - r.left, y: ev.clientY - r.top };
@@ -21,6 +25,7 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
   canvas.addEventListener('pointerdown', (ev) => {
+    if (blocked()) return;
     canvas.setPointerCapture(ev.pointerId);
     const p = cssPos(ev);
     if (ev.button === 1 || ev.button === 2 && ev.altKey) {
@@ -48,6 +53,7 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
   });
 
   canvas.addEventListener('pointermove', (ev) => {
+    if (blocked()) return;
     const p = cssPos(ev);
     if (panning && panLast) {
       const cam = game.state.camera;
@@ -92,6 +98,17 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
       game.state.boxSelect = null;
     } else {
       const w = renderer.screenToWorld(p.x, p.y);
+      const exp = game.state.expedition;
+      if (exp.launched && !exp.ended) {
+        const c = game.tileCenter(exp.marker.tx, exp.marker.ty);
+        if (Math.hypot(w.x - c.x, w.y - c.y) < C.tileSize * 0.75) {
+          hooks.onExpedition?.();
+          dragging = false;
+          box = false;
+          start = null;
+          return;
+        }
+      }
       const unit = game.unitAtWorld(w.x, w.y, C.unitClickRadius);
       if (unit) {
         game.selectUnits([unit.id], additive);
@@ -112,6 +129,11 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
   }
 
   canvas.addEventListener('pointerup', (ev) => {
+    if (blocked()) {
+      panning = false;
+      dragging = false;
+      return;
+    }
     if (panning && ev.button === 1) {
       panning = false;
       panLast = null;
@@ -134,6 +156,7 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
   }, { passive: false });
 
   window.addEventListener('keydown', (ev) => {
+    if (blocked()) return;
     keys.add(ev.key.toLowerCase());
     if (ev.code === 'Space') {
       ev.preventDefault();

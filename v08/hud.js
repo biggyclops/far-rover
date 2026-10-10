@@ -54,6 +54,10 @@ export function bindHud(root, game, hooks = {}) {
     hooks.onMute?.(game.state.muted);
     refreshButtons();
   });
+  $('#btn-build-scout')?.addEventListener('click', () => { hooks.onBuildScout?.(); });
+  $('#btn-recall')?.addEventListener('click', () => { hooks.onRecall?.(); });
+  $('#btn-land-crew')?.addEventListener('click', () => { hooks.onLandCrew?.(); });
+  $('#btn-play-again')?.addEventListener('click', () => { window.location.reload(); });
 
   function refreshButtons() {
     const speed = game.state.speed;
@@ -116,6 +120,39 @@ export function bindHud(root, game, hooks = {}) {
       const msg = game.state.toast?.text || '';
       toast.textContent = msg;
       toast.classList.toggle('show', !!msg);
+    }
+    const exp = game.state.expedition;
+    const buildScout = $('#btn-build-scout');
+    if (buildScout) buildScout.hidden = !!exp.launched;
+    const recall = $('#btn-recall');
+    if (recall) recall.hidden = !exp.launched || exp.ended || exp.recallUsed;
+    const land = $('#btn-land-crew');
+    if (land) land.hidden = !game.canLandCrew();
+    const badge = $('#patch-badge');
+    if (badge) badge.hidden = !exp.pendingPatch;
+    const left = $('#patches-left');
+    if (left) left.textContent = `Patches ${game.patchesLeft()}`;
+    const log = $('#expedition-log');
+    if (log) {
+      const last = exp.log[exp.log.length - 1];
+      log.textContent = last ? last.text : '';
+    }
+    const win = $('#win-overlay');
+    if (win) {
+      win.hidden = !game.state.won;
+      if (game.state.won && game.state.win) {
+        const w = game.state.win;
+        const m = Math.floor(w.time / 60);
+        const s = Math.floor(w.time % 60).toString().padStart(2, '0');
+        const timeEl = $('#win-time');
+        const logi = $('#win-logistics');
+        const notes = $('#win-notifies');
+        const patches = $('#win-patches');
+        if (timeEl) timeEl.textContent = `Time  ${m}:${s}`;
+        if (logi) logi.textContent = `Logistics  ${w.logistics}`;
+        if (notes) notes.textContent = `Notifies  ${w.notifies}`;
+        if (patches) patches.textContent = `Patches  ${w.patches}`;
+      }
     }
     refreshButtons();
   }

@@ -100,6 +100,23 @@ export function createGame() {
     events: [],
     muted: false,
     stats: { notifies: 0, patches: 0, usedTunnel: false, usedHaulers: false },
+    expedition: {
+      launched: false,
+      ended: false,
+      marker: { tx: C.expeditionTileX, ty: C.expeditionTileY },
+      recallUsed: false,
+      recalling: false,
+      scoutId: null,
+      patchesThisSol: 0,
+      patchSol: 1,
+      pendingPatch: null,
+      pendingPings: [],
+      activePings: [],
+      log: [],
+    },
+    deepIce: { unlocked: false, tx: null, ty: null },
+    won: false,
+    win: null,
   };
 
   function id() {
@@ -199,6 +216,204 @@ export function createGame() {
     };
     state.units.push(u);
     return u;
+  }
+
+  function addScout(x, y) {
+    const u = {
+      id: id(),
+      kind: 'scout',
+      x,
+      y,
+      facing: 0,
+      battery: C.haulerBattery,
+      cargo: { ice: 0, regolith: 0 },
+      order: null,
+      lastOrder: null,
+      status: 'idle',
+      blockedReason: null,
+    };
+    state.units.push(u);
+    return u;
+  }
+
+  function pickDeepIceTile() {
+    const hx = C.habitatTileX + 1;
+    const hy = C.habitatTileY + 1;
+    const dx = C.expeditionTileX - hx;
+    const dy = C.expeditionTileY - hy;
+    const len = Math.hypot(dx, dy) || 1;
+    const aimX = Math.round(hx + (dx / len) * C.commandRangeRadius);
+    const aimY = Math.round(hy + (dy / len) * C.commandRangeRadius);
+    const candidates = [];
+    for (let r = 0; r < 6; r++) {
+      for (let y = aimY - r; y <= aimY + r; y++) {
+        for (let x = aimX - r; x <= aimX + r; x++) {
+          const t = tileAt(x, y);
+          if (t && isPlainGround(t) && !t.buildingId && !t.craterM) {
+            candidates.push({ tx: x, ty: y });
+          }
+        }
+      }
+      if (candidates.length) break;
+    }
+    return candidates[0] || { tx: Math.max(0, Math.min(C.mapWidth - 1, aimX)), ty: Math.max(0, Math.min(C.mapHeight - 1, aimY)) };
+  }
+
+  function unlockDeepIce() {
+    if (state.deepIce.unlocked) return state.deepIce;
+    const at = pickDeepIceTile();
+    const t = tileAt(at.tx, at.ty);
+    if (t) {
+      t.type = TILE.ICE;
+      t.iceRemaining = C.deepIceAmount;
+    }
+    state.deepIce = { unlocked: true, tx: at.tx, ty: at.ty };
+    emit('deep-ice', { tx: at.tx, ty: at.ty });
+    return state.deepIce;
+  }
+
+  function queueNotifyPing(entry) {
+    state.expedition.pendingPings.push({
+      remaining: C.notifyLinkDelaySeconds,
+      tx: entry.tx ?? state.expedition.marker.tx,
+      ty: entry.ty ?? state.expedition.marker.ty,
+      text: entry.text || 'Notify',
+      confirmed: !!entry.confirmed,
+    });
+  }
+
+  function noteExpedition(text) {
+    state.expedition.log.push({ t: state.time, text });
+    if (state.expedition.log.length > 12) state.expedition.log.shift();
+  }
+
+  function markExpeditionLaunched() {
+    state.expedition.launched = true;
+    state.expedition.ended = false;
+    state.expedition.recallUsed = false;
+    state.expedition.recalling = false;
+    noteExpedition('Scout launched');
+  }
+
+  function endExpedition() {
+    state.expedition.ended = true;
+    state.expedition.recalling = false;
+    noteExpedition('Expedition ended');
+    emit('expedition-ended');
+  }
+
+  function startRecall() {
+    if (!state.expedition.launched || state.expedition.ended || state.expedition.recallUsed) return null;
+    state.expedition.recallUsed = true;
+    state.expedition.recalling = true;
+    const m = state.expedition.marker;
+    const c = tileCenter(m.tx, m.ty);
+    const scout = addScout(c.x, c.y);
+    state.expedition.scoutId = scout.id;
+    const hab = habitat();
+    const dest = tileCenter(hab.tx + 1, hab.ty + 1);
+    assignOrder([scout], { type: 'go', x: dest.x, y: dest.y }, dest);
+    noteExpedition('Recall: scout driving home');
+    emit('recall');
+    return scout;
+  }
+
+  function currentSol() {
+    return Math.floor(state.time / C.solSecondsAt1x) + 1;
+  }
+
+  function patchesLeft() {
+    const sol = currentSol();
+    if (state.expedition.patchSol !== sol) {
+      state.expedition.patchSol = sol;
+      state.expedition.patchesThisSol = 0;
+    }
+    return Math.max(0, C.patchesPerSol - state.expedition.patchesThisSol);
+  }
+
+  function queuePatch(slot, condition, action) {
+    if (patchesLeft() <= 0) return false;
+    if (!state.expedition.launched || state.expedition.ended) return false;
+    if (state.expedition.pendingPatch) return false;
+    state.expedition.pendingPatch = {
+      remaining: C.patchDelaySeconds,
+      slot,
+      condition,
+      action,
+    };
+    noteExpedition('Patch linking…');
+    emit('patch-queued');
+    return true;
+  }
+
+  function canLandCrew() {
+    if (state.won) return false;
+    const tot = totals();
+    return tot.ice + 1e-6 >= C.goalIceInStorage && tot.power + 1e-6 >= C.goalPowerInStorage;
+  }
+
+  function updateExpedition(dt) {
+    if (state.expedition.patchSol !== currentSol()) {
+      state.expedition.patchSol = currentSol();
+      state.expedition.patchesThisSol = 0;
+    }
+    if (state.expedition.pendingPatch) {
+      state.expedition.pendingPatch.remaining -= dt;
+      if (state.expedition.pendingPatch.remaining <= 0) {
+        const p = state.expedition.pendingPatch;
+        state.expedition.pendingPatch = null;
+        state.expedition.patchesThisSol += 1;
+        state.stats.patches += 1;
+        emit('patch-applied', { slot: p.slot, condition: p.condition, action: p.action });
+        noteExpedition('Patch applied');
+      }
+    }
+    const stillPending = [];
+    for (const ping of state.expedition.pendingPings) {
+      ping.remaining -= dt;
+      if (ping.remaining <= 0) {
+        state.expedition.activePings.push({ ...ping, age: 0 });
+        state.stats.notifies += 1;
+        noteExpedition(ping.text);
+        toast(ping.text);
+        emit('notify-ping', ping);
+        if (ping.confirmed) unlockDeepIce();
+      } else stillPending.push(ping);
+    }
+    state.expedition.pendingPings = stillPending;
+    state.expedition.activePings = state.expedition.activePings.filter((p) => {
+      p.age += dt;
+      return p.age < 1.2;
+    });
+    if (state.expedition.recalling && state.expedition.scoutId) {
+      const scout = unitById(state.expedition.scoutId);
+      const hab = habitat();
+      if (scout && hab) {
+        const dest = tileCenter(hab.tx + 1, hab.ty + 1);
+        if (Math.hypot(scout.x - dest.x, scout.y - dest.y) < C.tileSize * 0.65) {
+          scout.order = null;
+          scout.lastOrder = null;
+          endExpedition();
+        }
+      }
+    }
+  }
+
+  function landCrew() {
+    if (!canLandCrew()) return null;
+    const tot = totals();
+    state.won = true;
+    state.win = {
+      time: state.time,
+      logistics: state.stats.usedTunnel ? 'tunnel' : 'haulers only',
+      notifies: state.stats.notifies,
+      patches: state.stats.patches,
+      ice: tot.ice,
+      power: tot.power,
+    };
+    state.speed = 0;
+    emit('win');
+    return state.win;
   }
 
   function packetTotals() {
@@ -893,6 +1108,7 @@ export function createGame() {
     updateDigTiles(dt);
     updateBuildings(dt);
     updateCargo(dt);
+    updateExpedition(dt);
     state.time += dt;
     if (state.orderMarker) {
       state.orderMarker.t += dt;
@@ -1194,5 +1410,17 @@ export function createGame() {
     corridorBetweenHubs,
     tunnelReady,
     buildingFootprint,
+    addScout,
+    unlockDeepIce,
+    queueNotifyPing,
+    queuePatch,
+    patchesLeft,
+    startRecall,
+    markExpeditionLaunched,
+    endExpedition,
+    canLandCrew,
+    landCrew,
+    currentSol,
+    noteExpedition,
   };
 }

@@ -37,6 +37,13 @@ let previousRunEndTime = null;
 let autoPauseCount = 0;
 let currentSpeed = 1;
 let isPaused = true;
+let includeNotifyAction = false;
+let skipOperateOnLaunch = false;
+let launchListener = null;
+let tickListener = null;
+let hostedPatchHandler = null;
+let hostedPatchInfo = null;
+let hostOwnsTicks = false;
 let tickInterval = null;
 let tickRaf = 0;
 let ticksArmed = false;
@@ -280,6 +287,7 @@ export function showBuildScreen() {
                 <li><strong>Drill:</strong> drill ore on current tile (costs 2)</li>
                 <li><strong>Wait:</strong> do nothing this tick</li>
                 <li><strong>Sidestep:</strong> move to the rover's right if valid, otherwise left; facing stays the same</li>
+                ${includeNotifyAction ? '<li><strong>Notify:</strong> hold still and ping a new ice find (ore tiles) back to base</li>' : ''}
               </ul>
             </div>
           </div>
@@ -383,6 +391,9 @@ function renderActionOptions(selected) {
     { value: Sim.ACTIONS.DRILL, label: 'Drill', sensor: null },
     { value: Sim.ACTIONS.WAIT, label: 'Wait', sensor: null }
   ];
+  if (includeNotifyAction) {
+    options.push({ value: Sim.ACTIONS.NOTIFY, label: 'Notify', sensor: null });
+  }
   
   return options.map(opt => {
     const isDisabled = opt.sensor && !selectedSensors.includes(opt.sensor);
@@ -1055,9 +1066,18 @@ function updateOperateView() {
   
   const uplinkBtn = document.getElementById('uplink-btn');
   if (uplinkBtn) {
-    uplinkBtn.disabled = uplinkBlocked();
-    uplinkBtn.classList.toggle('used', gameState.uplink.used);
-    uplinkBtn.textContent = gameState.uplink.used ? '📡 Uplink Used' : '📡 Uplink';
+    if (typeof hostedPatchHandler === 'function') {
+      const info = typeof hostedPatchInfo === 'function' ? hostedPatchInfo() : {};
+      const pending = !!info.pending;
+      const left = info.left ?? 0;
+      uplinkBtn.disabled = pending || left <= 0 || !!gameState.outcome;
+      uplinkBtn.classList.toggle('used', left <= 0 && !pending);
+      uplinkBtn.textContent = pending ? '📡 Patch linking…' : `📡 Patch (${left} left)`;
+    } else {
+      uplinkBtn.disabled = uplinkBlocked();
+      uplinkBtn.classList.toggle('used', gameState.uplink.used);
+      uplinkBtn.textContent = gameState.uplink.used ? '📡 Uplink Used' : '📡 Uplink';
+    }
   }
   
   // Update renderer
@@ -1125,19 +1145,33 @@ function fillUplinkFromSlot(slot) {
 }
 
 function showUplinkDialog() {
-  if (gameState.uplink.used || gameState.outcome || pendingStuck) return;
-  if (gameState.tick < 1) {
+  const hosted = typeof hostedPatchHandler === 'function';
+  if (gameState.outcome || pendingStuck) return;
+  if (!hosted && gameState.uplink.used) return;
+  if (!hosted && gameState.tick < 1) {
     alert('Uplink is available after the first turn.');
     return;
   }
-  if (!Sim.canUseUplink(gameState)) return;
+  if (hosted) {
+    const info = typeof hostedPatchInfo === 'function' ? hostedPatchInfo() : {};
+    if ((info.left ?? 0) <= 0) {
+      alert('No patches left this sol.');
+      return;
+    }
+    if (info.pending) {
+      alert('A patch is already linking.');
+      return;
+    }
+  } else if (!Sim.canUseUplink(gameState)) return;
   
   const dialog = document.createElement('div');
   dialog.className = 'uplink-dialog-overlay';
   dialog.innerHTML = `
     <div class="uplink-dialog glass-panel">
-      <h3>📡 Uplink Edit</h3>
-      <p>Change one rule slot. This is your only edit this run.</p>
+      <h3>${hosted ? '📡 Patch' : '📡 Uplink Edit'}</h3>
+      <p>${hosted
+        ? 'Change one rule. One patch per sol; it arrives after 2 seconds.'
+        : 'Change one rule slot. This is your only edit this run.'}</p>
       
       <div class="uplink-slot-select">
         <label>Rule slot:</label>
@@ -1212,6 +1246,16 @@ function showUplinkDialog() {
       return;
     }
     
+    if (hosted) {
+      if (!hostedPatchHandler(slot, condition, action)) {
+        alert('Patch is not available right now.');
+        return;
+      }
+      dialog.remove();
+      updateOperateView();
+      return;
+    }
+
     if (!Sim.applyUplink(gameState, slot, condition, action)) {
       alert('Uplink is not available right now.');
       return;
@@ -1274,7 +1318,8 @@ function launch() {
   isPaused = true;
   currentSpeed = 1;
   
-  showOperateView();
+  if (!skipOperateOnLaunch) showOperateView();
+  if (typeof launchListener === 'function') launchListener(gameState);
 }
 
 function computeChanges() {
@@ -1361,6 +1406,11 @@ function onRendererFrame(now) {
 }
 
 function startTicking() {
+  if (hostOwnsTicks) {
+    ticksArmed = false;
+    nextTickAt = 0;
+    return;
+  }
   stopTicking();
   ticksArmed = true;
   nextTickAt = 0;
@@ -1495,6 +1545,8 @@ function doTick(now) {
     }
     return;
   }
+
+  if (typeof tickListener === 'function') tickListener(result);
 
   if (renderer) {
     playPoseAnimation(prevCol, prevRow, now);
@@ -1943,4 +1995,64 @@ export function resetForTest() {
   rules = [null, null, null, null];
   log = { sessions: [], currentSession: null };
   startNewSession();
+}
+
+export function setIncludeNotifyAction(on) {
+  includeNotifyAction = !!on;
+}
+
+export function setSkipOperateOnLaunch(on) {
+  skipOperateOnLaunch = !!on;
+}
+
+export function onScoutLaunch(fn) {
+  launchListener = fn;
+}
+
+export function onScoutTick(fn) {
+  tickListener = fn;
+}
+
+export function onHostedPatch(fn) {
+  hostedPatchHandler = fn;
+}
+
+export function setHostedPatchInfo(fn) {
+  hostedPatchInfo = fn;
+}
+
+export function setHostOwnsTicks(on) {
+  hostOwnsTicks = !!on;
+}
+
+export async function prepareHostedScout() {
+  await Promise.all([loadAssets(), warmupOrbitalArt()]);
+  setIncludeNotifyAction(true);
+  setSkipOperateOnLaunch(true);
+  setHostOwnsTicks(true);
+  if (!log.currentSession) startNewSession('v08-scout');
+}
+
+export { showOperateView, updateOperateView, pause as pauseOperate, setSpeed as setOperateSpeed, togglePause as toggleOperatePause };
+
+export function getOperateSpeed() {
+  return currentSpeed;
+}
+
+export function isOperatePaused() {
+  return isPaused;
+}
+
+export function runHostedTick() {
+  if (!gameState || gameState.outcome) return null;
+  doTick(renderer?.now?.() ?? (typeof performance !== 'undefined' ? performance.now() : 0));
+  return lastTickResult;
+}
+
+export function startOperateTicking() {
+  startTicking();
+}
+
+export function stopOperateTicking() {
+  stopTicking();
 }

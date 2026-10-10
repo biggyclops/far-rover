@@ -990,6 +990,66 @@ console.log('\n=== Playtest: HUD battery-at-start is recorded on the tick ===');
   assertEqual(r.tickRecord.readings.battery, 20, 'Readings battery is start-of-turn');
 })();
 
+console.log('\n=== Notify: hold like Wait; ping once per new ice ===');
+(() => {
+  function pathFor(actionType) {
+    const state = Sim.createInitialState(['distance', 'spectral'], [
+      { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: actionType } },
+      { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } },
+    ]);
+    const path = [];
+    let prev = null;
+    while (!state.outcome && state.tick < 20) {
+      const r = Sim.runTick(state, prev);
+      if (r.autoPause && r.continueFromStep4) {
+        Sim.continueTickFromStep4(state, r.tickRecord, state.readings);
+      }
+      prev = r.newlyRevealed;
+      path.push(`${state.col},${state.row},${state.facing}`);
+      if (r.endCondition || r.stuckCondition) break;
+    }
+    return path.join('|');
+  }
+  assertEqual(
+    pathFor(Sim.ACTIONS.NOTIFY),
+    pathFor(Sim.ACTIONS.WAIT),
+    'On-ore Notify matches On-ore Wait for movement'
+  );
+
+  const holdWait = Sim.createInitialState(['distance'], [
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.WAIT } },
+  ]);
+  const holdNotify = Sim.createInitialState(['distance'], [
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.NOTIFY } },
+  ]);
+  for (let i = 0; i < 8; i++) {
+    Sim.runTick(holdWait);
+    Sim.runTick(holdNotify);
+  }
+  assertEqual(holdNotify.col, holdWait.col, 'Always Notify holds column like Wait');
+  assertEqual(holdNotify.row, holdWait.row, 'Always Notify holds row like Wait');
+  assertEqual(holdNotify.facing, holdWait.facing, 'Always Notify holds facing like Wait');
+
+  const ores = Sim.TERRAIN_DATA.ores;
+  const cell = ores[0];
+  const col = cell.charCodeAt(0) - 65;
+  const row = parseInt(cell.slice(1), 10) - 1;
+  const state = Sim.createInitialState(['spectral'], [
+    { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.WAIT } },
+  ]);
+  state.col = col;
+  state.row = row;
+  const first = Sim.runTick(state);
+  assert(first.tickRecord.actionResult.waited, 'Notify holds still');
+  assert(first.tickRecord.actionResult.ping, 'First Notify on ore pings');
+  assert(first.tickRecord.actionResult.confirmedIce, 'First ice Notify confirms');
+  assert(state.iceConfirmed, 'State records iceConfirmed');
+  const second = Sim.runTick(state);
+  assert(second.tickRecord.actionResult.waited, 'Repeat Notify still holds');
+  assert(!second.tickRecord.actionResult.ping, 'Repeat Notify with nothing new does not ping');
+})();
+
 // === SUMMARY ===
 console.log('\n=== SUMMARY ===');
 console.log(`Passed: ${passed}`);
