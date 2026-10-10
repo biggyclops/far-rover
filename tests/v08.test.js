@@ -498,6 +498,17 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     await expect(page.locator('.speed-btn[data-speed="16"]')).toBeVisible();
     await expect(page.locator('#rule-display')).toBeVisible();
     await expect(page.locator('#map-grid canvas, .game-canvas')).toBeVisible();
+    await page.waitForFunction(() => (
+      window.__orbitalRenderer?.ready && (window.__orbitalRenderer.fullImg?.naturalWidth || 0) > 100
+    ), null, { timeout: 15000 });
+    const art = await page.evaluate(() => ({
+      full: window.__orbitalRenderer?.fullImg?.naturalWidth || 0,
+      lander: window.__orbitalRenderer?.landerImg?.naturalWidth || 0,
+      src: window.__orbitalRenderer?.fullImg?.src || '',
+    }));
+    expect(art.full).toBeGreaterThan(100);
+    expect(art.lander).toBeGreaterThan(10);
+    expect(art.src).toMatch(/\/assets\/art\/hirise-board\.jpg$/);
     await page.click('#scout-back');
     await expect(page.locator('#scout-overlay')).toBeHidden();
   });
@@ -665,6 +676,7 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     expect(result.stored.power).toBeGreaterThanOrEqual(50);
     expect(result.win.time).toBeGreaterThan(60);
     expect(result.usedTunnel).toBe(false);
+    console.log(`honest hauler win: ${result.win.time.toFixed(1)}s (${result.stored.ice.toFixed(1)} ice / ${result.stored.iceCap} cap)`);
     await page.evaluate(() => window.__v08Test.syncHud());
     await expect(page.locator('#win-overlay')).toBeVisible();
     await expect(page.locator('#win-logistics')).toContainText('haulers only');
@@ -739,6 +751,7 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     expect(result.stored.ice).toBeGreaterThanOrEqual(60);
     expect(result.stored.ice).toBeLessThanOrEqual(result.stored.iceCap);
     expect(result.win.time).toBeGreaterThan(60);
+    console.log(`honest tunnel win: ${result.win.time.toFixed(1)}s (${result.stored.ice.toFixed(1)} ice / ${result.stored.iceCap} cap)`);
     await page.evaluate(() => window.__v08Test.syncHud());
     await expect(page.locator('#win-overlay')).toBeVisible();
     await expect(page.locator('#win-logistics')).toContainText('tunnel');
