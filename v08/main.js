@@ -245,5 +245,11 @@ window.__v08Test = {
   landCrew: () => game.landCrew(),
   unlockDeepIce: () => game.unlockDeepIce(),
   syncHud: () => hud.sync(),
+  centerOnTile: (tx, ty) => {
+    const { w, h } = renderer.viewSize();
+    const c = game.tileCenter(tx, ty);
+    game.state.camera.x = c.x - (w / game.state.camera.zoom) / 2;
+    game.state.camera.y = c.y - (h / game.state.camera.zoom) / 2;
+  },
   config: C,
 };

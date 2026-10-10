@@ -44,6 +44,7 @@ let tickListener = null;
 let hostedPatchHandler = null;
 let hostedPatchInfo = null;
 let hostOwnsTicks = false;
+let hostedForce2d = false;
 let tickInterval = null;
 let tickRaf = 0;
 let ticksArmed = false;
@@ -571,8 +572,8 @@ function updateLaunchButton() {
 let minimapRenderer = null;
 
 function createBoardRenderer(container, state) {
-  const force2d = typeof location !== 'undefined' &&
-    new URLSearchParams(location.search).get('renderer') === '2d';
+  const force2d = hostedForce2d || (typeof location !== 'undefined' &&
+    new URLSearchParams(location.search).get('renderer') === '2d');
   if (!force2d) {
     try {
       const r = new OrbitalRenderer(container, state);
@@ -2025,11 +2026,16 @@ export function setHostOwnsTicks(on) {
   hostOwnsTicks = !!on;
 }
 
+export function setHostedForce2d(on) {
+  hostedForce2d = !!on;
+}
+
 export async function prepareHostedScout() {
   await Promise.all([loadAssets(), warmupOrbitalArt()]);
   setIncludeNotifyAction(true);
   setSkipOperateOnLaunch(true);
   setHostOwnsTicks(true);
+  setHostedForce2d(true);
   if (!log.currentSession) startNewSession('v08-scout');
 }
 
