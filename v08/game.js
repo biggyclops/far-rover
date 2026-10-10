@@ -175,6 +175,8 @@ export function createGame() {
       printTime: 0,
       printNeeded: 0,
       printing: false,
+      outboundIce: 0,
+      outboundReg: 0,
     };
     state.buildings.push(b);
     occupy(b);
@@ -615,6 +617,10 @@ export function createGame() {
         if (moved.ice > 0 && (dest.type === 'habitat' || dest.type === 'storage')) {
           state.stats.usedHaulers = true;
         }
+        if (dest.type === 'tunnel-hub') {
+          dest.outboundIce = (dest.outboundIce || 0) + moved.ice;
+          dest.outboundReg = (dest.outboundReg || 0) + moved.regolith;
+        }
         const leftover = cargoAmount(unit);
         if (leftover > 0.001) {
           const iceFull = unit.cargo.ice > 0.001 && dest.iceCap > 0 && dest.ice >= dest.iceCap - 1e-6;
@@ -771,11 +777,14 @@ export function createGame() {
   }
 
   function fillVaultsFrom(hub) {
+    const reserved = Math.max(0, hub.outboundIce || 0);
+    let free = Math.max(0, hub.ice - reserved);
     for (const v of vaultsBeside(hub)) {
       const room = Math.max(0, v.iceCap - v.ice);
-      const mv = Math.min(room, hub.ice);
+      const mv = Math.min(room, free);
       v.ice += mv;
       hub.ice -= mv;
+      free -= mv;
     }
   }
 
@@ -799,14 +808,19 @@ export function createGame() {
     if (!tunnelReady()) return;
     const dest = otherHub(hub);
     if (!dest) return;
+    const wantIce = hub.outboundIce || 0;
+    const wantReg = hub.outboundReg || 0;
+    if (wantIce <= 1e-6 && wantReg <= 1e-6) return;
     const iceRoom = iceRoomAtHub(dest);
     const regRoom = Math.max(0, dest.regolithCap - dest.regolith);
-    if (hub.ice < iceRoom) pullVaultsTo(hub, iceRoom - hub.ice);
-    const ice = Math.min(hub.ice, iceRoom);
-    const reg = Math.min(hub.regolith, regRoom);
+    if (hub.ice < wantIce) pullVaultsTo(hub, wantIce - hub.ice);
+    const ice = Math.min(hub.ice, wantIce, iceRoom);
+    const reg = Math.min(hub.regolith, wantReg, regRoom);
     if (ice <= 1e-6 && reg <= 1e-6) return;
     hub.ice -= ice;
     hub.regolith -= reg;
+    hub.outboundIce = Math.max(0, wantIce - ice);
+    hub.outboundReg = Math.max(0, wantReg - reg);
     state.tunnel.packets.push({
       ice,
       regolith: reg,
@@ -839,6 +853,9 @@ export function createGame() {
     for (const hub of completeHubs()) fillVaultsFrom(hub);
     for (const hub of completeHubs()) sendFromHub(hub);
     for (const hub of completeHubs()) fillVaultsFrom(hub);
+    for (const hub of completeHubs()) {
+      if (hub.ice <= 1e-6) pullVaultsTo(hub, hub.iceCap);
+    }
   }
 
   function updateBuildings(dt) {
@@ -1071,11 +1088,15 @@ export function createGame() {
     if (!b) return null;
     if (amounts.ice) {
       const room = Math.max(0, b.iceCap - b.ice);
-      b.ice += Math.min(room, amounts.ice);
+      const add = Math.min(room, amounts.ice);
+      b.ice += add;
+      if (b.type === 'tunnel-hub') b.outboundIce = (b.outboundIce || 0) + add;
     }
     if (amounts.regolith) {
       const room = Math.max(0, b.regolithCap - b.regolith);
-      b.regolith += Math.min(room, amounts.regolith);
+      const add = Math.min(room, amounts.regolith);
+      b.regolith += add;
+      if (b.type === 'tunnel-hub') b.outboundReg = (b.outboundReg || 0) + add;
     }
     fillVaultsFrom(b);
     return { ice: b.ice, regolith: b.regolith };
