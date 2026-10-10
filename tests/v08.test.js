@@ -618,7 +618,10 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       t.selectUnits(s0.units.map((u) => u.id));
       const storage = t.placeBuilding('storage', 22, 21);
       if (!storage) return { error: 'storage place failed' };
-      t.advance(11);
+      for (let i = 0; i < 40; i++) {
+        t.advance(1);
+        if (t.getState().buildings.find((b) => b.id === storage.id)?.complete) break;
+      }
       t.launchProgram(prog.sensors, prog.rules);
       let unlocked = false;
       for (let i = 0; i < 80; i++) {
@@ -675,15 +678,22 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       const t = window.__v08Test;
       const s0 = t.getState();
       t.selectUnits(s0.units.map((u) => u.id));
+      function waitDone(id) {
+        for (let i = 0; i < 50; i++) {
+          t.advance(1);
+          if (t.getState().buildings.find((b) => b.id === id)?.complete) return true;
+        }
+        return false;
+      }
       const homeHub = t.placeBuilding('tunnel-hub', 14, 21);
       if (!homeHub) return { error: 'home hub place failed' };
-      t.advance(11);
+      if (!waitDone(homeHub.id)) return { error: 'home hub not complete' };
       const farHub = t.placeBuilding('tunnel-hub', 28, 21);
       if (!farHub) return { error: 'far hub place failed' };
-      t.advance(11);
+      if (!waitDone(farHub.id)) return { error: 'far hub not complete' };
       const vault = t.placeBuilding('vault', 11, 21);
       if (!vault) return { error: 'vault place failed' };
-      t.advance(11);
+      if (!waitDone(vault.id)) return { error: 'vault not complete' };
       const tiles = t.startDigCorridor();
       t.issueOrder({ type: 'dig' });
       for (let i = 0; i < 120; i++) {
