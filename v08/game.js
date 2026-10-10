@@ -53,12 +53,27 @@ function chebyshevToBuilding(tx, ty, b) {
   return Math.max(dx, dy);
 }
 
+function minChebyshevBetween(type, tx, ty, b) {
+  const n = buildingFootprint(type);
+  let best = Infinity;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      best = Math.min(best, chebyshevToBuilding(tx + x, ty + y, b));
+    }
+  }
+  return best;
+}
+
 function isPlainGround(tile) {
   return tile && tile.type === TILE.GROUND;
 }
 
 function isBlockedForBuild(tile) {
   return !tile || tile.type !== TILE.GROUND || tile.buildingId || tile.craterM;
+}
+
+function emptyTunnel() {
+  return { tiles: [], packets: [] };
 }
 
 export function createGame() {
@@ -75,11 +90,16 @@ export function createGame() {
     boxSelect: null,
     buildGhost: null,
     haulPick: null,
+    digPick: null,
     armedOrder: null,
+    view: 'surface',
+    toast: null,
+    tunnel: emptyTunnel(),
+    digging: false,
     camera: { x: 0, y: 0, zoom: C.defaultZoom },
     events: [],
     muted: false,
-    stats: { notifies: 0, patches: 0, usedTunnel: false, usedHaulers: true },
+    stats: { notifies: 0, patches: 0, usedTunnel: false, usedHaulers: false },
   };
 
   function id() {
@@ -94,6 +114,11 @@ export function createGame() {
     const ev = state.events;
     state.events = [];
     return ev;
+  }
+
+  function toast(text) {
+    state.toast = { text, ttl: C.warningToastSeconds };
+    emit('warning', { text });
   }
 
   function makeTiles() {
@@ -167,9 +192,20 @@ export function createGame() {
       cargo: { ice: 0, regolith: 0 },
       order: null,
       lastOrder: null,
+      status: 'idle',
+      blockedReason: null,
     };
     state.units.push(u);
     return u;
+  }
+
+  function packetTotals() {
+    let ice = 0, regolith = 0;
+    for (const p of state.tunnel.packets) {
+      ice += p.ice;
+      regolith += p.regolith;
+    }
+    return { ice, regolith };
   }
 
   function totals() {
@@ -184,6 +220,9 @@ export function createGame() {
       regolithCap += b.regolithCap;
       powerCap += b.powerCap;
     }
+    const pkt = packetTotals();
+    ice += pkt.ice;
+    regolith += pkt.regolith;
     return { ice, regolith, power, iceCap, regolithCap, powerCap };
   }
 
@@ -223,6 +262,19 @@ export function createGame() {
     }
   }
 
+  function addRegolith(amount) {
+    let left = amount;
+    for (const b of state.buildings) {
+      if (!b.complete || b.regolithCap <= 0) continue;
+      const room = b.regolithCap - b.regolith;
+      const add = Math.min(room, left);
+      b.regolith += add;
+      left -= add;
+      if (left <= 0) return left;
+    }
+    return left;
+  }
+
   function deposit(unit, dest) {
     const iceRoom = Math.max(0, dest.iceCap - dest.ice);
     const regRoom = Math.max(0, dest.regolithCap - dest.regolith);
@@ -232,7 +284,25 @@ export function createGame() {
     dest.regolith += reg;
     unit.cargo.ice -= ice;
     unit.cargo.regolith -= reg;
-    return ice + reg;
+    return { ice, regolith: reg, total: ice + reg };
+  }
+
+  function hubs() {
+    return state.buildings.filter((b) => b.type === 'tunnel-hub');
+  }
+
+  function completeHubs() {
+    return hubs().filter((b) => b.complete);
+  }
+
+  function vaultsBeside(hub) {
+    return state.buildings.filter((b) => (
+      b.type === 'vault' && b.complete && minChebyshevBetween('vault', b.tx, b.ty, hub) === 1
+    ));
+  }
+
+  function hubBesideVault(type, tx, ty) {
+    return hubs().some((h) => minChebyshevBetween(type, tx, ty, h) === 1);
   }
 
   function canPlace(type, tx, ty) {
@@ -243,6 +313,8 @@ export function createGame() {
         if (isBlockedForBuild(tileAt(tx + x, ty + y))) return false;
       }
     }
+    if (type === 'tunnel-hub' && hubs().length >= C.tunnelHubCount) return false;
+    if (type === 'vault' && !hubBesideVault(type, tx, ty)) return false;
     return true;
   }
 
@@ -333,6 +405,10 @@ export function createGame() {
     return Math.hypot(unit.x - c.x, unit.y - c.y) < C.tileSize * 0.4;
   }
 
+  function currentDigTile() {
+    return state.tunnel.tiles.find((t) => !t.done) || null;
+  }
+
   function canRepeat(order) {
     if (!order) return false;
     if (order.type === 'mine') {
@@ -351,6 +427,7 @@ export function createGame() {
       const b = buildingById(order.buildingId);
       return b && !b.complete;
     }
+    if (order.type === 'dig') return !!currentDigTile();
     return true;
   }
 
@@ -374,6 +451,8 @@ export function createGame() {
     for (const u of units) {
       u.order = resetOrder(order);
       u.lastOrder = cloneOrder(u.order);
+      u.blockedReason = null;
+      u.status = order.type;
     }
     if (marker) setOrderMarker(marker.x, marker.y);
     emit('order');
@@ -403,15 +482,37 @@ export function createGame() {
     return 'gone';
   }
 
+  function refreshUnitStatus(unit) {
+    if (unit.blockedReason) {
+      unit.status = 'blocked';
+      return;
+    }
+    if (!unit.order) {
+      unit.status = 'idle';
+      return;
+    }
+    unit.status = unit.order.type;
+  }
+
+  function unitLabel(unit) {
+    if (unit.status === 'blocked') return unit.blockedReason || 'Blocked';
+    if (unit.status === 'idle') return 'Idle';
+    return '';
+  }
+
   function updateUnit(unit, dt) {
-    if (!unit.order && unit.lastOrder && canRepeat(unit.lastOrder)) {
+    if (!unit.order && unit.lastOrder && canRepeat(unit.lastOrder) && !unit.blockedReason) {
       unit.order = resetOrder(unit.lastOrder);
     }
     const order = unit.order;
-    if (!order) return;
+    if (!order) {
+      refreshUnitStatus(unit);
+      return;
+    }
 
     if (order.type === 'go') {
       if (moveToward(unit, order.x, order.y, dt) === 'arrived') finishOrder(unit);
+      refreshUnitStatus(unit);
       return;
     }
 
@@ -419,23 +520,27 @@ export function createGame() {
       const c = tileCenter(order.tx, order.ty);
       if (!closeToTile(unit, order.tx, order.ty)) {
         moveToward(unit, c.x, c.y, dt);
+        refreshUnitStatus(unit);
         return;
       }
       const r = mineTick(unit, order.tx, order.ty, dt);
       if (r === 'gone') finishOrder(unit);
+      refreshUnitStatus(unit);
       return;
     }
 
     if (order.type === 'charge') {
       const b = buildingById(order.buildingId) || habitat();
-      if (!b) { finishOrder(unit); return; }
+      if (!b) { finishOrder(unit); refreshUnitStatus(unit); return; }
       if (!canChargeAt(unit, b)) {
         const spot = chargeSpot(b);
         moveToward(unit, spot.x, spot.y, dt);
+        refreshUnitStatus(unit);
         return;
       }
       if (unit.battery >= C.haulerBattery - 0.01) {
         finishOrder(unit);
+        refreshUnitStatus(unit);
         return;
       }
       const room = C.haulerBattery - unit.battery;
@@ -445,35 +550,56 @@ export function createGame() {
         spendPower(amt);
         unit.battery += amt;
       }
+      refreshUnitStatus(unit);
       return;
     }
 
     if (order.type === 'build') {
       const b = buildingById(order.buildingId);
-      if (!b || b.complete) { finishOrder(unit); return; }
+      if (!b || b.complete) { finishOrder(unit); refreshUnitStatus(unit); return; }
       const spot = tileCenter(b.tx, b.ty + buildingFootprint(b.type) - 0.5);
       if (Math.hypot(unit.x - spot.x, unit.y - spot.y) > C.tileSize * 0.7) {
         moveToward(unit, spot.x, spot.y, dt);
+        refreshUnitStatus(unit);
         return;
       }
       b._builders = (b._builders || 0) + 1;
+      refreshUnitStatus(unit);
+      return;
+    }
+
+    if (order.type === 'dig') {
+      const tile = currentDigTile();
+      if (!tile) { finishOrder(unit); refreshUnitStatus(unit); return; }
+      const c = tileCenter(tile.tx, tile.ty);
+      if (!closeToTile(unit, tile.tx, tile.ty)) {
+        moveToward(unit, c.x, c.y, dt);
+        refreshUnitStatus(unit);
+        return;
+      }
+      tile.diggers = (tile.diggers || 0) + 1;
+      unit._digging = true;
+      state.digging = true;
+      refreshUnitStatus(unit);
       return;
     }
 
     if (order.type === 'haul') {
       const src = tileCenter(order.sourceTx, order.sourceTy);
       const dest = buildingById(order.destBuildingId) || nearestDrop(order.sourceTx, order.sourceTy);
-      if (!dest) { finishOrder(unit); return; }
+      if (!dest) { finishOrder(unit); refreshUnitStatus(unit); return; }
       if (!order.phase) order.phase = 'toSource';
       if (order.phase === 'toSource') {
         if (moveToward(unit, src.x, src.y, dt) === 'arrived' || closeToTile(unit, order.sourceTx, order.sourceTy)) {
           order.phase = 'mine';
         }
+        refreshUnitStatus(unit);
         return;
       }
       if (order.phase === 'mine') {
         const r = mineTick(unit, order.sourceTx, order.sourceTy, dt);
         if (r === 'full' || r === 'gone') order.phase = 'toDest';
+        refreshUnitStatus(unit);
         return;
       }
       if (order.phase === 'toDest') {
@@ -481,10 +607,27 @@ export function createGame() {
         if (moveToward(unit, spot.x, spot.y, dt) === 'arrived' || chebyshevToBuilding(worldToTile(unit.x, unit.y).tx, worldToTile(unit.x, unit.y).ty, dest) <= 1) {
           order.phase = 'unload';
         }
+        refreshUnitStatus(unit);
         return;
       }
       if (order.phase === 'unload') {
-        deposit(unit, dest);
+        const moved = deposit(unit, dest);
+        if (moved.ice > 0 && (dest.type === 'habitat' || dest.type === 'storage')) {
+          state.stats.usedHaulers = true;
+        }
+        const leftover = cargoAmount(unit);
+        if (leftover > 0.001) {
+          const iceFull = unit.cargo.ice > 0.001 && dest.iceCap > 0 && dest.ice >= dest.iceCap - 1e-6;
+          const blocked = iceFull || moved.total <= 1e-6;
+          if (blocked) {
+            const reason = iceFull ? 'Ice storage full' : 'Storage full';
+            if (unit.blockedReason !== reason) toast(reason);
+            unit.blockedReason = reason;
+            refreshUnitStatus(unit);
+            return;
+          }
+        }
+        unit.blockedReason = null;
         const t = tileAt(order.sourceTx, order.sourceTy);
         const empty = t && t.type === TILE.ICE && t.iceRemaining <= 0;
         if (empty) {
@@ -495,6 +638,207 @@ export function createGame() {
         }
       }
     }
+    refreshUnitStatus(unit);
+  }
+
+  function axisTiles(tx0, ty0, tx1, ty1) {
+    let ax = tx0, ay = ty0, bx = tx1, by = ty1;
+    if (Math.abs(bx - ax) >= Math.abs(by - ay)) by = ay;
+    else bx = ax;
+    const kind = ax === bx ? 'v' : 'h';
+    const dx = Math.sign(bx - ax);
+    const dy = Math.sign(by - ay);
+    const tiles = [];
+    let x = ax, y = ay;
+    for (let i = 0; i < C.mapWidth + C.mapHeight; i++) {
+      const t = tileAt(x, y);
+      if (t && !t.buildingId) {
+        tiles.push({
+          tx: x,
+          ty: y,
+          progress: 0,
+          done: false,
+          started: false,
+          kind,
+          diggers: 0,
+        });
+      }
+      if (x === bx && y === by) break;
+      if (!dx && !dy) break;
+      x += dx;
+      y += dy;
+    }
+    return tiles;
+  }
+
+  function corridorBetweenHubs() {
+    const pair = hubs();
+    if (pair.length !== 2) return null;
+    const [a, b] = pair;
+    const aY0 = a.ty, aY1 = a.ty + buildingFootprint(a.type) - 1;
+    const bY0 = b.ty, bY1 = b.ty + buildingFootprint(b.type) - 1;
+    const yLo = Math.max(aY0, bY0);
+    const yHi = Math.min(aY1, bY1);
+    if (yLo <= yHi) {
+      const y = yLo;
+      const aX1 = a.tx + buildingFootprint(a.type) - 1;
+      const bX1 = b.tx + buildingFootprint(b.type) - 1;
+      let x0, x1;
+      if (aX1 < b.tx) { x0 = aX1 + 1; x1 = b.tx - 1; }
+      else if (bX1 < a.tx) { x0 = bX1 + 1; x1 = a.tx - 1; }
+      else return [];
+      if (x0 > x1) return [];
+      return axisTiles(x0, y, x1, y);
+    }
+    const aX0 = a.tx, aX1 = a.tx + buildingFootprint(a.type) - 1;
+    const bX0 = b.tx, bX1b = b.tx + buildingFootprint(b.type) - 1;
+    const xLo = Math.max(aX0, bX0);
+    const xHi = Math.min(aX1, bX1b);
+    if (xLo <= xHi) {
+      const x = xLo;
+      const aY1b = a.ty + buildingFootprint(a.type) - 1;
+      const bY1b = b.ty + buildingFootprint(b.type) - 1;
+      let y0, y1;
+      if (aY1b < b.ty) { y0 = aY1b + 1; y1 = b.ty - 1; }
+      else if (bY1b < a.ty) { y0 = bY1b + 1; y1 = a.ty - 1; }
+      else return [];
+      if (y0 > y1) return [];
+      return axisTiles(x, y0, x, y1);
+    }
+    return null;
+  }
+
+  function startDigLine(tx0, ty0, tx1, ty1) {
+    const tiles = axisTiles(tx0, ty0, tx1, ty1);
+    state.tunnel = { tiles, packets: state.tunnel.packets };
+    return tiles;
+  }
+
+  function startDigCorridor() {
+    const tiles = corridorBetweenHubs();
+    if (!tiles || !tiles.length) return null;
+    state.tunnel = { tiles, packets: state.tunnel.packets };
+    return tiles;
+  }
+
+  function updateDigTiles(dt) {
+    for (const tile of state.tunnel.tiles) {
+      if (tile.done) {
+        tile.diggers = 0;
+        continue;
+      }
+      if ((tile.diggers || 0) > 0) {
+        if (!tile.started) {
+          if (totals().power + 1e-6 < C.digPowerPerTile || !spendPower(C.digPowerPerTile)) {
+            for (const u of state.units) {
+              if (u._digging) {
+                u.blockedReason = 'Need power';
+                refreshUnitStatus(u);
+              }
+            }
+            tile.diggers = 0;
+            continue;
+          }
+          tile.started = true;
+        }
+        tile.progress += (tile.diggers * dt) / C.digSecondsPerTilePerRover;
+        if (tile.progress >= 1) {
+          tile.progress = 1;
+          tile.done = true;
+          addRegolith(C.digRegolithYieldPerTile);
+        }
+      }
+      tile.diggers = 0;
+    }
+  }
+
+  function hubTouchesTunnel(hub) {
+    return state.tunnel.tiles.some((t) => t.done && chebyshevToBuilding(t.tx, t.ty, hub) <= 1);
+  }
+
+  function tunnelReady() {
+    const ready = completeHubs();
+    if (ready.length < 2) return false;
+    const tiles = state.tunnel.tiles;
+    if (!tiles.length || tiles.some((t) => !t.done)) return false;
+    return ready.every((h) => hubTouchesTunnel(h));
+  }
+
+  function iceRoomAtHub(hub) {
+    let room = Math.max(0, hub.iceCap - hub.ice);
+    for (const v of vaultsBeside(hub)) room += Math.max(0, v.iceCap - v.ice);
+    return room;
+  }
+
+  function fillVaultsFrom(hub) {
+    for (const v of vaultsBeside(hub)) {
+      const room = Math.max(0, v.iceCap - v.ice);
+      const mv = Math.min(room, hub.ice);
+      v.ice += mv;
+      hub.ice -= mv;
+    }
+  }
+
+  function pullVaultsTo(hub, amount) {
+    let need = Math.max(0, amount);
+    for (const v of vaultsBeside(hub)) {
+      if (need <= 0) break;
+      const room = Math.max(0, hub.iceCap - hub.ice);
+      const mv = Math.min(need, v.ice, room);
+      v.ice -= mv;
+      hub.ice += mv;
+      need -= mv;
+    }
+  }
+
+  function otherHub(hub) {
+    return completeHubs().find((h) => h.id !== hub.id) || null;
+  }
+
+  function sendFromHub(hub) {
+    if (!tunnelReady()) return;
+    const dest = otherHub(hub);
+    if (!dest) return;
+    const iceRoom = iceRoomAtHub(dest);
+    const regRoom = Math.max(0, dest.regolithCap - dest.regolith);
+    if (hub.ice < iceRoom) pullVaultsTo(hub, iceRoom - hub.ice);
+    const ice = Math.min(hub.ice, iceRoom);
+    const reg = Math.min(hub.regolith, regRoom);
+    if (ice <= 1e-6 && reg <= 1e-6) return;
+    hub.ice -= ice;
+    hub.regolith -= reg;
+    state.tunnel.packets.push({
+      ice,
+      regolith: reg,
+      fromId: hub.id,
+      toId: dest.id,
+      traveled: 0,
+      length: Math.max(state.tunnel.tiles.length, 0.001),
+    });
+  }
+
+  function deliverPacket(p) {
+    const dest = buildingById(p.toId);
+    if (!dest) return;
+    dest.ice += p.ice;
+    dest.regolith += p.regolith;
+    fillVaultsFrom(dest);
+    if (dest.ice > dest.iceCap) dest.ice = dest.iceCap;
+    if (dest.regolith > dest.regolithCap) dest.regolith = dest.regolithCap;
+    if (p.ice > 0 || p.regolith > 0) state.stats.usedTunnel = true;
+  }
+
+  function updateCargo(dt) {
+    const keep = [];
+    for (const p of state.tunnel.packets) {
+      p.traveled += C.tunnelCargoTilesPerSecond * dt;
+      if (p.traveled + 1e-6 >= p.length) deliverPacket(p);
+      else keep.push(p);
+    }
+    state.tunnel.packets = keep;
+    for (const hub of completeHubs()) fillVaultsFrom(hub);
+    for (const hub of completeHubs()) sendFromHub(hub);
+    for (const hub of completeHubs()) fillVaultsFrom(hub);
   }
 
   function updateBuildings(dt) {
@@ -525,13 +869,21 @@ export function createGame() {
 
   function update(dt) {
     if (dt <= 0) return;
+    state.digging = false;
+    for (const u of state.units) u._digging = false;
     addPower(solarOutputPerSecond() * dt);
     for (const u of state.units) updateUnit(u, dt);
+    updateDigTiles(dt);
     updateBuildings(dt);
+    updateCargo(dt);
     state.time += dt;
     if (state.orderMarker) {
       state.orderMarker.t += dt;
       if (state.orderMarker.t > 2.4) state.orderMarker = null;
+    }
+    if (state.toast) {
+      state.toast.ttl -= dt;
+      if (state.toast.ttl <= 0) state.toast = null;
     }
   }
 
@@ -556,7 +908,7 @@ export function createGame() {
     if (bid) emit('select');
   }
 
-  function unitAtWorld(x, y, radius = 22) {
+  function unitAtWorld(x, y, radius = C.unitClickRadius) {
     let best = null;
     let bestD = radius;
     for (const u of state.units) {
@@ -581,6 +933,26 @@ export function createGame() {
     const { tx, ty } = worldToTile(x, y);
     const tile = tileAt(tx, ty);
     const b = buildingAtTile(tx, ty);
+
+    if (state.armedOrder === 'dig' || state.digPick) {
+      if (!state.digPick) {
+        const corridor = corridorBetweenHubs();
+        if (corridor && corridor.length) {
+          state.tunnel = { tiles: corridor, packets: state.tunnel.packets };
+          const mark = tileCenter(corridor[0].tx, corridor[0].ty);
+          assignOrder(units, { type: 'dig' }, mark);
+          state.armedOrder = null;
+          return true;
+        }
+        state.digPick = { tx, ty };
+        return true;
+      }
+      startDigLine(state.digPick.tx, state.digPick.ty, tx, ty);
+      assignOrder(units, { type: 'dig' }, tileCenter(tx, ty));
+      state.digPick = null;
+      state.armedOrder = null;
+      return true;
+    }
 
     if (state.armedOrder === 'haul' || state.haulPick) {
       if (!state.haulPick) {
@@ -635,6 +1007,8 @@ export function createGame() {
       solar: { reg: C.rimSolarCostRegolith, time: C.rimSolarBuildSeconds, iceCap: 0, regCap: 0, powerCap: 0 },
       storage: { reg: C.storageCostRegolith, time: C.storageBuildSeconds, iceCap: C.storageIceCapacity, regCap: C.storageRegolithCapacity, powerCap: 0 },
       printer: { reg: C.printerCostRegolith, time: C.printerBuildSeconds, iceCap: 0, regCap: 0, powerCap: 0 },
+      'tunnel-hub': { reg: C.tunnelHubCostRegolith, time: C.tunnelHubBuildSeconds, iceCap: C.hubIceCapacity, regCap: C.hubRegolithCapacity, powerCap: 0 },
+      vault: { reg: C.vaultCostRegolith, time: C.vaultBuildSeconds, iceCap: C.vaultIceCapacity, regCap: 0, powerCap: 0 },
     };
     const spec = costs[type];
     if (!spec) return null;
@@ -668,6 +1042,51 @@ export function createGame() {
     p.printTime = 0;
     p.printNeeded = C.printerHaulerSeconds;
     return true;
+  }
+
+  function toggleView() {
+    state.view = state.view === 'surface' ? 'underground' : 'surface';
+    return state.view;
+  }
+
+  function setView(view) {
+    state.view = view === 'underground' ? 'underground' : 'surface';
+    return state.view;
+  }
+
+  function isDigging() {
+    return !!state.digging;
+  }
+
+  function completeBuilding(bid) {
+    const b = buildingById(bid);
+    if (!b) return null;
+    b.complete = true;
+    b.buildTime = b.buildNeeded;
+    return b;
+  }
+
+  function depositToBuilding(bid, amounts = {}) {
+    const b = buildingById(bid);
+    if (!b) return null;
+    if (amounts.ice) {
+      const room = Math.max(0, b.iceCap - b.ice);
+      b.ice += Math.min(room, amounts.ice);
+    }
+    if (amounts.regolith) {
+      const room = Math.max(0, b.regolithCap - b.regolith);
+      b.regolith += Math.min(room, amounts.regolith);
+    }
+    fillVaultsFrom(b);
+    return { ice: b.ice, regolith: b.regolith };
+  }
+
+  function markTunnelDone() {
+    for (const t of state.tunnel.tiles) {
+      t.done = true;
+      t.progress = 1;
+      t.started = true;
+    }
   }
 
   function bootstrap() {
@@ -742,5 +1161,17 @@ export function createGame() {
     tilesOfBuilding,
     chebyshevToBuilding,
     cargoAmount,
+    startDigLine,
+    startDigCorridor,
+    toggleView,
+    setView,
+    isDigging,
+    completeBuilding,
+    depositToBuilding,
+    markTunnelDone,
+    unitLabel,
+    corridorBetweenHubs,
+    tunnelReady,
+    buildingFootprint,
   };
 }

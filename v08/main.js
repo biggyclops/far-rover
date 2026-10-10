@@ -30,6 +30,7 @@ function frame(now) {
   pumpPan(raw);
   const dt = raw * game.state.speed;
   if (dt > 0) game.update(dt);
+  audio.setDigLoop(game.isDigging());
   for (const ev of game.flushEvents()) {
     if (ev.type === 'select') audio.play(C.sfxSelect);
     if (ev.type === 'order') audio.play(C.sfxOrder);
@@ -67,6 +68,8 @@ function serialize() {
       order: u.order ? u.order.type : null,
       lastOrder: u.lastOrder ? u.lastOrder.type : null,
       phase: u.order?.phase || null,
+      status: u.status,
+      label: game.unitLabel(u),
     })),
     buildings: game.state.buildings.map((b) => ({
       id: b.id,
@@ -77,10 +80,30 @@ function serialize() {
       buildTime: b.buildTime,
       printing: b.printing,
       printTime: b.printTime,
+      ice: b.ice,
+      iceCap: b.iceCap,
+      regolith: b.regolith,
     })),
     iceTile: {
       type: game.tileAt(C.shallowIceTileX, C.shallowIceTileY).type,
       remaining: game.tileAt(C.shallowIceTileX, C.shallowIceTileY).iceRemaining,
+    },
+    view: game.state.view,
+    zoom: game.state.camera.zoom,
+    toast: game.state.toast ? game.state.toast.text : null,
+    digging: game.isDigging(),
+    stats: { ...game.state.stats },
+    tunnel: {
+      tiles: game.state.tunnel.tiles.map((t) => ({
+        tx: t.tx,
+        ty: t.ty,
+        progress: t.progress,
+        done: t.done,
+        started: t.started,
+        kind: t.kind,
+      })),
+      packets: game.state.tunnel.packets.map((p) => ({ ...p })),
+      ready: game.tunnelReady(),
     },
   };
 }
@@ -145,5 +168,16 @@ window.__v08Test = {
     return clientPosForWorld((b.tx + 1) * C.tileSize, (b.ty + 1) * C.tileSize);
   },
   setMuted: (m) => { game.state.muted = m; audio.setMuted(m); },
+  startDigLine: (tx0, ty0, tx1, ty1) => game.startDigLine(tx0, ty0, tx1, ty1),
+  startDigCorridor: () => game.startDigCorridor(),
+  completeBuilding: (id) => game.completeBuilding(id),
+  depositToBuilding: (id, amounts) => game.depositToBuilding(id, amounts),
+  markTunnelDone: () => game.markTunnelDone(),
+  setView: (view) => game.setView(view),
+  toggleView: () => game.toggleView(),
+  setUnitPos: (id, x, y) => {
+    const u = game.unitById(id);
+    if (u) { u.x = x; u.y = y; }
+  },
   config: C,
 };

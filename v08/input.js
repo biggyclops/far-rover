@@ -92,7 +92,7 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
       game.state.boxSelect = null;
     } else {
       const w = renderer.screenToWorld(p.x, p.y);
-      const unit = game.unitAtWorld(w.x, w.y, 26);
+      const unit = game.unitAtWorld(w.x, w.y, C.unitClickRadius);
       if (unit) {
         game.selectUnits([unit.id], additive);
         hooks.onSelect?.();
@@ -127,7 +127,7 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
     const cam = game.state.camera;
     const p = cssPos(ev);
     const before = renderer.screenToWorld(p.x, p.y);
-    cam.zoom = Math.max(0.5, Math.min(1.75, cam.zoom * (ev.deltaY > 0 ? 0.92 : 1.08)));
+    cam.zoom = Math.max(C.minZoom, Math.min(C.maxZoom, cam.zoom * (ev.deltaY > 0 ? 0.92 : 1.08)));
     const after = renderer.screenToWorld(p.x, p.y);
     cam.x += before.x - after.x;
     cam.y += before.y - after.y;
@@ -142,10 +142,15 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
     if (ev.key === '1') game.state.speed = 1;
     if (ev.key === '4') game.state.speed = 4;
     if (ev.key === '6') game.state.speed = 16;
+    if (ev.key === 'Tab') {
+      ev.preventDefault();
+      game.toggleView();
+    }
     if (ev.key === 'Escape') {
       game.state.buildGhost = null;
       game.state.armedOrder = null;
       game.state.haulPick = null;
+      game.state.digPick = null;
     }
   });
   window.addEventListener('keyup', (ev) => keys.delete(ev.key.toLowerCase()));

@@ -34,6 +34,7 @@
         <button id="speed-1" type="button" class="active">1×</button>
         <button id="speed-4" type="button">4×</button>
         <button id="speed-16" type="button">16×</button>
+        <button id="view-toggle" type="button">Underground</button>
         <button id="mute-btn" type="button">Mute</button>
       </div>
     </header>
@@ -46,16 +47,20 @@
         <button id="order-mine" type="button">Mine</button>
         <button id="order-haul" type="button">Haul</button>
         <button id="order-charge" type="button">Charge</button>
+        <button id="order-dig" type="button">Dig</button>
       </div>
       <div class="builds">
         <button id="build-solar" type="button">Rim solar <small>30 reg · 10s</small></button>
         <button id="build-storage" type="button">Storage <small>30 reg · 10s</small></button>
         <button id="build-printer" type="button">Printer <small>40 reg · 15s</small></button>
+        <button id="build-hub" type="button">Tunnel hub <small>20 reg · 10s</small></button>
+        <button id="build-vault" type="button">Vault <small>40 reg · 10s</small></button>
         <button id="print-hauler" type="button">Print hauler <small>25 reg · 10 pwr · 20s</small></button>
       </div>
       <div id="sel-info">Click a hauler · drag a box · right-click an order</div>
     </footer>
   </div>
+  <div id="toast" role="status" aria-live="polite"></div>
   <script type="module" src="main.js"></script>
 </body>
 </html>

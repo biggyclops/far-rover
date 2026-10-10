@@ -221,3 +221,203 @@ test.describe('Far Rover v0.8 M1', () => {
     expect(muted).toBe(true);
   });
 });
+
+test.describe('Far Rover v0.8 M2', () => {
+  test('default zoom makes a hauler easy to click', async ({ page }) => {
+    await ready(page);
+    const info = await page.evaluate(() => {
+      const s = window.__v08Test.getState();
+      const C = window.__v08Test.config;
+      const pos = window.__v08Test.unitClientPos(s.units[0].id);
+      return {
+        zoom: s.zoom,
+        spritePx: C.tileSize * s.zoom,
+        clickPx: C.unitClickRadius * s.zoom,
+        pos,
+      };
+    });
+    expect(info.zoom).toBeGreaterThanOrEqual(1);
+    expect(info.spritePx).toBeGreaterThanOrEqual(64);
+    expect(info.clickPx).toBeGreaterThanOrEqual(32);
+  });
+
+  test('tunnel hub builds for 20 regolith in 10 s', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      const s0 = window.__v08Test.getState();
+      window.__v08Test.selectUnits([s0.units[0].id]);
+      const b = window.__v08Test.placeBuilding('tunnel-hub', 14, 21);
+      window.__v08Test.advance(16);
+      const after = window.__v08Test.getState();
+      const built = after.buildings.find((x) => x.id === b.id);
+      return {
+        placed: !!b,
+        complete: built.complete,
+        type: built.type,
+        regSpent: s0.regolith - after.regolith,
+        buildNeeded: window.__v08Test.config.tunnelHubBuildSeconds,
+      };
+    });
+    expect(result.placed).toBe(true);
+    expect(result.complete).toBe(true);
+    expect(result.type).toBe('tunnel-hub');
+    expect(result.regSpent).toBe(20);
+    expect(result.buildNeeded).toBe(10);
+  });
+
+  test('one rover digs a tile in 6 s; two dig twice as fast', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      const C = window.__v08Test.config;
+      const s0 = window.__v08Test.getState();
+      const center = (tx, ty) => ({
+        x: (tx + 0.5) * C.tileSize,
+        y: (ty + 0.5) * C.tileSize,
+      });
+      const spot = center(10, 10);
+
+      window.__v08Test.startDigLine(10, 10, 10, 10);
+      window.__v08Test.setUnitPos(s0.units[0].id, spot.x, spot.y);
+      window.__v08Test.selectUnits([s0.units[0].id]);
+      window.__v08Test.issueOrder({ type: 'dig' });
+      window.__v08Test.advance(5.5);
+      const oneEarly = window.__v08Test.getState().tunnel.tiles[0];
+      window.__v08Test.advance(0.7);
+      const oneDone = window.__v08Test.getState().tunnel.tiles[0];
+
+      window.__v08Test.startDigLine(11, 10, 11, 10);
+      const spot2 = center(11, 10);
+      window.__v08Test.setUnitPos(s0.units[0].id, spot2.x, spot2.y);
+      window.__v08Test.setUnitPos(s0.units[1].id, spot2.x, spot2.y);
+      window.__v08Test.selectUnits([s0.units[0].id, s0.units[1].id]);
+      window.__v08Test.issueOrder({ type: 'dig' });
+      window.__v08Test.advance(2.8);
+      const twoEarly = window.__v08Test.getState().tunnel.tiles[0];
+      window.__v08Test.advance(0.5);
+      const twoDone = window.__v08Test.getState().tunnel.tiles[0];
+
+      return {
+        oneEarly: oneEarly.done,
+        oneEarlyProgress: oneEarly.progress,
+        oneDone: oneDone.done,
+        twoEarly: twoEarly.done,
+        twoEarlyProgress: twoEarly.progress,
+        twoDone: twoDone.done,
+      };
+    });
+    expect(result.oneEarly).toBe(false);
+    expect(result.oneEarlyProgress).toBeGreaterThan(0.8);
+    expect(result.oneDone).toBe(true);
+    expect(result.twoEarly).toBe(false);
+    expect(result.twoEarlyProgress).toBeGreaterThan(0.8);
+    expect(result.twoDone).toBe(true);
+  });
+
+  test('cargo travels hub to hub at 4 tiles/s', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      const s0 = window.__v08Test.getState();
+      window.__v08Test.selectUnits([s0.units[0].id]);
+      const a = window.__v08Test.placeBuilding('tunnel-hub', 14, 21);
+      const b = window.__v08Test.placeBuilding('tunnel-hub', 22, 21);
+      window.__v08Test.completeBuilding(a.id);
+      window.__v08Test.completeBuilding(b.id);
+      const tiles = window.__v08Test.startDigCorridor();
+      window.__v08Test.markTunnelDone();
+      window.__v08Test.depositToBuilding(a.id, { ice: 8 });
+      window.__v08Test.advance(0.05);
+      const spawned = window.__v08Test.getState();
+      const n = tiles.length;
+      const transit = n / window.__v08Test.config.tunnelCargoTilesPerSecond;
+      window.__v08Test.advance(transit - 0.35);
+      const mid = window.__v08Test.getState();
+      window.__v08Test.advance(0.6);
+      const end = window.__v08Test.getState();
+      const dest = end.buildings.find((x) => x.id === b.id);
+      return {
+        n,
+        transit,
+        packetsMid: mid.tunnel.packets.length,
+        destIce: dest.ice,
+        usedTunnel: end.stats.usedTunnel,
+        ready: spawned.tunnel.ready,
+      };
+    });
+    expect(result.n).toBeGreaterThanOrEqual(4);
+    expect(result.ready).toBe(true);
+    expect(result.packetsMid).toBeGreaterThan(0);
+    expect(result.destIce).toBeGreaterThanOrEqual(8);
+    expect(result.usedTunnel).toBe(true);
+  });
+
+  test('vault holds 150 ice and no more', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      const s0 = window.__v08Test.getState();
+      window.__v08Test.selectUnits([s0.units[0].id]);
+      const hub = window.__v08Test.placeBuilding('tunnel-hub', 14, 21);
+      window.__v08Test.completeBuilding(hub.id);
+      const vault = window.__v08Test.placeBuilding('vault', 11, 21);
+      window.__v08Test.completeBuilding(vault.id);
+      const placed = window.__v08Test.getState().buildings.find((x) => x.id === vault.id);
+      window.__v08Test.depositToBuilding(vault.id, { ice: 200 });
+      const filled = window.__v08Test.getState().buildings.find((x) => x.id === vault.id);
+      window.__v08Test.depositToBuilding(hub.id, { ice: 20 });
+      window.__v08Test.advance(0.2);
+      const afterHub = window.__v08Test.getState();
+      const vaultAfter = afterHub.buildings.find((x) => x.id === vault.id);
+      const hubAfter = afterHub.buildings.find((x) => x.id === hub.id);
+      return {
+        placed: !!vault,
+        iceCap: placed.iceCap,
+        filled: filled.ice,
+        vaultAfter: vaultAfter.ice,
+        hubAfter: hubAfter.ice,
+      };
+    });
+    expect(result.placed).toBe(true);
+    expect(result.iceCap).toBe(150);
+    expect(result.filled).toBe(150);
+    expect(result.vaultAfter).toBe(150);
+    expect(result.hubAfter).toBe(20);
+  });
+
+  test('full ice storage shows a warning and a blocked label', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      const s0 = window.__v08Test.getState();
+      const C = window.__v08Test.config;
+      const hab = s0.buildings.find((b) => b.type === 'habitat');
+      window.__v08Test.setResources({ ice: C.habitatIceCapacity });
+      window.__v08Test.selectUnits([s0.units[0].id]);
+      window.__v08Test.issueOrder({
+        type: 'haul',
+        sourceTx: C.shallowIceTileX,
+        sourceTy: C.shallowIceTileY,
+        destBuildingId: hab.id,
+      });
+      let seenToast = null;
+      for (let i = 0; i < 50; i++) {
+        window.__v08Test.advance(1);
+        const snap = window.__v08Test.getState();
+        if (snap.toast === 'Ice storage full') seenToast = snap.toast;
+        if (snap.units[0].status === 'blocked') {
+          return {
+            toast: seenToast || snap.toast,
+            status: snap.units[0].status,
+            label: snap.units[0].label,
+          };
+        }
+      }
+      const end = window.__v08Test.getState();
+      return {
+        toast: seenToast || end.toast,
+        status: end.units[0].status,
+        label: end.units[0].label,
+      };
+    });
+    expect(result.toast).toBe('Ice storage full');
+    expect(result.status).toBe('blocked');
+    expect(result.label).toBe('Ice storage full');
+  });
+});

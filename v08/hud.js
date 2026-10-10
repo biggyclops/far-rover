@@ -20,6 +20,7 @@ export function bindHud(root, game, hooks = {}) {
   function setArmed(kind) {
     game.state.armedOrder = kind;
     game.state.haulPick = null;
+    game.state.digPick = null;
     game.state.buildGhost = null;
     refreshButtons();
   }
@@ -27,6 +28,7 @@ export function bindHud(root, game, hooks = {}) {
   function setBuild(type) {
     game.state.armedOrder = null;
     game.state.haulPick = null;
+    game.state.digPick = null;
     game.state.buildGhost = { type, tx: C.habitatTileX + 4, ty: C.habitatTileY };
     refreshButtons();
   }
@@ -38,11 +40,15 @@ export function bindHud(root, game, hooks = {}) {
   $('#order-mine')?.addEventListener('click', () => setArmed('mine'));
   $('#order-haul')?.addEventListener('click', () => setArmed('haul'));
   $('#order-charge')?.addEventListener('click', () => setArmed('charge'));
+  $('#order-dig')?.addEventListener('click', () => setArmed('dig'));
   $('#order-go')?.addEventListener('click', () => setArmed(null));
   $('#build-solar')?.addEventListener('click', () => setBuild('solar'));
   $('#build-storage')?.addEventListener('click', () => setBuild('storage'));
   $('#build-printer')?.addEventListener('click', () => setBuild('printer'));
+  $('#build-hub')?.addEventListener('click', () => setBuild('tunnel-hub'));
+  $('#build-vault')?.addEventListener('click', () => setBuild('vault'));
   $('#print-hauler')?.addEventListener('click', () => { game.startPrint(); });
+  $('#view-toggle')?.addEventListener('click', () => { game.toggleView(); refreshButtons(); });
   $('#mute-btn')?.addEventListener('click', () => {
     game.state.muted = !game.state.muted;
     hooks.onMute?.(game.state.muted);
@@ -59,10 +65,19 @@ export function bindHud(root, game, hooks = {}) {
     $('#order-mine')?.classList.toggle('active', game.state.armedOrder === 'mine');
     $('#order-haul')?.classList.toggle('active', game.state.armedOrder === 'haul');
     $('#order-charge')?.classList.toggle('active', game.state.armedOrder === 'charge');
+    $('#order-dig')?.classList.toggle('active', game.state.armedOrder === 'dig');
     const ghost = game.state.buildGhost?.type;
     $('#build-solar')?.classList.toggle('active', ghost === 'solar');
     $('#build-storage')?.classList.toggle('active', ghost === 'storage');
     $('#build-printer')?.classList.toggle('active', ghost === 'printer');
+    $('#build-hub')?.classList.toggle('active', ghost === 'tunnel-hub');
+    $('#build-vault')?.classList.toggle('active', ghost === 'vault');
+    const viewBtn = $('#view-toggle');
+    if (viewBtn) {
+      const under = game.state.view === 'underground';
+      viewBtn.classList.toggle('active', under);
+      viewBtn.textContent = under ? 'Surface' : 'Underground';
+    }
   }
 
   function sync() {
@@ -93,8 +108,14 @@ export function bindHud(root, game, hooks = {}) {
         const b = game.buildingById(game.state.selectedBuildingId);
         info.textContent = b ? `${b.type}${b.complete ? '' : `  building ${fmt(b.buildTime)}/${b.buildNeeded}s`}` : '';
       } else {
-        info.textContent = 'Click a hauler · drag a box · right-click an order';
+        info.textContent = 'Click a hauler · drag a box · right-click an order · Tab toggles underground';
       }
+    }
+    const toast = $('#toast');
+    if (toast) {
+      const msg = game.state.toast?.text || '';
+      toast.textContent = msg;
+      toast.classList.toggle('show', !!msg);
     }
     refreshButtons();
   }

@@ -13,6 +13,12 @@ function tintCanvas(img, color) {
   return c;
 }
 
+function showBuilding(b, view) {
+  if (b.type === 'tunnel-hub') return true;
+  if (b.type === 'vault') return view === 'underground';
+  return view === 'surface';
+}
+
 export function createRenderer(canvas, assets, game) {
   const ctx = canvas.getContext('2d');
   const ringTinted = assets.images['ring-select']
@@ -65,14 +71,20 @@ export function createRenderer(canvas, assets, game) {
     return img(`tile-ground-${tile.variant}`);
   }
 
-  function drawTiles(ts, night) {
+  function visibleTileRange() {
     const { w, h } = viewSize();
     const cam = game.state.camera;
     const z = cam.zoom;
-    const x0 = Math.max(0, Math.floor(cam.x / C.tileSize) - 1);
-    const y0 = Math.max(0, Math.floor(cam.y / C.tileSize) - 1);
-    const x1 = Math.min(C.mapWidth, Math.ceil((cam.x + w / z) / C.tileSize) + 1);
-    const y1 = Math.min(C.mapHeight, Math.ceil((cam.y + h / z) / C.tileSize) + 1);
+    return {
+      x0: Math.max(0, Math.floor(cam.x / C.tileSize) - 1),
+      y0: Math.max(0, Math.floor(cam.y / C.tileSize) - 1),
+      x1: Math.min(C.mapWidth, Math.ceil((cam.x + w / z) / C.tileSize) + 1),
+      y1: Math.min(C.mapHeight, Math.ceil((cam.y + h / z) / C.tileSize) + 1),
+    };
+  }
+
+  function drawSurfaceTiles(z) {
+    const { x0, y0, x1, y1 } = visibleTileRange();
     for (let ty = y0; ty < y1; ty++) {
       for (let tx = x0; tx < x1; tx++) {
         const tile = game.tileAt(tx, ty);
@@ -88,7 +100,58 @@ export function createRenderer(canvas, assets, game) {
         drawImg(img('crater-m'), s.x, s.y, C.tileSize * 2 * z, C.tileSize * 2 * z);
       }
     }
-    void night;
+  }
+
+  function utileRock(tx, ty) {
+    const tile = game.tileAt(tx, ty);
+    const variant = tile ? tile.variant : 1;
+    return img(variant <= 2 ? 'utile-rock-1' : 'utile-rock-2');
+  }
+
+  function tunnelTileAt(tx, ty) {
+    return game.state.tunnel.tiles.find((t) => t.tx === tx && t.ty === ty) || null;
+  }
+
+  function cornerRotation(tx, ty) {
+    const n = tunnelTileAt(tx, ty - 1);
+    const e = tunnelTileAt(tx + 1, ty);
+    const s = tunnelTileAt(tx, ty + 1);
+    const w = tunnelTileAt(tx - 1, ty);
+    const has = (t) => t && t.done;
+    // Pixel: utile-tunnel-corner joins east-south at rotation 0.
+    if (has(e) && has(s) && !has(n) && !has(w)) return 0;
+    if (has(s) && has(w) && !has(n) && !has(e)) return Math.PI / 2;
+    if (has(w) && has(n) && !has(e) && !has(s)) return Math.PI;
+    if (has(n) && has(e) && !has(s) && !has(w)) return -Math.PI / 2;
+    return null;
+  }
+
+  function drawUndergroundTiles(z) {
+    const { x0, y0, x1, y1 } = visibleTileRange();
+    for (let ty = y0; ty < y1; ty++) {
+      for (let tx = x0; tx < x1; tx++) {
+        const s = worldToScreen(tx * C.tileSize, ty * C.tileSize);
+        drawImg(utileRock(tx, ty), s.x, s.y, C.tileSize * z, C.tileSize * z);
+      }
+    }
+    for (const tile of game.state.tunnel.tiles) {
+      if (!tile.done) continue;
+      const s = worldToScreen(tile.tx * C.tileSize, tile.ty * C.tileSize);
+      const dw = C.tileSize * z;
+      const rot = cornerRotation(tile.tx, tile.ty);
+      if (rot != null) {
+        const im = img('utile-tunnel-corner');
+        if (im) {
+          ctx.save();
+          ctx.translate(s.x + dw / 2, s.y + dw / 2);
+          ctx.rotate(rot);
+          ctx.drawImage(im, -dw / 2, -dw / 2, dw, dw);
+          ctx.restore();
+        }
+      } else {
+        drawImg(img(tile.kind === 'v' ? 'utile-tunnel-v' : 'utile-tunnel-h'), s.x, s.y, dw, dw);
+      }
+    }
   }
 
   function drawGlow(x, y, size, name, intensity) {
@@ -110,8 +173,9 @@ export function createRenderer(canvas, assets, game) {
     ctx.restore();
   }
 
-  function drawBuildings(z, night, pass) {
+  function drawBuildings(z, night, pass, view) {
     for (const b of game.state.buildings) {
+      if (!showBuilding(b, view)) continue;
       const n = b.type === 'vault' ? C.vaultFootprint : C.buildingFootprint;
       const wx = b.tx * C.tileSize;
       const wy = b.ty * C.tileSize;
@@ -155,6 +219,23 @@ export function createRenderer(canvas, assets, game) {
       ctx.drawImage(body, -size / 2, -size / 2, size, size);
       ctx.restore();
     }
+  }
+
+  function drawUnitLabel(u, z) {
+    const label = game.unitLabel(u);
+    if (!label) return;
+    const s = worldToScreen(u.x, u.y);
+    ctx.save();
+    ctx.font = `600 ${Math.max(9, 10 * z)}px "IBM Plex Mono", ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    const y = s.y - C.tileSize * z * 0.42;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(8, 8, 10, 0.75)';
+    ctx.strokeText(label, s.x, y);
+    ctx.fillStyle = u.status === 'blocked' ? C.warningNotify : '#f2f0ec';
+    ctx.fillText(label, s.x, y);
+    ctx.restore();
   }
 
   function drawSelection(u, z) {
@@ -206,8 +287,9 @@ export function createRenderer(canvas, assets, game) {
     const g = game.state.buildGhost;
     if (!g) return;
     const ok = game.canPlace(g.type, g.tx, g.ty);
+    const n = g.type === 'vault' ? C.vaultFootprint : C.buildingFootprint;
     const s = worldToScreen(g.tx * C.tileSize, g.ty * C.tileSize);
-    const dw = C.buildingFootprint * C.tileSize * z;
+    const dw = n * C.tileSize * z;
     ctx.save();
     ctx.globalAlpha = 0.45;
     drawImg(img(`${g.type}-build`) || img(g.type), s.x, s.y, dw, dw);
@@ -217,6 +299,67 @@ export function createRenderer(canvas, assets, game) {
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(s.x, s.y, dw, dw);
     ctx.restore();
+  }
+
+  function drawTunnelProgress(z) {
+    for (const tile of game.state.tunnel.tiles) {
+      const s = worldToScreen(tile.tx * C.tileSize, tile.ty * C.tileSize);
+      const dw = C.tileSize * z;
+      if (!tile.done) {
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = C.playerAccent;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(s.x + 3, s.y + 3, dw - 6, dw - 6);
+        ctx.restore();
+      }
+      if (tile.started && !tile.done) {
+        const bw = dw * 0.72;
+        const bh = Math.max(4, 5 * z);
+        const bx = s.x + (dw - bw) / 2;
+        const by = s.y + dw * 0.78;
+        ctx.save();
+        ctx.fillStyle = 'rgba(8, 8, 10, 0.7)';
+        ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+        ctx.fillStyle = C.playerAccent;
+        ctx.fillRect(bx, by, bw * Math.max(0, Math.min(1, tile.progress)), bh);
+        ctx.restore();
+      }
+    }
+  }
+
+  function drawBoreFx(z) {
+    const frame = Math.floor(game.state.time * 10) % 6;
+    const im = img(`bore-${frame}`);
+    if (!im) return;
+    for (const tile of game.state.tunnel.tiles) {
+      if (tile.done || !tile.started) continue;
+      const s = worldToScreen((tile.tx + 0.5) * C.tileSize, (tile.ty + 0.5) * C.tileSize);
+      const size = C.tileSize * z;
+      ctx.drawImage(im, s.x - size / 2, s.y - size / 2, size, size);
+    }
+  }
+
+  function drawPackets(z) {
+    const tiles = game.state.tunnel.tiles;
+    if (!tiles.length) return;
+    for (const p of game.state.tunnel.packets) {
+      const t = Math.max(0, Math.min(0.999, p.traveled / p.length));
+      const idx = Math.min(tiles.length - 1, Math.floor(t * tiles.length));
+      const frac = (t * tiles.length) - idx;
+      const a = tiles[idx];
+      const b = tiles[Math.min(tiles.length - 1, idx + 1)];
+      const x = (a.tx + (b.tx - a.tx) * frac + 0.5) * C.tileSize;
+      const y = (a.ty + (b.ty - a.ty) * frac + 0.5) * C.tileSize;
+      const s = worldToScreen(x, y);
+      ctx.save();
+      ctx.fillStyle = C.warningNotify;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, Math.max(3, 4 * z), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   function drawBox() {
@@ -255,15 +398,27 @@ export function createRenderer(canvas, assets, game) {
     ctx.clearRect(0, 0, w, h);
     const z = game.state.camera.zoom;
     const night = !game.isDay();
-    drawTiles(C.tileSize * z, night);
-    drawBuildings(z, night, 'sprite');
-    for (const u of game.state.units) drawUnit(u, z, night, 'sprite');
+    const view = game.state.view === 'underground' ? 'underground' : 'surface';
+    if (view === 'underground') drawUndergroundTiles(z);
+    else drawSurfaceTiles(z);
+    drawTunnelProgress(z);
+    drawBoreFx(z);
+    if (view === 'underground') drawPackets(z);
+    drawBuildings(z, night, 'sprite', view);
+    if (view === 'surface') {
+      for (const u of game.state.units) drawUnit(u, z, night, 'sprite');
+    }
     if (night) drawNightTint();
-    drawBuildings(z, night, 'glow');
-    for (const u of game.state.units) drawUnit(u, z, night, 'glow');
-    drawCommandRange(z);
-    for (const u of game.state.units) {
-      if (game.state.selectedIds.includes(u.id)) drawSelection(u, z);
+    drawBuildings(z, night, 'glow', view);
+    if (view === 'surface') {
+      for (const u of game.state.units) drawUnit(u, z, night, 'glow');
+    }
+    if (view === 'surface') drawCommandRange(z);
+    if (view === 'surface') {
+      for (const u of game.state.units) {
+        if (game.state.selectedIds.includes(u.id)) drawSelection(u, z);
+      }
+      for (const u of game.state.units) drawUnitLabel(u, z);
     }
     drawOrderMarker(z);
     drawGhost(z);
