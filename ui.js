@@ -2035,7 +2035,7 @@ export async function prepareHostedScout() {
   setIncludeNotifyAction(true);
   setSkipOperateOnLaunch(true);
   setHostOwnsTicks(true);
-  setHostedForce2d(true);
+  setHostedForce2d(false);
   if (!log.currentSession) startNewSession('v08-scout');
 }
 

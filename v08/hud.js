@@ -125,13 +125,16 @@ export function bindHud(root, game, hooks = {}) {
     const buildScout = $('#btn-build-scout');
     if (buildScout) buildScout.hidden = !!exp.launched;
     const recall = $('#btn-recall');
-    if (recall) recall.hidden = !exp.launched || exp.ended || exp.recallUsed;
+    if (recall) {
+      recall.hidden = !exp.launched;
+      recall.disabled = !exp.launched || !!exp.recallUsed || !!exp.ended;
+    }
     const land = $('#btn-land-crew');
     if (land) land.hidden = !game.canLandCrew();
     const badge = $('#patch-badge');
     if (badge) badge.hidden = !exp.pendingPatch;
     const left = $('#patches-left');
-    if (left) left.textContent = `Patches ${game.patchesLeft()}`;
+    if (left) left.textContent = `Patches left: ${game.patchesLeft()}`;
     const log = $('#expedition-log');
     if (log) {
       const last = exp.log[exp.log.length - 1];
@@ -152,6 +155,10 @@ export function bindHud(root, game, hooks = {}) {
         if (logi) logi.textContent = `Logistics  ${w.logistics}`;
         if (notes) notes.textContent = `Notifies  ${w.notifies}`;
         if (patches) patches.textContent = `Patches  ${w.patches}`;
+        const iceEl = $('#win-ice');
+        const pwrEl = $('#win-power');
+        if (iceEl) iceEl.textContent = `Ice  ${Math.floor(w.ice + 1e-6)} / ${Math.floor((w.iceCap || 0) + 1e-6)}`;
+        if (pwrEl) pwrEl.textContent = `Power  ${Math.floor(w.power + 1e-6)} / ${Math.floor((w.powerCap || 0) + 1e-6)}`;
       }
     }
     refreshButtons();

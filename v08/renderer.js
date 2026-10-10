@@ -496,9 +496,23 @@ export function createRenderer(canvas, assets, game) {
     game.state.camera.y = cy - (h / game.state.camera.zoom) / 2;
   }
 
+  function drawBackdrop(w, h) {
+    ctx.fillStyle = '#2c261e';
+    ctx.fillRect(0, 0, w, h);
+    const sky = img('bg-horizon');
+    const strip = Math.max(56, Math.min(110, Math.round(h * 0.12)));
+    if (sky) {
+      ctx.drawImage(sky, 0, 0, w, strip);
+    } else {
+      ctx.fillStyle = '#0c1016';
+      ctx.fillRect(0, 0, w, strip);
+    }
+  }
+
   function draw() {
     const { w, h } = resize();
     ctx.clearRect(0, 0, w, h);
+    drawBackdrop(w, h);
     const z = game.state.camera.zoom;
     const night = !game.isDay();
     const view = game.state.view === 'underground' ? 'underground' : 'surface';

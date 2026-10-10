@@ -153,6 +153,7 @@ function serialize() {
         }
       : null,
     patchesLeft: game.patchesLeft(),
+    stored: game.storedForGoal(),
     canLandCrew: game.canLandCrew(),
     won: game.state.won,
     win: game.state.win ? { ...game.state.win } : null,
@@ -191,6 +192,7 @@ window.__v08Test = {
     if (ice != null) h.ice = ice;
     if (regolith != null) h.regolith = regolith;
     if (power != null) h.power = power;
+    game.clampStores();
   },
   setBattery: (id, v) => {
     const u = game.unitById(id);
