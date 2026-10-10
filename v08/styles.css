@@ -122,3 +122,24 @@ button.active {
   color: var(--muted);
   font-size: 12px;
 }
+
+#toast {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  z-index: 4;
+  padding: 6px 14px;
+  border-radius: 4px;
+  background: rgba(8, 8, 10, 0.88);
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+#toast.show {
+  opacity: 1;
+}

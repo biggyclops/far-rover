@@ -6,7 +6,10 @@ export const CONFIG = {
   mapWidth: 40, // Proposed (Game Designer)
   mapHeight: 40, // Proposed (Game Designer)
   tileSize: 64, // 64 px per tile at 1x; 128 px sources are @2x
-  defaultZoom: 0.7,
+  defaultZoom: 1,
+  minZoom: 0.5,
+  maxZoom: 2,
+  unitClickRadius: 36, // world px; ~36 CSS px at default zoom so a hauler is easy to click
   sourcePixelsPerTile: 128,
   commandRangeRadius: 14, // Proposed (Game Designer) — drawn in M1, cosmetic until M3
   commandRangeCosmetic: true, // M1: ring only; hand-direct everywhere on the home map
@@ -112,17 +115,21 @@ export const CONFIG = {
   noHomePrograms: true,
   scoutUsesDemoBuildScreen: true,
 
-  // --- Tunnel line (M2 — wired only) ---
+  // --- Tunnel line (M2) ---
   tunnelHubCostRegolith: 20, // Proposed (Game Designer)
   tunnelHubBuildSeconds: 10, // Proposed (Game Designer)
   tunnelHubCount: 2,
+  hubIceCapacity: 20, // Proposed (Game Designer) — transit buffer at each hub
+  hubRegolithCapacity: 20, // Proposed (Game Designer)
   digSecondsPerTilePerRover: 6, // Proposed (Game Designer) — rovers stack
   digPowerPerTile: 3, // Proposed (Game Designer)
   digRegolithYieldPerTile: 2, // Proposed (Game Designer)
   tunnelCargoTilesPerSecond: 4, // Proposed (Game Designer) — hub-to-hub, no rover
+  warningToastSeconds: 3, // Proposed (Game Designer) — "Ice storage full" banner
 
-  // --- Vault (M2 — wired only) ---
+  // --- Vault (M2) ---
   vaultCostRegolith: 40, // Proposed (Game Designer)
+  vaultBuildSeconds: 10, // Proposed (Game Designer)
   vaultIceCapacity: 150, // Proposed (Game Designer)
 
   // --- Notify (M3 — wired only) ---
