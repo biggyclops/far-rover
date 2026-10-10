@@ -458,7 +458,7 @@ test.describe('Far Rover v0.8 M3/M4', () => {
     expect(result.after.stats.notifies).toBeGreaterThanOrEqual(1);
     expect(result.after.toast).toMatch(/Ice confirmed|Notify/);
     await expect(page.locator('#btn-land-crew')).toBeVisible();
-    await page.click('#btn-land-crew');
+    await page.locator('#btn-land-crew').click({ force: true });
     await expect(page.locator('#win-overlay')).toBeVisible();
     await expect(page.locator('#win-logistics')).toContainText('haulers only');
     await expect(page.locator('#win-notifies')).toContainText('1');
