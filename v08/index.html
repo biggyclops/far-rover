@@ -41,14 +41,6 @@
       </div>
     </header>
 
-    <aside id="objectives" data-testid="objectives">
-      <div class="obj-title">First goal</div>
-      <ol>
-        <li>Build a scout and confirm ice.</li>
-        <li>Bring 60 ice and 50 power home.</li>
-      </ol>
-    </aside>
-
     <canvas id="board"></canvas>
 
     <footer id="hud-bottom">
@@ -71,12 +63,19 @@
       </div>
       <div class="expedition-meta">
         <span id="patch-badge" class="badge delay" hidden>Link delay</span>
-        <span id="patches-left">Patches 1</span>
+        <span id="patches-left">Patches left: 1</span>
         <span id="expedition-log"></span>
       </div>
       <div id="sel-info">Click a hauler · drag a box · right-click an order</div>
     </footer>
   </div>
+  <aside id="objectives" data-testid="objectives">
+    <div class="obj-title">First goal</div>
+    <ol>
+      <li>Build a scout and confirm ice.</li>
+      <li>Bring 60 ice and 50 power home.</li>
+    </ol>
+  </aside>
   <div id="toast" role="status" aria-live="polite"></div>
   <div id="scout-overlay" hidden>
     <button id="scout-back" type="button">Back to base</button>
@@ -86,6 +85,8 @@
     <div class="win-card">
       <h2>Crew landed</h2>
       <p id="win-time"></p>
+      <p id="win-ice"></p>
+      <p id="win-power"></p>
       <p id="win-logistics"></p>
       <p id="win-notifies"></p>
       <p id="win-patches"></p>

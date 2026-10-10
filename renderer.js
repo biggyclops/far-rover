@@ -7,7 +7,7 @@ const LANDER_COL = 5;
 const LANDER_ROW = 12;
 
 // Asset paths
-const ASSET_BASE = 'assets/art/';
+const ASSET_BASE = new URL('assets/art/', import.meta.url).href;
 const ASSET_MANIFEST = {
   tiles: {
     'ground-1': 'tile-ground-1.png',

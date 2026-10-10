@@ -346,9 +346,36 @@ export function createGame() {
     return true;
   }
 
+  function clampStores() {
+    for (const b of state.buildings) {
+      if (b.iceCap > 0) b.ice = Math.max(0, Math.min(b.iceCap, b.ice));
+      else b.ice = 0;
+      if (b.regolithCap > 0) b.regolith = Math.max(0, Math.min(b.regolithCap, b.regolith));
+      else b.regolith = 0;
+      if (b.powerCap > 0) b.power = Math.max(0, Math.min(b.powerCap, b.power));
+      else b.power = 0;
+    }
+  }
+
+  function storedForGoal() {
+    let ice = 0, power = 0, iceCap = 0, powerCap = 0;
+    for (const b of state.buildings) {
+      if (!b.complete) continue;
+      if (b.type === 'habitat' || b.type === 'storage' || b.type === 'vault') {
+        ice += b.ice;
+        iceCap += b.iceCap;
+      }
+      if (b.powerCap > 0) {
+        power += b.power;
+        powerCap += b.powerCap;
+      }
+    }
+    return { ice, power, iceCap, powerCap };
+  }
+
   function canLandCrew() {
     if (state.won) return false;
-    const tot = totals();
+    const tot = storedForGoal();
     return tot.ice + 1e-6 >= C.goalIceInStorage && tot.power + 1e-6 >= C.goalPowerInStorage;
   }
 
@@ -401,7 +428,8 @@ export function createGame() {
 
   function landCrew() {
     if (!canLandCrew()) return null;
-    const tot = totals();
+    clampStores();
+    const tot = storedForGoal();
     state.won = true;
     state.win = {
       time: state.time,
@@ -410,6 +438,8 @@ export function createGame() {
       patches: state.stats.patches,
       ice: tot.ice,
       power: tot.power,
+      iceCap: tot.iceCap,
+      powerCap: tot.powerCap,
     };
     state.speed = 0;
     emit('win');
@@ -1109,6 +1139,7 @@ export function createGame() {
     updateBuildings(dt);
     updateCargo(dt);
     updateExpedition(dt);
+    clampStores();
     state.time += dt;
     if (state.orderMarker) {
       state.orderMarker.t += dt;
@@ -1422,5 +1453,7 @@ export function createGame() {
     landCrew,
     currentSol,
     noteExpedition,
+    clampStores,
+    storedForGoal,
   };
 }

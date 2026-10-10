@@ -422,7 +422,17 @@ test.describe('Far Rover v0.8 M2', () => {
   });
 });
 
-test.describe('Far Rover v0.8 M3/M4', () => {
+const NOTIFY_PROGRAM = {
+  sensors: ['distance', 'spectral'],
+  rules: [
+    { condition: { type: 'crater_in_front' }, action: { type: 'sidestep' } },
+    { condition: { type: 'on_ore' }, action: { type: 'notify' } },
+    { condition: { type: 'ore_next_to' }, action: { type: 'go_to_ore' } },
+    { condition: { type: 'always' }, action: { type: 'explore' } },
+  ],
+};
+
+test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
   test('Build Scout opens the imported build screen', async ({ page }) => {
     await ready(page);
     await page.click('#btn-build-scout');
@@ -433,7 +443,22 @@ test.describe('Far Rover v0.8 M3/M4', () => {
     await expect(notify).toHaveCount(1);
   });
 
-  test('scout confirm unlocks Deep Ice, then the goal shows the win screen', async ({ page }) => {
+  test('unit: setResources cannot put ice above the habitat cap', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      window.__v08Test.setResources({ ice: 60, power: 50 });
+      window.__v08Test.syncHud();
+      return window.__v08Test.getState();
+    });
+    expect(result.stored.ice).toBeLessThanOrEqual(result.stored.iceCap);
+    expect(result.stored.ice).toBe(30);
+    expect(result.ice).toBe(30);
+    expect(result.canLandCrew).toBe(false);
+    await expect(page.locator('#res-ice')).toContainText('30 / 30');
+    await expect(page.locator('#btn-land-crew')).toBeHidden();
+  });
+
+  test('unit: scout confirm unlocks Deep Ice', async ({ page }) => {
     await ready(page);
     await expect(page.locator('#objectives')).toContainText('Build a scout and confirm ice');
     await expect(page.locator('#objectives')).toContainText('Bring 60 ice and 50 power home');
@@ -446,8 +471,6 @@ test.describe('Far Rover v0.8 M3/M4', () => {
       const before = window.__v08Test.getState();
       window.__v08Test.advance(2.1);
       const after = window.__v08Test.getState();
-      window.__v08Test.setResources({ ice: 60, power: 50 });
-      window.__v08Test.syncHud();
       return { confirmed, before, after };
     });
     expect(result.confirmed).toBe(true);
@@ -457,12 +480,7 @@ test.describe('Far Rover v0.8 M3/M4', () => {
     expect(result.after.deepIceTile.remaining).toBe(200);
     expect(result.after.stats.notifies).toBeGreaterThanOrEqual(1);
     expect(result.after.toast).toMatch(/Ice confirmed|Notify/);
-    await expect(page.locator('#btn-land-crew')).toBeVisible();
-    await page.locator('#btn-land-crew').click({ force: true });
-    await expect(page.locator('#win-overlay')).toBeVisible();
-    await expect(page.locator('#win-logistics')).toContainText('haulers only');
-    await expect(page.locator('#win-notifies')).toContainText('1');
-    await expect(page.locator('#btn-play-again')).toBeVisible();
+    expect(result.after.canLandCrew).toBe(false);
   });
 
   test('operate view is the imported demo view', async ({ page }) => {
@@ -479,11 +497,23 @@ test.describe('Far Rover v0.8 M3/M4', () => {
     await expect(page.locator('.speed-btn[data-speed="4"]')).toBeVisible();
     await expect(page.locator('.speed-btn[data-speed="16"]')).toBeVisible();
     await expect(page.locator('#rule-display')).toBeVisible();
+    await expect(page.locator('#map-grid canvas, .game-canvas')).toBeVisible();
+    await page.waitForFunction(() => (
+      window.__orbitalRenderer?.ready && (window.__orbitalRenderer.fullImg?.naturalWidth || 0) > 100
+    ), null, { timeout: 15000 });
+    const art = await page.evaluate(() => ({
+      full: window.__orbitalRenderer?.fullImg?.naturalWidth || 0,
+      lander: window.__orbitalRenderer?.landerImg?.naturalWidth || 0,
+      src: window.__orbitalRenderer?.fullImg?.src || '',
+    }));
+    expect(art.full).toBeGreaterThan(100);
+    expect(art.lander).toBeGreaterThan(10);
+    expect(art.src).toMatch(/\/assets\/art\/hirise-board\.jpg$/);
     await page.click('#scout-back');
     await expect(page.locator('#scout-overlay')).toBeHidden();
   });
 
-  test('one free Recall drives the scout home and ends the expedition', async ({ page }) => {
+  test('unit: one free Recall drives the scout home and disables the button', async ({ page }) => {
     await ready(page);
     const result = await page.evaluate(() => {
       window.__v08Test.launchProgram(['spectral'], [
@@ -492,9 +522,11 @@ test.describe('Far Rover v0.8 M3/M4', () => {
       window.__v08Test.confirmOnOre();
       window.__v08Test.advance(2.1);
       const unlocked = window.__v08Test.getState().deepIce.unlocked;
+      window.__v08Test.syncHud();
       const scout = window.__v08Test.startRecall();
       const second = window.__v08Test.startRecall();
       window.__v08Test.advance(30);
+      window.__v08Test.syncHud();
       const end = window.__v08Test.getState();
       return {
         unlocked,
@@ -513,9 +545,12 @@ test.describe('Far Rover v0.8 M3/M4', () => {
     expect(result.recallUsed).toBe(true);
     expect(result.stillUnlocked).toBe(true);
     expect(result.kind).toBe('scout');
+    await expect(page.locator('#btn-recall')).toBeVisible();
+    await expect(page.locator('#btn-recall')).toBeDisabled();
+    await expect(page.locator('#patches-left')).toContainText('Patches left:');
   });
 
-  test('one rule patch per sol with a 2s link delay', async ({ page }) => {
+  test('unit: one rule patch per sol with a 2s link delay', async ({ page }) => {
     await ready(page);
     const result = await page.evaluate(() => {
       window.__v08Test.launchProgram(['spectral'], [
@@ -551,5 +586,174 @@ test.describe('Far Rover v0.8 M3/M4', () => {
     expect(result.pendingAfter).toBe(false);
     expect(result.sameSol).toBe(false);
     expect(result.nextSol).toBe(true);
+  });
+});
+
+test.describe('Far Rover v0.8 M3/M4 honest play', () => {
+  test('map canvas fills the viewport at 1280×800 and 1920×1080', async ({ page }) => {
+    for (const size of [{ w: 1280, h: 800 }, { w: 1920, h: 1080 }]) {
+      await page.setViewportSize({ width: size.w, height: size.h });
+      await ready(page);
+      const box = await page.evaluate(() => {
+        const canvas = document.getElementById('board');
+        const app = document.getElementById('app');
+        const top = document.getElementById('hud-top').getBoundingClientRect();
+        const bot = document.getElementById('hud-bottom').getBoundingClientRect();
+        const r = canvas.getBoundingClientRect();
+        return {
+          canvasW: r.width,
+          canvasH: r.height,
+          appW: app.getBoundingClientRect().width,
+          viewW: window.innerWidth,
+          viewH: window.innerHeight,
+          topBottom: top.bottom,
+          botTop: bot.top,
+          canvasTop: r.top,
+          canvasBottom: r.bottom,
+        };
+      });
+      expect(box.canvasW).toBeGreaterThan(size.w - 4);
+      expect(box.canvasW).toBeLessThanOrEqual(size.w + 2);
+      expect(box.canvasTop).toBeGreaterThanOrEqual(box.topBottom - 2);
+      expect(box.canvasBottom).toBeLessThanOrEqual(box.botTop + 2);
+      expect(box.canvasH).toBeGreaterThan(size.h * 0.45);
+    }
+  });
+
+  test('honest hauler route lands the crew', async ({ page }) => {
+    test.setTimeout(120000);
+    await ready(page);
+    const result = await page.evaluate((prog) => {
+      const t = window.__v08Test;
+      const s0 = t.getState();
+      t.selectUnits(s0.units.map((u) => u.id));
+      const storage = t.placeBuilding('storage', 22, 21);
+      if (!storage) return { error: 'storage place failed' };
+      for (let i = 0; i < 40; i++) {
+        t.advance(1);
+        if (t.getState().buildings.find((b) => b.id === storage.id)?.complete) break;
+      }
+      t.launchProgram(prog.sensors, prog.rules);
+      let unlocked = false;
+      for (let i = 0; i < 80; i++) {
+        t.advance(1);
+        if (t.getState().deepIce.unlocked) { unlocked = true; break; }
+      }
+      const deep = t.getState().deepIce;
+      t.selectUnits(t.getState().units.filter((u) => u.kind === 'hauler').map((u) => u.id));
+      t.issueOrder({
+        type: 'haul',
+        sourceTx: deep.tx,
+        sourceTy: deep.ty,
+        destBuildingId: storage.id,
+      });
+      let landed = null;
+      for (let i = 0; i < 500; i++) {
+        t.advance(1);
+        const snap = t.getState();
+        if (snap.canLandCrew) {
+          landed = t.landCrew();
+          break;
+        }
+      }
+      const end = t.getState();
+      return {
+        unlocked,
+        win: end.win,
+        stored: end.stored,
+        time: end.time,
+        iceCap: end.iceCap,
+        ice: end.ice,
+        usedTunnel: end.stats.usedTunnel,
+      };
+    }, NOTIFY_PROGRAM);
+    expect(result.error).toBeUndefined();
+    expect(result.unlocked).toBe(true);
+    expect(result.win).toBeTruthy();
+    expect(result.win.logistics).toBe('haulers only');
+    expect(result.stored.ice).toBeGreaterThanOrEqual(60);
+    expect(result.stored.ice).toBeLessThanOrEqual(result.stored.iceCap);
+    expect(result.stored.power).toBeGreaterThanOrEqual(50);
+    expect(result.win.time).toBeGreaterThan(60);
+    expect(result.usedTunnel).toBe(false);
+    console.log(`honest hauler win: ${result.win.time.toFixed(1)}s (${result.stored.ice.toFixed(1)} ice / ${result.stored.iceCap} cap)`);
+    await page.evaluate(() => window.__v08Test.syncHud());
+    await expect(page.locator('#win-overlay')).toBeVisible();
+    await expect(page.locator('#win-logistics')).toContainText('haulers only');
+    await expect(page.locator('#win-ice')).toContainText('/');
+  });
+
+  test('honest tunnel route lands the crew', async ({ page }) => {
+    test.setTimeout(120000);
+    await ready(page);
+    const result = await page.evaluate((prog) => {
+      const t = window.__v08Test;
+      const s0 = t.getState();
+      t.selectUnits(s0.units.map((u) => u.id));
+      function waitDone(id) {
+        for (let i = 0; i < 50; i++) {
+          t.advance(1);
+          if (t.getState().buildings.find((b) => b.id === id)?.complete) return true;
+        }
+        return false;
+      }
+      const homeHub = t.placeBuilding('tunnel-hub', 14, 21);
+      if (!homeHub) return { error: 'home hub place failed' };
+      if (!waitDone(homeHub.id)) return { error: 'home hub not complete' };
+      const farHub = t.placeBuilding('tunnel-hub', 28, 21);
+      if (!farHub) return { error: 'far hub place failed' };
+      if (!waitDone(farHub.id)) return { error: 'far hub not complete' };
+      const vault = t.placeBuilding('vault', 11, 21);
+      if (!vault) return { error: 'vault place failed' };
+      if (!waitDone(vault.id)) return { error: 'vault not complete' };
+      const tiles = t.startDigCorridor();
+      t.issueOrder({ type: 'dig' });
+      for (let i = 0; i < 120; i++) {
+        t.advance(1);
+        if (t.getState().tunnel.ready) break;
+      }
+      t.launchProgram(prog.sensors, prog.rules);
+      for (let i = 0; i < 80; i++) {
+        t.advance(1);
+        if (t.getState().deepIce.unlocked) break;
+      }
+      const deep = t.getState().deepIce;
+      if (!deep.unlocked) return { error: 'no deep ice', time: t.getState().time };
+      t.selectUnits(t.getState().units.filter((u) => u.kind === 'hauler').map((u) => u.id));
+      t.issueOrder({
+        type: 'haul',
+        sourceTx: deep.tx,
+        sourceTy: deep.ty,
+        destBuildingId: farHub.id,
+      });
+      for (let i = 0; i < 500; i++) {
+        t.advance(1);
+        if (t.getState().canLandCrew) {
+          t.landCrew();
+          break;
+        }
+      }
+      const end = t.getState();
+      return {
+        win: end.win,
+        stored: end.stored,
+        time: end.time,
+        usedTunnel: end.stats.usedTunnel,
+        tunnelReady: end.tunnel.ready,
+        tiles: tiles && tiles.length,
+      };
+    }, NOTIFY_PROGRAM);
+    expect(result.error).toBeUndefined();
+    expect(result.tunnelReady).toBe(true);
+    expect(result.usedTunnel).toBe(true);
+    expect(result.win).toBeTruthy();
+    expect(result.win.logistics).toBe('tunnel');
+    expect(result.stored.ice).toBeGreaterThanOrEqual(60);
+    expect(result.stored.ice).toBeLessThanOrEqual(result.stored.iceCap);
+    expect(result.win.time).toBeGreaterThan(60);
+    console.log(`honest tunnel win: ${result.win.time.toFixed(1)}s (${result.stored.ice.toFixed(1)} ice / ${result.stored.iceCap} cap)`);
+    await page.evaluate(() => window.__v08Test.syncHud());
+    await expect(page.locator('#win-overlay')).toBeVisible();
+    await expect(page.locator('#win-logistics')).toContainText('tunnel');
   });
 });

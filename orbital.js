@@ -174,7 +174,7 @@ function loadImage(src) {
   });
 }
 
-const ART_BASE = 'assets/art/';
+const ART_BASE = new URL('assets/art/', import.meta.url).href;
 const ART_FILES = {
   full: 'hirise-board.jpg',
   seen: 'hirise-seen.jpg',

@@ -1030,13 +1030,13 @@ export class GameRenderer3D {
 
   async _loadArt() {
     const [g1, g2, g3, dust, ore, crater, horizon] = await Promise.all([
-      loadTexture('assets/art/tile-ground-1.png'),
-      loadTexture('assets/art/tile-ground-2.png'),
-      loadTexture('assets/art/tile-ground-3.png'),
-      loadTexture('assets/art/tile-dust.png'),
-      loadTexture('assets/art/tile-ore.png'),
-      loadTexture('assets/art/tile-crater.png'),
-      loadTexture('assets/art/bg-horizon.png')
+      loadTexture(new URL('assets/art/tile-ground-1.png', import.meta.url).href),
+      loadTexture(new URL('assets/art/tile-ground-2.png', import.meta.url).href),
+      loadTexture(new URL('assets/art/tile-ground-3.png', import.meta.url).href),
+      loadTexture(new URL('assets/art/tile-dust.png', import.meta.url).href),
+      loadTexture(new URL('assets/art/tile-ore.png', import.meta.url).href),
+      loadTexture(new URL('assets/art/tile-crater.png', import.meta.url).href),
+      loadTexture(new URL('assets/art/bg-horizon.png', import.meta.url).href)
     ]);
     if (this.disposed) return;
     this.maps = { g1, g2, g3, dust, ore, crater, horizon };
