@@ -1,0 +1,149 @@
+import { CONFIG as C } from './config.js';
+import { loadAssets } from './assets.js';
+import { createAudio } from './audio.js';
+import { createGame } from './game.js';
+import { createRenderer } from './renderer.js';
+import { bindInput } from './input.js';
+import { bindHud } from './hud.js';
+
+const canvas = document.getElementById('board');
+const game = createGame();
+const assets = await loadAssets();
+const audio = createAudio(assets.sfx);
+audio.bindGestures(document);
+audio.setMuted(game.state.muted);
+
+const renderer = createRenderer(canvas, assets, game);
+renderer.centerOnHabitat();
+
+const hud = bindHud(document, game, {
+  onMute: (muted) => audio.setMuted(muted),
+});
+
+const { pumpPan } = bindInput(canvas, game, renderer);
+
+let last = performance.now();
+
+function frame(now) {
+  const raw = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  pumpPan(raw);
+  const dt = raw * game.state.speed;
+  if (dt > 0) game.update(dt);
+  for (const ev of game.flushEvents()) {
+    if (ev.type === 'select') audio.play(C.sfxSelect);
+    if (ev.type === 'order') audio.play(C.sfxOrder);
+    if (ev.type === 'build-complete') audio.play(C.sfxBuildComplete);
+  }
+  renderer.draw();
+  hud.sync();
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+
+function serialize() {
+  const tot = game.totals();
+  return {
+    time: game.state.time,
+    speed: game.state.speed,
+    isDay: game.isDay(),
+    isNight: !game.isDay(),
+    solarOutput: game.solarOutputPerSecond(),
+    ice: tot.ice,
+    regolith: tot.regolith,
+    power: tot.power,
+    iceCap: tot.iceCap,
+    selectedIds: [...game.state.selectedIds],
+    selectedBuildingId: game.state.selectedBuildingId,
+    muted: game.state.muted,
+    unitCount: game.state.units.length,
+    units: game.state.units.map((u) => ({
+      id: u.id,
+      x: u.x,
+      y: u.y,
+      battery: u.battery,
+      cargo: { ...u.cargo },
+      order: u.order ? u.order.type : null,
+      lastOrder: u.lastOrder ? u.lastOrder.type : null,
+      phase: u.order?.phase || null,
+    })),
+    buildings: game.state.buildings.map((b) => ({
+      id: b.id,
+      type: b.type,
+      tx: b.tx,
+      ty: b.ty,
+      complete: b.complete,
+      buildTime: b.buildTime,
+      printing: b.printing,
+      printTime: b.printTime,
+    })),
+    iceTile: {
+      type: game.tileAt(C.shallowIceTileX, C.shallowIceTileY).type,
+      remaining: game.tileAt(C.shallowIceTileX, C.shallowIceTileY).iceRemaining,
+    },
+  };
+}
+
+function advance(seconds) {
+  const step = 1 / 60;
+  let left = seconds;
+  while (left > 0) {
+    const dt = Math.min(step, left);
+    game.update(dt);
+    left -= dt;
+  }
+  game.flushEvents();
+}
+
+function clientPosForWorld(wx, wy) {
+  const s = renderer.worldToScreen(wx, wy);
+  const r = canvas.getBoundingClientRect();
+  return { x: r.left + s.x, y: r.top + s.y };
+}
+
+window.__v08Test = {
+  ready: true,
+  getState: serialize,
+  setSpeed: (s) => { game.state.speed = s; },
+  advance,
+  setTime: (t) => { game.state.time = t; },
+  setResources: ({ ice, regolith, power } = {}) => {
+    const h = game.habitat();
+    if (ice != null) h.ice = ice;
+    if (regolith != null) h.regolith = regolith;
+    if (power != null) h.power = power;
+  },
+  setBattery: (id, v) => {
+    const u = game.unitById(id);
+    if (u) u.battery = v;
+  },
+  selectUnits: (ids, additive) => game.selectUnits(ids, additive),
+  selectBuilding: (id) => game.selectBuilding(id),
+  issueOrder: (order) => {
+    const units = game.selectedUnits();
+    if (!units.length) return false;
+    const marker = order.x != null
+      ? { x: order.x, y: order.y }
+      : game.tileCenter(order.tx || order.sourceTx || 0, order.ty || order.sourceTy || 0);
+    game.assignOrder(units, order, marker);
+    return true;
+  },
+  placeBuilding: (type, tx, ty) => game.placeBuilding(type, tx, ty, true),
+  startPrint: () => game.startPrint(),
+  unitClientPos: (id) => {
+    const u = game.unitById(id);
+    return u ? clientPosForWorld(u.x, u.y) : null;
+  },
+  tileClientPos: (tx, ty) => {
+    const c = game.tileCenter(tx, ty);
+    return clientPosForWorld(c.x, c.y);
+  },
+  buildingClientPos: (id) => {
+    const b = game.buildingById(id);
+    if (!b) return null;
+    return clientPosForWorld((b.tx + 1) * C.tileSize, (b.ty + 1) * C.tileSize);
+  },
+  setMuted: (m) => { game.state.muted = m; audio.setMuted(m); },
+  config: C,
+};
