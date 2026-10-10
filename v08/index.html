@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Far Rover v0.8 — Base</title>
+  <link rel="icon" type="image/png" href="../favicon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header id="hud-top">
+      <div class="brand">Far Rover <span>v0.8</span></div>
+      <div class="resources">
+        <div class="res" data-testid="res-ice-wrap">
+          <img src="../assets/v08/art/icon-ice-orange.png" alt="" width="28" height="28">
+          <span id="res-ice">20 / 30</span>
+        </div>
+        <div class="res" data-testid="res-reg-wrap">
+          <img src="../assets/v08/art/icon-regolith-orange.png" alt="" width="28" height="28">
+          <span id="res-regolith">80 / 200</span>
+        </div>
+        <div class="res" data-testid="res-power-wrap">
+          <img src="../assets/v08/art/icon-power-orange.png" alt="" width="28" height="28">
+          <span id="res-power">100 / 200</span>
+        </div>
+      </div>
+      <div class="clock">
+        <span id="day-night" class="badge">Day</span>
+        <span id="sol-clock">Sol 1  Day  4:00</span>
+      </div>
+      <div class="speeds">
+        <button id="speed-pause" type="button">Pause</button>
+        <button id="speed-1" type="button" class="active">1×</button>
+        <button id="speed-4" type="button">4×</button>
+        <button id="speed-16" type="button">16×</button>
+        <button id="mute-btn" type="button">Mute</button>
+      </div>
+    </header>
+
+    <canvas id="board"></canvas>
+
+    <footer id="hud-bottom">
+      <div class="orders">
+        <button id="order-go" type="button">Go</button>
+        <button id="order-mine" type="button">Mine</button>
+        <button id="order-haul" type="button">Haul</button>
+        <button id="order-charge" type="button">Charge</button>
+      </div>
+      <div class="builds">
+        <button id="build-solar" type="button">Rim solar <small>30 reg · 10s</small></button>
+        <button id="build-storage" type="button">Storage <small>30 reg · 10s</small></button>
+        <button id="build-printer" type="button">Printer <small>40 reg · 15s</small></button>
+        <button id="print-hauler" type="button">Print hauler <small>25 reg · 10 pwr · 20s</small></button>
+      </div>
+      <div id="sel-info">Click a hauler · drag a box · right-click an order</div>
+    </footer>
+  </div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
