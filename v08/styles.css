@@ -135,8 +135,8 @@ button:disabled {
   position: fixed;
   top: 56px;
   left: 50%;
-  transform: translate(-50%, -8px);
-  z-index: 4;
+  transform: translateX(-50%);
+  z-index: 5;
   padding: 6px 14px;
   border-radius: 4px;
   background: rgba(8, 8, 10, 0.88);
@@ -349,6 +349,7 @@ button.unaffordable:hover { border-color: rgba(255, 255, 255, 0.18); }
   pointer-events: none;
   white-space: nowrap;
 }
+#goal-banner[hidden] { display: none !important; }
 
 #unit-card {
   position: fixed;

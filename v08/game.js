@@ -870,10 +870,21 @@ export function createGame() {
   }
 
   function goalBanner() {
-    const haulers = state.units.filter((u) => u.kind === 'hauler').length;
-    const solar = state.buildings.filter((b) => b.type === 'solar' && b.complete).length;
-    if (haulers < 4 || solar < 2) return 'Build up: 4 haulers and 2 solar';
-    return `Land crew: ${C.goalIceInStorage} ice and ${C.goalPowerInStorage} power in range`;
+    const steps = objectiveProgress();
+    const stored = storedForGoal();
+    const ice = Math.floor(stored.ice + 1e-6);
+    const power = Math.floor(stored.power + 1e-6);
+    if (state.won) return 'Crew landed';
+    if (state.deepIce.unlocked && !steps.haulDeep) {
+      return `Haul Deep Ice home: ${ice} / ${C.goalIceInStorage}`;
+    }
+    if (!steps.mineShallow) return 'Select haulers, then right-click the ice to start a delivery loop';
+    if (!steps.buildScout) return 'Build Scout and give it an On ore tile: Notify rule';
+    if (!steps.haulDeep) return `Haul Deep Ice home: ${ice} / ${C.goalIceInStorage}`;
+    if (!steps.landCrew) {
+      return `Land crew: ${ice} / ${C.goalIceInStorage} ice · ${power} / ${C.goalPowerInStorage} power`;
+    }
+    return 'Land crew';
   }
 
   function unitTask(unit) {

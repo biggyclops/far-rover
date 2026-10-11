@@ -48,6 +48,7 @@ function handleEvents(evs) {
     if (ev.type === 'order') audio.play(C.sfxOrder);
     if (ev.type === 'build-complete') audio.play(C.sfxBuildComplete);
     if (ev.type === 'notify-ping') audio.play(C.sfxNotify);
+    if (ev.type === 'deep-ice') renderer.focusTile(ev.tx, ev.ty);
     if (ev.type === 'patch-ready') {
       const ok = scout.applyIncomingPatch(ev);
       game.notePatchApplied(ok);
@@ -281,11 +282,15 @@ window.__v08Test = {
   },
   unlockDeepIce: () => game.unlockDeepIce(),
   syncHud: () => hud.sync(),
-  centerOnTile: (tx, ty) => {
-    const { w, h } = renderer.viewSize();
+  focusTile: (tx, ty) => renderer.focusTile(tx, ty),
+  tileScreenPos: (tx, ty) => {
     const c = game.tileCenter(tx, ty);
-    game.state.camera.x = c.x - (w / game.state.camera.zoom) / 2;
-    game.state.camera.y = c.y - (h / game.state.camera.zoom) / 2;
+    return renderer.worldToScreen(c.x, c.y);
+  },
+  viewSize: () => renderer.viewSize(),
+  hudSafeInsets: () => renderer.hudSafeInsets(),
+  centerOnTile: (tx, ty) => {
+    renderer.focusTile(tx, ty);
   },
   config: C,
 };

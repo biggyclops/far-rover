@@ -286,6 +286,14 @@ function scriptedHaul(game) {
 }
 
 {
+  const g = createGame();
+  assert.match(g.goalBanner(), /Select haulers/);
+  g.unlockDeepIce();
+  assert.match(g.goalBanner(), new RegExp(`Haul Deep Ice home: \\d+ / ${C.goalIceInStorage}`));
+  console.log('ok  goal banner follows the Deep Ice haul step');
+}
+
+{
   assert.equal(C.haulerUpkeepPowerPerSec, 0);
   assert.equal(C.noRegolithMineRadiusTiles, 4);
   assert.equal(C.strandedCrawlTilesPerSecond, 0.25);

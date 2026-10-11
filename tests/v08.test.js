@@ -246,7 +246,7 @@ test.describe('Far Rover v0.8 M1', () => {
     await expect(page.locator('#ice-tooltip')).toBeVisible();
     await expect(page.locator('#ice-tooltip')).toContainText(/Shallow ice/i);
     await expect(page.locator('#ice-tooltip')).toContainText(/delivery loop/i);
-    await expect(page.locator('#goal-banner')).toContainText('Build up: 4 haulers and 2 solar');
+    await expect(page.locator('#goal-banner')).toContainText('Select haulers, then right-click the ice to start a delivery loop');
     await expect(page.locator('#build-solar small')).toContainText('30 reg');
     await expect(page.locator('#print-hauler small')).toContainText('25 reg');
     await expect(page.locator('#res-transit')).toContainText('Hubs + transit');
@@ -697,6 +697,30 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     expect(result.after.objectives.buildScout).toBe(true);
     expect(result.after.scoutHint).toBe(false);
     expect(result.after.canLandCrew).toBe(false);
+    expect(result.after.goalBanner).toMatch(/Haul Deep Ice home:/);
+    await page.evaluate(() => window.__v08Test.syncHud());
+    await expect(page.locator('#toast')).toBeVisible();
+    await expect(page.locator('#goal-banner')).toBeHidden();
+    await page.evaluate(() => {
+      window.__v08Test.advance(5.1, { scout: false });
+      window.__v08Test.syncHud();
+    });
+    await expect(page.locator('#toast')).not.toHaveClass(/show/);
+    await expect(page.locator('#goal-banner')).toBeVisible();
+    await expect(page.locator('#goal-banner')).toContainText('Haul Deep Ice home:');
+    const vis = await page.evaluate(() => {
+      const s = window.__v08Test.getState();
+      const d = s.deepIce;
+      return {
+        screen: window.__v08Test.tileScreenPos(d.tx, d.ty),
+        view: window.__v08Test.viewSize(),
+        pad: window.__v08Test.hudSafeInsets(),
+      };
+    });
+    expect(vis.screen.x).toBeGreaterThan(vis.pad.left - 8);
+    expect(vis.screen.x).toBeLessThan(vis.view.w - vis.pad.right + 8);
+    expect(vis.screen.y).toBeGreaterThan(vis.pad.top - 8);
+    expect(vis.screen.y).toBeLessThan(vis.view.h - vis.pad.bottom + 8);
   });
 
   test('operate view is the imported demo view', async ({ page }) => {
