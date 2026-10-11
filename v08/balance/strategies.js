@@ -200,20 +200,23 @@ function haulMatches(u, sourceTx, sourceTy, destId) {
 }
 
 function regolithTile(game) {
+  // #28: no regolith mine within 4 tiles of any building.
   const hab = game.habitat();
-  const spots = [
-    [hab.tx - 2, hab.ty + 4],
-    [hab.tx + 4, hab.ty + 3],
-    [hab.tx - 3, hab.ty + 2],
-    [16, 24],
-    [22, 24],
-    [14, 20],
-  ];
-  for (const [tx, ty] of spots) {
-    const t = game.tileAt(tx, ty);
-    if (t && t.type === 'ground' && !t.buildingId) return { tx, ty };
+  let best = null;
+  let bestD = Infinity;
+  for (let ty = 0; ty < game.C.mapHeight; ty++) {
+    for (let tx = 0; tx < game.C.mapWidth; tx++) {
+      const t = game.tileAt(tx, ty);
+      if (!t || t.type !== 'ground' || t.buildingId || t.craterM) continue;
+      if (game.inNoMineZone(tx, ty)) continue;
+      const d = Math.hypot(tx - hab.tx, ty - hab.ty);
+      if (d < bestD) {
+        best = { tx, ty };
+        bestD = d;
+      }
+    }
   }
-  return { tx: hab.tx, ty: hab.ty + 4 };
+  return best || { tx: hab.tx, ty: hab.ty + 6 };
 }
 
 function mineRegolith(game, units) {
@@ -285,6 +288,14 @@ function iceDest(game, preferTypes) {
   return game.state.buildings.find((b) => b.complete && b.iceCap > 0) || game.habitat();
 }
 
+function stickyDest(game, mem, preferTypes) {
+  const cur = mem.haulDestId && game.buildingById(mem.haulDestId);
+  if (cur && cur.complete && cur.iceCap - cur.ice > 8) return cur;
+  const next = iceDest(game, preferTypes);
+  if (next) mem.haulDestId = next.id;
+  return next;
+}
+
 function iceSource(game, mem, preferDeep) {
   if (preferDeep && game.state.deepIce.unlocked) {
     return { tx: game.state.deepIce.tx, ty: game.state.deepIce.ty };
@@ -300,13 +311,23 @@ function iceSource(game, mem, preferDeep) {
   return null;
 }
 
-function assignHaul(game, units, source, dest) {
-  const need = units.filter((u) => (
-    !charging(u)
-    && u.order?.type !== 'build'
-    && u.order?.type !== 'dig'
-    && !haulMatches(u, source.tx, source.ty, dest.id)
-  ));
+function assignHaul(game, units, source, dest, forceDest = false) {
+  // Instincts own the loop (mine → haul → resume after charge). Re-issuing
+  // toSource every think resets toDest and fights nearestDrop. Only kick a
+  // new order when idle, blocked, or forceDest says the tube dest must win.
+  const need = units.filter((u) => {
+    if (charging(u)) return false;
+    if (u.order?.type === 'build' || u.order?.type === 'dig') return false;
+    if (u.resumeOrder && u.order?.type === 'charge') return false;
+    if (u.blockedReason && /full/i.test(u.blockedReason)) return true;
+    if (forceDest && dest && u.order?.type === 'haul' && u.order.destBuildingId !== dest.id
+      && u.order.phase !== 'unload' && u.order.phase !== 'mine') {
+      return true;
+    }
+    if (u.order?.type === 'haul' || u.order?.type === 'mine') return false;
+    if (!u.order && u.lastOrder?.type === 'haul' && (!forceDest || u.lastOrder.destBuildingId === dest?.id)) return false;
+    return true;
+  });
   if (need.length) {
     issue(game, need, {
       type: 'haul',
@@ -315,21 +336,6 @@ function assignHaul(game, units, source, dest) {
       destBuildingId: dest.id,
       phase: 'toSource',
     });
-  }
-}
-
-function handleCharge(game, units) {
-  const C = game.C;
-  const power = game.storedForGoal().power;
-  const day = game.isDay();
-  const surplus = power > C.goalPowerInStorage + 25;
-  const canSpend = day || surplus;
-  const hab = game.habitat();
-  for (const u of units) {
-    if (u.order?.type === 'charge' && u.battery >= 90) continue;
-    if (u.battery <= 16 && canSpend && u.order?.type !== 'charge') {
-      issue(game, [u], { type: 'charge', buildingId: hab.id });
-    }
   }
 }
 
@@ -356,7 +362,6 @@ export function createBrain(strategyId) {
       mem.launched = true;
     }
     const units = haulersOf(game);
-    handleCharge(game, units);
     if (game.canLandCrew()) {
       game.landCrew();
       return;
@@ -373,27 +378,34 @@ function thinkHaulers(game, mem, units, meta) {
   const storage = maybeMoreStorage(game, mem, units);
   if (storage !== 'ready' && !mem.storage0) return;
 
+  const crew = units.filter((u) => !charging(u));
+  const builder = crew[0] ? [crew[0]] : [];
+  const rest = crew.slice(1);
+
   if (meta.extraHaulers > 0) {
-    const printer = ensureBuilding(game, mem, units, 'printer', 'printer', hab.tx - 4, hab.ty);
-    if (printer !== 'ready') return;
+    const printer = ensureBuilding(game, mem, builder, 'printer', 'printer', hab.tx - 4, hab.ty);
+    if (printer !== 'ready') {
+      const src = iceSource(game, mem, true);
+      if (src && mem.storage0 && game.buildingById(mem.storage0)?.complete) {
+        assignHaul(game, rest, src, stickyDest(game, mem, ['storage', 'habitat']));
+      }
+      return;
+    }
     const p = game.buildingById(mem.printer);
     if (mem.printed < meta.extraHaulers) {
       if (p && !p.printing) {
         const tot = game.totals();
         if (tot.regolith + 1e-6 < game.C.printerHaulerCostRegolith) {
-          mineRegolith(game, units);
-          return;
+          mineRegolith(game, builder);
+        } else if (game.startPrint()) {
+          mem.printed += 1;
         }
-        if (game.startPrint()) mem.printed += 1;
       }
-      if (p?.printing) {
-        const free = units.filter((u) => !charging(u) && u.order?.type !== 'build');
-        const src = iceSource(game, mem, true);
-        if (src && mem.storage0 && game.buildingById(mem.storage0)?.complete) {
-          assignHaul(game, free, src, iceDest(game, ['storage', 'habitat']));
-        }
-        return;
+      const src = iceSource(game, mem, true);
+      if (src && mem.storage0 && game.buildingById(mem.storage0)?.complete) {
+        assignHaul(game, rest, src, stickyDest(game, mem, ['storage', 'habitat']));
       }
+      return;
     }
   }
 
@@ -402,14 +414,14 @@ function thinkHaulers(game, mem, units, meta) {
     const srcEarly = iceSource(game, mem, true);
     if (srcEarly && mem.storage0 && game.buildingById(mem.storage0)?.complete) {
       const free = units.filter((u) => !charging(u) && u.order?.type !== 'build');
-      assignHaul(game, free, srcEarly, iceDest(game, ['storage', 'habitat']));
+      assignHaul(game, free, srcEarly, stickyDest(game, mem, ['storage', 'habitat']));
     }
     return;
   }
 
   const src = iceSource(game, mem, true);
   if (!src) return;
-  const dest = iceDest(game, ['storage', 'habitat']);
+  const dest = stickyDest(game, mem, ['storage', 'habitat']);
   assignHaul(game, units, src, dest);
 }
 
@@ -473,10 +485,20 @@ function thinkTunnel(game, mem, units, meta) {
   const vaultFull = vault && vault.ice >= vault.iceCap - 8;
   const dest = (!vaultFull && stored.iceCap - stored.ice > 8)
     ? game.buildingById(mem.farHub)
-    : iceDest(game, ['storage', 'habitat']);
+    : stickyDest(game, mem, ['storage', 'habitat']);
   if (!dest) return;
   const haulers = units.filter((u) => u.order?.type !== 'build');
-  assignHaul(game, haulers, src, dest);
+  if (vaultFull) {
+    for (const u of haulers) {
+      const aimed = u.order?.destBuildingId || u.lastOrder?.destBuildingId;
+      if (aimed === mem.farHub && (u.order?.phase === 'toSource' || !u.order || u.blockedReason)) {
+        u.order = null;
+        u.lastOrder = null;
+        u.resumeOrder = null;
+      }
+    }
+  }
+  assignHaul(game, haulers, src, dest, !vaultFull);
 }
 
 function thinkMixed(game, mem, units, meta) {
@@ -529,7 +551,7 @@ function thinkMixed(game, mem, units, meta) {
   if (game.tunnelReady() && game.state.deepIce.unlocked) {
     const src = iceSource(game, mem, true);
     const dest = game.buildingById(mem.farHub);
-    if (src && dest) assignHaul(game, units, src, dest);
+    if (src && dest) assignHaul(game, units, src, dest, true);
     return;
   }
 

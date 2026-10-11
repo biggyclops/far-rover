@@ -202,7 +202,8 @@ test.describe('Far Rover v0.8 M1', () => {
     });
     expect(result.isNight).toBe(true);
     expect(result.nightOut).toBe(0);
-    expect(result.powerNight).toBeCloseTo(50, 0);
+    // Two start haulers draw upkeep at night; solar is 0.
+    expect(result.powerNight).toBeCloseTo(50 - 2 * 0.3 * 2, 1);
     expect(result.dayOut).toBe(5);
     expect(result.powerDay).toBeGreaterThan(55);
   });

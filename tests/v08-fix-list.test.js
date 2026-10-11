@@ -294,7 +294,7 @@ function scriptedHaul(game) {
 }
 
 {
-  assert.equal(C.haulerUpkeepPowerPerSec, 0);
+  assert.equal(C.haulerUpkeepPowerPerSec, 0.3);
   assert.equal(C.noRegolithMineRadiusTiles, 4);
   assert.equal(C.strandedCrawlTilesPerSecond, 0.25);
   assert.deepEqual(C.confirmDepositTiles, ['F2', 'I2']);

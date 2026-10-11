@@ -128,8 +128,21 @@ export function summarize(results, overrides = {}) {
     tunnelAdvantage = (bestHaulers.winTime - bestTunnel.winTime) / bestHaulers.winTime;
   }
   const haulers2 = results.find((r) => r.strategy === 'haulers-2');
+  const print1 = results.find((r) => r.strategy === 'haulers-plus-1');
+  const tunnel2 = results.find((r) => r.strategy === 'tunnel-2-diggers');
   const typical = bestHaulers?.winTime ?? haulers2?.winTime ?? bestAny?.winTime ?? null;
+  const t2vsBestHaulers = (bestHaulers && tunnel2?.won)
+    ? (bestHaulers.winTime - tunnel2.winTime) / bestHaulers.winTime
+    : null;
   const changes = changedFromDefaults(overrides);
+  const gd = {
+    print1BeatsHaulers: !!(print1?.won && haulers2?.won && print1.winTime < haulers2.winTime),
+    tunnel2in20to35: t2vsBestHaulers != null && t2vsBestHaulers >= 0.20 && t2vsBestHaulers <= 0.35,
+    everyWinnerHitsNight: won.length > 0 && won.every((r) => r.hitNight),
+    tunnelPowerBelow50: results.some((r) => r.family === 'tunnel' && r.powerMin != null && r.powerMin < 50),
+    noWinUnder4: won.length > 0 && won.every((r) => r.winTime >= 4 * 60),
+  };
+  gd.passCount = Object.values(gd).filter((v) => v === true).length;
   return {
     overrides,
     changes,
@@ -138,7 +151,9 @@ export function summarize(results, overrides = {}) {
     bestTunnel,
     bestAny,
     tunnelAdvantage,
+    t2vsBestHaulers,
     typicalWin: typical,
+    gd,
     criteria: {
       tunnelBeatsHaulers15to30: tunnelAdvantage != null && tunnelAdvantage >= 0.15 && tunnelAdvantage <= 0.30,
       typicalWin6to10: typical != null && typical >= 6 * 60 && typical <= 10 * 60,
@@ -150,6 +165,7 @@ export function summarize(results, overrides = {}) {
 }
 
 export function criteriaScore(summary) {
+  if (summary.gd) return summary.gd.passCount;
   const c = summary.criteria;
   let n = 0;
   if (c.haulersCanWin) n += 1;
