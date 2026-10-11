@@ -1269,8 +1269,22 @@ export function createGame() {
     return true;
   }
 
+  function mayInterruptForCharge(order, unit) {
+    if (!order || order.type === 'charge') return false;
+    if (order.type === 'haul' && (order.phase === 'mine' || order.phase === 'unload')) return false;
+    if (order.type === 'mine' && closeToTile(unit, order.tx, order.ty)) return false;
+    return true;
+  }
+
   function stepUnit(unit, dt) {
     if (unit.kind === 'hauler' && unit.battery <= 0 && unit.order?.type !== 'charge') {
+      insertCharge(unit);
+    } else if (
+      unit.kind === 'hauler'
+      && unit.order?.type !== 'charge'
+      && shouldChargeNow(unit)
+      && mayInterruptForCharge(unit.order, unit)
+    ) {
       insertCharge(unit);
     }
     if (unit.kind === 'hauler' && !unit.order && !unit.blockedReason) {
