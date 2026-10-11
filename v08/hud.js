@@ -123,7 +123,52 @@ export function bindHud(root, game, hooks = {}) {
     }
     const exp = game.state.expedition;
     const buildScout = $('#btn-build-scout');
-    if (buildScout) buildScout.hidden = !!exp.launched;
+    const hintOn = game.showIceHint();
+    if (buildScout) {
+      buildScout.hidden = !!exp.launched;
+      buildScout.classList.toggle('hint-pulse', hintOn && !exp.launched);
+    }
+    const iceHint = $('#ice-hint');
+    if (iceHint) iceHint.hidden = !hintOn;
+    const arrow = $('#scout-hint-arrow');
+    if (arrow) {
+      arrow.hidden = !hintOn || !buildScout || buildScout.hidden;
+      if (!arrow.hidden && buildScout) {
+        const frame = Math.floor((game.state.time * 7) % 4);
+        const next = `../assets/v08/art/hint-arrow-${frame}.png`;
+        if (arrow.getAttribute('src') !== next) arrow.src = next;
+        const r = buildScout.getBoundingClientRect();
+        arrow.style.left = `${r.left + r.width / 2 - 32}px`;
+        arrow.style.top = `${r.top - 55}px`;
+      }
+    }
+    const tip = $('#ice-tooltip');
+    const hover = game.state.hoverTile;
+    const tipText = hover ? game.iceHoverText(hover.tx, hover.ty) : '';
+    if (tip) {
+      tip.hidden = !tipText;
+      tip.textContent = tipText;
+      if (tipText && hover) {
+        tip.style.left = `${hover.sx + 14}px`;
+        tip.style.top = `${hover.sy + 12}px`;
+      }
+    }
+    const steps = game.objectiveProgress();
+    const order = ['mineShallow', 'buildScout', 'haulDeep', 'landCrew'];
+    let current = order.find((key) => !steps[key]) || null;
+    for (const key of order) {
+      const li = root.querySelector(`#objectives [data-step="${key}"]`);
+      if (!li) continue;
+      const done = !!steps[key];
+      li.classList.toggle('done', done);
+      li.classList.toggle('active', key === current);
+      const icon = li.querySelector('.step-icon');
+      if (icon) {
+        const name = done ? 'check' : key === current ? 'step-dot-active' : 'step-dot';
+        const src = `../assets/v08/art/${name}.png`;
+        if (icon.getAttribute('src') !== src) icon.src = src;
+      }
+    }
     const recall = $('#btn-recall');
     if (recall) {
       recall.hidden = !exp.launched;

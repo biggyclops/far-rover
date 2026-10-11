@@ -56,6 +56,7 @@ function frame(now) {
   const raw = Math.min(0.05, (now - last) / 1000);
   last = now;
   pumpPan(raw);
+  renderer.tickCamPan(raw);
   const dt = raw * game.state.speed;
   if (dt > 0) {
     game.update(dt);
@@ -155,6 +156,11 @@ function serialize() {
     patchesLeft: game.patchesLeft(),
     stored: game.storedForGoal(),
     canLandCrew: game.canLandCrew(),
+    iceHint: game.showIceHint(),
+    objectives: game.objectiveProgress(),
+    hoverTip: game.state.hoverTile
+      ? game.iceHoverText(game.state.hoverTile.tx, game.state.hoverTile.ty)
+      : '',
     won: game.state.won,
     win: game.state.win ? { ...game.state.win } : null,
     scoutOpen: scout.isOpen(),

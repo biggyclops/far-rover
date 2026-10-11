@@ -41,7 +41,7 @@ export function bindScout(root, game, hooks = {}) {
     await prepareHostedScout();
     onScoutLaunch((sim) => {
       lastSim = sim;
-      game.markExpeditionLaunched();
+      game.markExpeditionLaunched({ hasNotifyRule: rulesHaveNotify(sim?.rules) });
       hideOverlay();
       hooks.onLaunched?.(sim);
     });
@@ -136,12 +136,16 @@ export function bindScout(root, game, hooks = {}) {
     if (ev.target === overlay) hideOverlay();
   });
 
+  function rulesHaveNotify(list) {
+    return (list || []).some((r) => (r?.action?.type || '') === 'notify');
+  }
+
   function launchProgram(sensors, rules) {
     lastSim = Sim.createInitialState(sensors, rules);
     setGameStateForTest(lastSim);
     setSelectedSensorsForTest(sensors);
     setRulesForTest(rules);
-    game.markExpeditionLaunched();
+    game.markExpeditionLaunched({ hasNotifyRule: rulesHaveNotify(rules) });
     return lastSim;
   }
 

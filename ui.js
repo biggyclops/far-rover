@@ -38,6 +38,7 @@ let autoPauseCount = 0;
 let currentSpeed = 1;
 let isPaused = true;
 let includeNotifyAction = false;
+let hostedIceLabels = false;
 let skipOperateOnLaunch = false;
 let launchListener = null;
 let tickListener = null;
@@ -241,7 +242,7 @@ export function showBuildScreen() {
             <label class="sensor-item selectable">
               <input type="checkbox" data-sensor="spectral" ${selectedSensors.includes(Sim.SENSORS.SPECTRAL) ? 'checked' : ''}>
               <span class="sensor-name">Spectral (AS7341)</span>
-              <span class="sensor-desc">Detects ore nearby and on tile</span>
+              <span class="sensor-desc">${hostedIceLabels ? 'Detects ice nearby and on tile' : 'Detects ore nearby and on tile'}</span>
             </label>
             <label class="sensor-item selectable">
               <input type="checkbox" data-sensor="camera" ${selectedSensors.includes(Sim.SENSORS.CAMERA) ? 'checked' : ''}>
@@ -273,8 +274,8 @@ export function showBuildScreen() {
                 <li><strong>Battery below N:</strong> battery points &lt; N</li>
                 <li><strong>Crater in front:</strong> needs Distance sensor</li>
                 <li><strong>On a dust tile:</strong> needs Dust sensor</li>
-                <li><strong>Ore next to rover:</strong> needs Spectral sensor</li>
-                <li><strong>On an ore tile:</strong> needs Spectral sensor</li>
+                <li><strong>${hostedIceLabels ? 'Ore (ice) next to rover' : 'Ore next to rover'}:</strong> needs Spectral sensor</li>
+                <li><strong>${hostedIceLabels ? 'On ore tile (ice)' : 'On an ore tile'}:</strong> needs Spectral sensor</li>
                 <li><strong>Goal met:</strong> 25 tiles scanned or 3 ore drilled</li>
                 <li><strong>Always:</strong> every tick (use as "otherwise")</li>
               </ul>
@@ -284,8 +285,8 @@ export function showBuildScreen() {
               <ul>
                 <li><strong>Explore:</strong> move toward nearest hidden tile</li>
                 <li><strong>Return and charge:</strong> go to lander and charge (3 ticks)</li>
-                <li><strong>Go to ore:</strong> move onto adjacent ore and drill it (costs 3)</li>
-                <li><strong>Drill:</strong> drill ore on current tile (costs 2)</li>
+                <li><strong>Go to ore:</strong> move onto adjacent ${hostedIceLabels ? 'ice' : 'ore'} and drill it (costs 3)</li>
+                <li><strong>Drill:</strong> drill ${hostedIceLabels ? 'ice' : 'ore'} on current tile (costs 2)</li>
                 <li><strong>Wait:</strong> do nothing this tick</li>
                 <li><strong>Sidestep:</strong> move to the rover's right if valid, otherwise left; facing stays the same</li>
                 ${includeNotifyAction ? '<li><strong>Notify:</strong> hold still and ping a new ice find (ore tiles) back to base</li>' : ''}
@@ -319,7 +320,22 @@ export function showBuildScreen() {
   refreshBuildWarnings();
 }
 
+function applyHostedNotifyPreset() {
+  selectedSensors = [Sim.SENSORS.DISTANCE, Sim.SENSORS.SPECTRAL, Sim.SENSORS.CAMERA];
+  rules = [
+    { condition: { type: Sim.CONDITIONS.CRATER_IN_FRONT }, action: { type: Sim.ACTIONS.SIDESTEP } },
+    { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
+    { condition: { type: Sim.CONDITIONS.ORE_NEXT_TO }, action: { type: Sim.ACTIONS.GO_TO_ORE } },
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } },
+  ];
+}
+
 function loadStarterPreset() {
+  if (hostedIceLabels) {
+    applyHostedNotifyPreset();
+    showBuildScreen();
+    return;
+  }
   // Starter program: Crater→Sidestep, Battery<12→Return, OnOre→Drill, Always→Explore
   selectedSensors = [Sim.SENSORS.DISTANCE, Sim.SENSORS.SPECTRAL, Sim.SENSORS.CAMERA];
   rules = [
@@ -369,8 +385,8 @@ function renderConditionOptions(selected) {
     { value: Sim.CONDITIONS.BATTERY_BELOW, label: 'Battery below N', sensor: null },
     { value: Sim.CONDITIONS.CRATER_IN_FRONT, label: 'Crater in front', sensor: Sim.SENSORS.DISTANCE },
     { value: Sim.CONDITIONS.ON_DUST, label: 'On a dust tile', sensor: Sim.SENSORS.DUST },
-    { value: Sim.CONDITIONS.ORE_NEXT_TO, label: 'Ore next to rover', sensor: Sim.SENSORS.SPECTRAL },
-    { value: Sim.CONDITIONS.ON_ORE, label: 'On an ore tile', sensor: Sim.SENSORS.SPECTRAL },
+    { value: Sim.CONDITIONS.ORE_NEXT_TO, label: hostedIceLabels ? 'Ore (ice) next to rover' : 'Ore next to rover', sensor: Sim.SENSORS.SPECTRAL },
+    { value: Sim.CONDITIONS.ON_ORE, label: hostedIceLabels ? 'On ore tile (ice)' : 'On an ore tile', sensor: Sim.SENSORS.SPECTRAL },
     { value: Sim.CONDITIONS.GOAL_MET, label: 'Goal met', sensor: null },
     { value: Sim.CONDITIONS.ALWAYS, label: 'Always', sensor: null }
   ];
@@ -595,6 +611,10 @@ function createBoardRenderer(container, state) {
 }
 
 function showOperateView() {
+  if (gameState?.outcome) {
+    showEndScreen();
+    return;
+  }
   clearScreen();
   sensorLayers = {
     camera: true,
@@ -830,6 +850,8 @@ function formatConditionForDisplay(condition) {
   if (condition.type === Sim.CONDITIONS.BATTERY_BELOW) {
     return `Battery below ${condition.n}`;
   }
+  if (hostedIceLabels && condition.type === Sim.CONDITIONS.ON_ORE) return 'On ore tile (ice)';
+  if (hostedIceLabels && condition.type === Sim.CONDITIONS.ORE_NEXT_TO) return 'Ore (ice) next to rover';
   return Sim.CONDITION_NAMES[condition.type] || condition.type;
 }
 
@@ -961,11 +983,11 @@ function renderSensorReadings() {
   if (gameState.sensors.includes(Sim.SENSORS.SPECTRAL)) {
     const oreNext = readings.oreNextTo;
     html += `<div class="sensor-reading">
-      <span class="sensor-label">Ore nearby:</span>
+      <span class="sensor-label">${hostedIceLabels ? 'Ice nearby:' : 'Ore nearby:'}</span>
       <span class="sensor-value">${oreNext?.detected ? `Yes (${oreNext.directions.join(', ')})` : 'No'}</span>
     </div>`;
     html += `<div class="sensor-reading">
-      <span class="sensor-label">On ore:</span>
+      <span class="sensor-label">${hostedIceLabels ? 'On ice:' : 'On ore:'}</span>
       <span class="sensor-value">${readings.onOre ? 'Yes' : 'No'}</span>
     </div>`;
   }
@@ -1617,6 +1639,21 @@ function endRun() {
 
 // === END SCREEN ===
 
+function hostedNotifyFailureNote() {
+  if (!hostedIceLabels || !gameState) return '';
+  const success = gameState.outcome === Sim.OUTCOMES.SUCCESS_SCAN
+    || gameState.outcome === Sim.OUTCOMES.SUCCESS_ORE;
+  if (success) return '';
+  if (gameState.iceConfirmed) return '';
+  const notified = (gameState.trace || []).some((t) => t?.actionResult?.notified);
+  if (notified) return '';
+  return "No Notify fired: add 'On ice tile: Notify'.";
+}
+
+function displayEndReason() {
+  return hostedNotifyFailureNote() || gameState?.endReason || '';
+}
+
 function showEndScreen() {
   clearScreen();
   
@@ -1639,7 +1676,7 @@ function showEndScreen() {
     <div class="end-screen ${isSuccess ? 'success' : 'failure'}">
       <div class="end-header glass-panel">
         <h2>${outcomeText[outcome] || outcome}</h2>
-        <p class="end-reason">${gameState.endReason}</p>
+        <p class="end-reason">${displayEndReason()}</p>
       </div>
       
       <div class="end-stats">
@@ -1994,12 +2031,18 @@ export function resetForTest() {
   runNumber = 0;
   selectedSensors = [];
   rules = [null, null, null, null];
+  includeNotifyAction = false;
+  hostedIceLabels = false;
   log = { sessions: [], currentSession: null };
   startNewSession();
 }
 
 export function setIncludeNotifyAction(on) {
   includeNotifyAction = !!on;
+}
+
+export function setHostedIceLabels(on) {
+  hostedIceLabels = !!on;
 }
 
 export function setSkipOperateOnLaunch(on) {
@@ -2032,10 +2075,14 @@ export function setHostedForce2d(on) {
 
 export async function prepareHostedScout() {
   await Promise.all([loadAssets(), warmupOrbitalArt()]);
+  setHostedIceLabels(true);
   setIncludeNotifyAction(true);
   setSkipOperateOnLaunch(true);
   setHostOwnsTicks(true);
   setHostedForce2d(false);
+  if (!rules.some((r) => r && r.condition && r.action)) {
+    applyHostedNotifyPreset();
+  }
   if (!log.currentSession) startNewSession('v08-scout');
 }
 

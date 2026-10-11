@@ -114,7 +114,9 @@ export function createGame() {
       activePings: [],
       log: [],
     },
-    deepIce: { unlocked: false, tx: null, ty: null },
+    deepIce: { unlocked: false, tx: null, ty: null, foundAt: null },
+    hoverTile: null,
+    camPan: null,
     won: false,
     win: null,
   };
@@ -133,8 +135,8 @@ export function createGame() {
     return ev;
   }
 
-  function toast(text) {
-    state.toast = { text, ttl: C.warningToastSeconds };
+  function toast(text, ttl = C.warningToastSeconds) {
+    state.toast = { text, ttl };
     emit('warning', { text });
   }
 
@@ -267,7 +269,9 @@ export function createGame() {
       t.type = TILE.ICE;
       t.iceRemaining = C.deepIceAmount;
     }
-    state.deepIce = { unlocked: true, tx: at.tx, ty: at.ty };
+    state.deepIce = { unlocked: true, tx: at.tx, ty: at.ty, foundAt: state.time };
+    state.camPan = { tx: at.tx, ty: at.ty, t: 1.6 };
+    toast('Deep Ice found! Send haulers to mine it.', 5);
     emit('deep-ice', { tx: at.tx, ty: at.ty });
     return state.deepIce;
   }
@@ -287,11 +291,12 @@ export function createGame() {
     if (state.expedition.log.length > 12) state.expedition.log.shift();
   }
 
-  function markExpeditionLaunched() {
+  function markExpeditionLaunched(info = {}) {
     state.expedition.launched = true;
     state.expedition.ended = false;
     state.expedition.recallUsed = false;
     state.expedition.recalling = false;
+    if (info.hasNotifyRule != null) state.expedition.hasNotifyRule = !!info.hasNotifyRule;
     noteExpedition('Scout launched');
   }
 
@@ -1400,6 +1405,45 @@ export function createGame() {
 
   bootstrap();
 
+  function iceHoverText(tx, ty) {
+    const t = tileAt(tx, ty);
+    if (!t) return '';
+    const deep = state.deepIce.unlocked && state.deepIce.tx === tx && state.deepIce.ty === ty;
+    if (t.type === TILE.ICE) {
+      return deep ? 'Deep Ice — haul this home' : 'Shallow ice — right-click to mine';
+    }
+    if (t.type === TILE.ICE_MINED) return deep ? 'Deep Ice depleted' : 'Shallow ice depleted';
+    return '';
+  }
+
+  function showIceHint() {
+    if (state.won || state.expedition.launched) return false;
+    const stored = storedForGoal().ice;
+    const shallow = tileAt(C.shallowIceTileX, C.shallowIceTileY);
+    const empty = !shallow || shallow.type === TILE.ICE_MINED || (shallow.iceRemaining || 0) <= 0;
+    return stored + 1e-6 < C.goalIceInStorage || empty;
+  }
+
+  function objectiveProgress() {
+    const shallow = tileAt(C.shallowIceTileX, C.shallowIceTileY);
+    const minedShallow = !shallow
+      || shallow.type === TILE.ICE_MINED
+      || (shallow.iceRemaining + 1e-6) < C.shallowIceAmount;
+    const launched = !!state.expedition.launched;
+    const notifyReady = launched && (state.expedition.hasNotifyRule || state.stats.notifies > 0 || state.deepIce.unlocked);
+    const deep = state.deepIce;
+    const deepTile = deep.unlocked ? tileAt(deep.tx, deep.ty) : null;
+    const hauledDeep = !!(deep.unlocked && deepTile && (
+      deepTile.type === TILE.ICE_MINED || (deepTile.iceRemaining + 1e-6) < C.deepIceAmount
+    ));
+    return {
+      mineShallow: minedShallow,
+      buildScout: notifyReady,
+      haulDeep: hauledDeep,
+      landCrew: !!(state.won || canLandCrew()),
+    };
+  }
+
   return {
     state,
     C,
@@ -1455,5 +1499,8 @@ export function createGame() {
     noteExpedition,
     clampStores,
     storedForGoal,
+    iceHoverText,
+    showIceHint,
+    objectiveProgress,
   };
 }

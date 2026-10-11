@@ -97,3 +97,21 @@ multiply-tinting gives exactly the tint colour.
 | glow-building.png | 256x256 RGBA | the same, centred under a 2x2 building. Scale its intensity in code if it is too strong |
 
 Additive use: dest += rgb * alpha * intensity. The night preview used intensity 0.85 over a scene darkened to about 25%.
+
+---
+# Onboarding hints (drawn in code at 4x, then downsampled; same style as the batch-4 UI)
+
+Colours: cyan #3FD8FF for finds and hints, orange #FF8A1F for the player. Hint shapes have a thin dark
+(#06222E) outline under a soft cyan glow, so they read on bright regolith, black crater floors and UI panels alike.
+
+| file | size | use / anchor |
+|---|---|---|
+| ice-marker.png | 64x64 RGBA | cyan map pin with a dark ice-crystal glyph in its head, for marking ice tiles. **Anchor: the tip is at (32,62)**, so draw it at (anchorX-32, anchorY-62). Draw at **1:1, 64 screen px** so the crystal stays readable |
+| hint-arrow-0.png ... hint-arrow-3.png | 64x64 RGBA | cyan "look here" arrow pointing DOWN with a dark outline. **Anchor: the tip is at bottom centre**, (32,55) at rest in frame 0. It bobs 0/3/6/3 px toward the tip (the lowest tip is (32,61) in frame 2) while the glow pulses. Loops 0-1-2-3-0. The code rotates it to point anywhere; rotate about (32,55) so the tip stays on the target. Suggested 6-8 fps |
+| pulse-ring-0.png ... pulse-ring-5.png | 128x128 RGBA | cyan announcement pulse for a newly revealed deposit: 2 staggered rings expand from the centre and fade. Seamless loop. Centre it on the tile, behind ice-marker. Suggested 10 fps |
+| check.png | 32x32 RGBA | completed objective: orange #FF8A1F filled circle with a white check |
+| check-cyan.png | 32x32 RGBA | the same with a cyan circle (hint colour) |
+| step-dot.png | 32x32 RGBA | pending objective step: hollow white ring with a faint dark edge |
+| step-dot-active.png | 32x32 RGBA | current step: filled cyan dot with a soft glow |
+
+All of these were checked at 1x, with the 32px icons drawn at 32px. Preview: art-src/preview-hints.png.
