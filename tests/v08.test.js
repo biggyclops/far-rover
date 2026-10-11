@@ -1135,7 +1135,6 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     await ready(page);
     const result = await page.evaluate((prog) => {
       const t = window.__v08Test;
-      const hab0 = t.getState().buildings.find((b) => b.type === 'habitat');
       function haulers() {
         return t.getState().units.filter((u) => u.kind === 'hauler');
       }
@@ -1145,44 +1144,6 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
           if (t.getState().buildings.find((b) => b.id === id)?.complete) return true;
         }
         return false;
-      }
-      function tryPlace(type, preferTx, preferTy) {
-        const C = t.config;
-        t.selectUnits(haulers().map((u) => u.id));
-        const spots = [];
-        for (let ty = 0; ty < C.mapHeight - 1; ty++) {
-          for (let tx = 0; tx < C.mapWidth - 1; tx++) {
-            spots.push({ tx, ty, d: Math.hypot(tx - preferTx, ty - preferTy) });
-          }
-        }
-        spots.sort((a, b) => a.d - b.d);
-        for (const s of spots) {
-          const b = t.placeBuilding(type, s.tx, s.ty);
-          if (b) return b;
-        }
-        return null;
-      }
-      function mineUntil(need) {
-        const hab = t.getState().buildings.find((b) => b.type === 'habitat');
-        const spots = [[10, 22], [24, 12], [8, 18], [28, 18], [18, 8], [8, 28]];
-        for (const [tx, ty] of spots) {
-          if (t.getState().regolith >= need) return true;
-          t.selectUnits(haulers().map((u) => u.id));
-          t.issueOrder({ type: 'mine', tx, ty });
-          for (let i = 0; i < 25; i++) {
-            t.advance(1);
-            if (t.getState().regolith >= need) return true;
-            if (haulers().every((u) => (u.cargo?.regolith || 0) >= 14)) break;
-          }
-          // Mined regolith sits in cargo; Land Crew / placeBuilding read stores.
-          t.selectUnits(haulers().map((u) => u.id));
-          t.issueOrder({ type: 'haul', sourceTx: tx, sourceTy: ty, destBuildingId: hab.id });
-          for (let i = 0; i < 50; i++) {
-            t.advance(1);
-            if (t.getState().regolith >= need) return true;
-          }
-        }
-        return t.getState().regolith >= need;
       }
       function tend(sourceTx, sourceTy, destId) {
         const snap = t.getState();
@@ -1227,25 +1188,7 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       t.advance(2.1);
       const deep = t.getState().deepIce;
       if (!deep.unlocked) return { error: 'no deep ice', time: t.getState().time };
-      // Hub ice does not score and the home hub pulls from a full vault, so
-      // habitat (30) + vault (150) stalls around 170. A storage pad after the
-      // bore (dig yield + a short mine if needed) holds the last scoring loads.
-      const afterDig = t.getState();
-      // Dead batteries after a 24 s/tile bore cannot mine. Charge first.
-      const habCharge = afterDig.buildings.find((b) => b.type === 'habitat');
-      t.selectUnits(haulers().map((u) => u.id));
-      if (habCharge) t.issueOrder({ type: 'charge', buildingId: habCharge.id });
-      for (let i = 0; i < 40; i++) {
-        t.advance(1);
-        if (haulers().every((u) => u.battery >= 90)) break;
-      }
-      if (!mineUntil(30)) {
-        return { error: 'not enough regolith for storage', regolith: t.getState().regolith };
-      }
-      const storage = tryPlace('storage', hab0.tx + 4, hab0.ty + 3);
-      if (!storage) return { error: 'storage place failed', time: t.getState().time, regolith: t.getState().regolith };
-      if (!waitDone(storage.id)) return { error: 'storage not complete' };
-      let destId = farHub.id;
+      const destId = farHub.id;
       t.selectUnits(haulers().map((u) => u.id));
       t.issueOrder({
         type: 'haul',
@@ -1259,24 +1202,6 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
         if (snap.canLandCrew) {
           t.landCrew();
           break;
-        }
-        const v = snap.buildings.find((b) => b.id === vault.id);
-        // Home hub pulls ~20 back out of the vault, so vault.ice may stall
-        // near 130. Switch once scoring ice is on the pad, or the vault is close.
-        // Switch before the vault/hubs trap the last scoring ice (hub ice
-        // does not count; a full vault + habitat 20 = 170).
-        if (v && v.ice >= 100 && destId !== storage.id) {
-          destId = storage.id;
-          const crew = haulers().filter((u) => u.order !== 'charge');
-          if (crew.length) {
-            t.selectUnits(crew.map((u) => u.id));
-            t.issueOrder({
-              type: 'haul',
-              sourceTx: deep.tx,
-              sourceTy: deep.ty,
-              destBuildingId: destId,
-            });
-          }
         }
         tend(deep.tx, deep.ty, destId);
       }

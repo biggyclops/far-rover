@@ -579,7 +579,9 @@ export function createGame() {
   }
 
   function deposit(unit, dest) {
-    const iceRoom = Math.max(0, dest.iceCap - dest.ice);
+    const iceRoom = dest.type === 'tunnel-hub'
+      ? iceRoomAtHub(dest)
+      : Math.max(0, dest.iceCap - dest.ice);
     const regRoom = Math.max(0, dest.regolithCap - dest.regolith);
     const ice = Math.min(unit.cargo.ice, iceRoom);
     const reg = Math.min(unit.cargo.regolith, regRoom);
@@ -587,6 +589,7 @@ export function createGame() {
     dest.regolith += reg;
     unit.cargo.ice -= ice;
     unit.cargo.regolith -= reg;
+    if (dest.type === 'tunnel-hub') fillVaultsFrom(dest);
     if (ice > 0 && (dest.type === 'habitat' || dest.type === 'storage' || dest.type === 'vault') && buildingInCommandRange(dest)) {
       state.stats.goalIceByHauler = (state.stats.goalIceByHauler || 0) + ice;
     }
@@ -911,7 +914,10 @@ export function createGame() {
 
   function buildingRoom(b, kind) {
     if (!b) return 0;
-    if (kind === 'ice') return Math.max(0, (b.iceCap || 0) - (b.ice || 0));
+    if (kind === 'ice') {
+      if (b.type === 'tunnel-hub') return iceRoomAtHub(b);
+      return Math.max(0, (b.iceCap || 0) - (b.ice || 0));
+    }
     return Math.max(0, (b.regolithCap || 0) - (b.regolith || 0));
   }
 
@@ -1468,7 +1474,11 @@ export function createGame() {
       if (!dest || (!isDropBuilding(dest) && !isTransitDrop(dest))) {
         dest = nearestDrop(order.sourceTx, order.sourceTy, unit, kind) || dest;
         if (dest) order.destBuildingId = dest.id;
-      } else if (buildingRoom(dest, kind) <= 1e-6 && dropRoom(kind) > 1e-6) {
+      } else if (
+        buildingRoom(dest, kind) <= 1e-6
+        && dropRoom(kind) > 1e-6
+        && !hubPipelineHasRoom(dest)
+      ) {
         dest = nearestDrop(order.sourceTx, order.sourceTy, unit, kind) || dest;
         if (dest) order.destBuildingId = dest.id;
       }
@@ -1531,6 +1541,11 @@ export function createGame() {
         }
         const leftover = cargoAmount(unit);
         if (leftover > 0.001) {
+          if (hubPipelineHasRoom(dest)) {
+            unit.blockedReason = null;
+            refreshUnitStatus(unit);
+            return dt;
+          }
           const reason = storageBlockedReason(unit);
           if (reason) {
             pauseOnFull(unit, reason);
@@ -1703,25 +1718,84 @@ export function createGame() {
     return ready.every((h) => hubTouchesTunnel(h));
   }
 
-  function iceRoomAtHub(hub) {
-    let room = Math.max(0, hub.iceCap - hub.ice);
-    for (const v of vaultsBeside(hub)) room += Math.max(0, v.iceCap - v.ice);
+  function scoringStores() {
+    return state.buildings.filter((b) => (
+      b.complete
+      && (b.type === 'habitat' || b.type === 'storage' || b.type === 'vault')
+      && buildingInCommandRange(b)
+    ));
+  }
+
+  function isScoringHomeHub(hub) {
+    return !!(hub && hub.type === 'tunnel-hub' && vaultsBeside(hub).some((v) => buildingInCommandRange(v)));
+  }
+
+  function goalIceRoom(skipIds = new Set()) {
+    let room = 0;
+    for (const b of scoringStores()) {
+      if (skipIds.has(b.id)) continue;
+      room += Math.max(0, (b.iceCap || 0) - (b.ice || 0));
+    }
     return room;
   }
 
-  function fillVaultsFrom(hub) {
-    const reserved = Math.max(0, hub.outboundIce || 0);
+  function overflowIceToGoal(amount, skipIds = new Set()) {
+    let left = Math.max(0, amount);
+    const stores = scoringStores().filter((b) => !skipIds.has(b.id));
+    const rank = (t) => (t === 'vault' ? 0 : t === 'storage' ? 1 : 2);
+    stores.sort((a, b) => rank(a.type) - rank(b.type));
+    for (const b of stores) {
+      if (left <= 1e-9) break;
+      const room = Math.max(0, (b.iceCap || 0) - (b.ice || 0));
+      const mv = Math.min(room, left);
+      b.ice += mv;
+      left -= mv;
+    }
+    return amount - left;
+  }
+
+  function iceRoomAtHub(hub) {
+    let room = Math.max(0, hub.iceCap - hub.ice);
+    const vaults = vaultsBeside(hub);
+    for (const v of vaults) room += Math.max(0, v.iceCap - v.ice);
+    if (isScoringHomeHub(hub)) {
+      const skip = new Set([hub.id, ...vaults.map((v) => v.id)]);
+      room += goalIceRoom(skip);
+    }
+    return room;
+  }
+
+  function settleHubIce(hub) {
+    if (!hub || hub.type !== 'tunnel-hub') return;
+    const home = isScoringHomeHub(hub);
+    const reserved = home ? 0 : Math.max(0, hub.outboundIce || 0);
     let free = Math.max(0, hub.ice - reserved);
-    for (const v of vaultsBeside(hub)) {
+    const vaults = vaultsBeside(hub);
+    for (const v of vaults) {
       const room = Math.max(0, v.iceCap - v.ice);
       const mv = Math.min(room, free);
       v.ice += mv;
       hub.ice -= mv;
       free -= mv;
     }
+    if (home && free > 1e-9) {
+      const skip = new Set(vaults.map((v) => v.id));
+      const moved = overflowIceToGoal(free, skip);
+      hub.ice -= moved;
+    }
+    if (hub.ice > hub.iceCap) {
+      const extra = hub.ice - hub.iceCap;
+      hub.ice = hub.iceCap;
+      if (home) overflowIceToGoal(extra);
+    }
+  }
+
+  function fillVaultsFrom(hub) {
+    settleHubIce(hub);
   }
 
   function pullVaultsTo(hub, amount) {
+    if (isScoringHomeHub(hub)) return;
     let need = Math.max(0, amount);
     for (const v of vaultsBeside(hub)) {
       if (need <= 0) break;
@@ -1737,16 +1811,24 @@ export function createGame() {
     return completeHubs().find((h) => h.id !== hub.id) || null;
   }
 
+  function hubPipelineHasRoom(hub) {
+    if (!hub || hub.type !== 'tunnel-hub') return false;
+    if (iceRoomAtHub(hub) > 1e-6) return true;
+    const dest = otherHub(hub);
+    return !!(dest && iceRoomAtHub(dest) > 1e-6);
+  }
+
   function sendFromHub(hub) {
     if (!tunnelReady()) return;
     const dest = otherHub(hub);
     if (!dest) return;
+    if (isScoringHomeHub(hub)) hub.outboundIce = 0;
     const wantIce = hub.outboundIce || 0;
     const wantReg = hub.outboundReg || 0;
     if (wantIce <= 1e-6 && wantReg <= 1e-6) return;
     const iceRoom = iceRoomAtHub(dest);
     const regRoom = Math.max(0, dest.regolithCap - dest.regolith);
-    if (hub.ice < wantIce) pullVaultsTo(hub, wantIce - hub.ice);
+    if (hub.ice < wantIce && !isScoringHomeHub(hub)) pullVaultsTo(hub, wantIce - hub.ice);
     const ice = Math.min(hub.ice, wantIce, iceRoom);
     const reg = Math.min(hub.regolith, wantReg, regRoom);
     if (ice <= 1e-6 && reg <= 1e-6) return;
@@ -1770,7 +1852,11 @@ export function createGame() {
     dest.ice += p.ice;
     dest.regolith += p.regolith;
     fillVaultsFrom(dest);
-    if (dest.ice > dest.iceCap) dest.ice = dest.iceCap;
+    if (dest.ice > dest.iceCap) {
+      const extra = dest.ice - dest.iceCap;
+      dest.ice = dest.iceCap;
+      if (isScoringHomeHub(dest)) overflowIceToGoal(extra);
+    }
     if (dest.regolith > dest.regolithCap) dest.regolith = dest.regolithCap;
     if (p.ice > 0 || p.regolith > 0) state.stats.usedTunnel = true;
     if (p.ice > 0) {
@@ -2128,7 +2214,9 @@ export function createGame() {
     const b = buildingById(bid);
     if (!b) return null;
     if (amounts.ice) {
-      const room = Math.max(0, b.iceCap - b.ice);
+      const room = b.type === 'tunnel-hub'
+        ? iceRoomAtHub(b)
+        : Math.max(0, b.iceCap - b.ice);
       const add = Math.min(room, amounts.ice);
       b.ice += add;
       if (b.type === 'tunnel-hub') b.outboundIce = (b.outboundIce || 0) + add;
