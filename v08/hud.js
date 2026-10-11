@@ -48,6 +48,33 @@ export function bindHud(root, game, hooks = {}) {
   $('#build-hub')?.addEventListener('click', () => setBuild('tunnel-hub'));
   $('#build-vault')?.addEventListener('click', () => setBuild('vault'));
   $('#print-hauler')?.addEventListener('click', () => { game.startPrint(); });
+
+  function costLabel(type) {
+    const spec = game.buildCost(type);
+    if (!spec) return '';
+    const bits = [];
+    if (spec.reg) bits.push(`${spec.reg} reg`);
+    if (spec.power) bits.push(`${spec.power} pwr`);
+    if (spec.time) bits.push(`${spec.time}s`);
+    return bits.join(' · ');
+  }
+
+  function applyCostLabels() {
+    const map = [
+      ['#build-solar', 'Rim solar', 'solar'],
+      ['#build-storage', 'Storage', 'storage'],
+      ['#build-printer', 'Printer', 'printer'],
+      ['#build-hub', 'Tunnel hub', 'tunnel-hub'],
+      ['#build-vault', 'Vault', 'vault'],
+      ['#print-hauler', 'Print hauler', 'hauler'],
+    ];
+    for (const [sel, title, type] of map) {
+      const el = $(sel);
+      if (!el) continue;
+      el.innerHTML = `${title} <small>${costLabel(type)}</small>`;
+    }
+  }
+  applyCostLabels();
   $('#view-toggle')?.addEventListener('click', () => { game.toggleView(); refreshButtons(); });
   $('#mute-btn')?.addEventListener('click', () => {
     game.state.muted = !game.state.muted;
@@ -84,14 +111,37 @@ export function bindHud(root, game, hooks = {}) {
     }
   }
 
+  function syncAfford() {
+    const map = [
+      ['#build-solar', 'solar'],
+      ['#build-storage', 'storage'],
+      ['#build-printer', 'printer'],
+      ['#build-hub', 'tunnel-hub'],
+      ['#build-vault', 'vault'],
+      ['#print-hauler', 'hauler'],
+    ];
+    for (const [sel, type] of map) {
+      const el = $(sel);
+      if (!el) continue;
+      const reason = game.affordReason(type);
+      el.classList.toggle('unaffordable', !!reason);
+      el.title = reason || '';
+      el.disabled = type === 'hauler' && reason === 'Need an idle printer';
+    }
+  }
+
   function sync() {
     const tot = game.totals();
+    const goal = game.storedForGoal();
+    const transit = game.transitIce();
     const ice = $('#res-ice');
     const reg = $('#res-regolith');
     const pwr = $('#res-power');
-    if (ice) ice.textContent = `${fmt(tot.ice)} / ${fmt(tot.iceCap)}`;
+    if (ice) ice.textContent = `${fmt(goal.ice)} / ${fmt(goal.iceCap)}`;
     if (reg) reg.textContent = `${fmt(tot.regolith)} / ${fmt(tot.regolithCap)}`;
     if (pwr) pwr.textContent = `${fmt(tot.power)} / ${fmt(tot.powerCap)}`;
+    const tr = $('#res-transit');
+    if (tr) tr.textContent = `Hubs + transit ${fmt(transit.ice)}`;
     const clk = clockLabel(game);
     const clock = $('#sol-clock');
     if (clock) clock.textContent = `Sol ${clk.sol}  ${clk.phase}  ${clk.remain}`;
@@ -102,10 +152,21 @@ export function bindHud(root, game, hooks = {}) {
     }
     const sel = game.selectedUnits();
     const info = $('#sel-info');
+    const card = $('#unit-card');
+    const prompt = game.state.orderPrompt || (
+      game.state.armedOrder === 'haul' ? 'Armed Haul — click a resource'
+        : game.state.armedOrder === 'mine' ? 'Armed Mine — click a resource'
+          : game.state.armedOrder === 'dig' ? 'Armed Dig — click the tunnel'
+            : game.state.armedOrder === 'charge' ? 'Armed Charge — click a charger'
+              : ''
+    );
     if (info) {
-      if (sel.length === 1) {
+      if (prompt) {
+        info.textContent = prompt;
+      } else if (sel.length === 1) {
         const u = sel[0];
-        info.textContent = `Hauler  bat ${fmt(u.battery)}  cargo ${fmt(u.cargo.ice + u.cargo.regolith)}/${C.haulerCarry}`;
+        const kind = u.kind === 'scout' ? 'Scout' : 'Hauler';
+        info.textContent = `${kind}  bat ${fmt(u.battery)}  cargo ${fmt(u.cargo.ice + u.cargo.regolith)}/${C.haulerCarry}`;
       } else if (sel.length > 1) {
         info.textContent = `${sel.length} haulers`;
       } else if (game.state.selectedBuildingId) {
@@ -115,6 +176,17 @@ export function bindHud(root, game, hooks = {}) {
         info.textContent = 'Click a hauler · drag a box · right-click an order · Tab toggles underground';
       }
     }
+    const shown = sel[0] || (game.state.hoverUnitId ? game.unitById(game.state.hoverUnitId) : null);
+    if (card) {
+      const data = shown ? game.unitCard(shown) : null;
+      card.hidden = !data;
+      if (data) {
+        card.innerHTML = `<strong>${data.kind}</strong> · bat ${fmt(data.battery)} · cargo ${fmt(data.cargo)}/${data.carry} · ${data.task}`;
+      }
+    }
+    const banner = $('#goal-banner');
+    if (banner) banner.textContent = game.goalBanner();
+    syncAfford();
     const toast = $('#toast');
     if (toast) {
       const msg = game.state.toast?.text || '';
@@ -126,8 +198,9 @@ export function bindHud(root, game, hooks = {}) {
     const hintOn = game.showIceHint();
     const scoutHint = game.showScoutHint();
     if (buildScout) {
-      buildScout.hidden = !!exp.launched;
-      buildScout.classList.toggle('hint-pulse', scoutHint && !exp.launched);
+      const show = game.canBuildScout();
+      buildScout.hidden = !show;
+      buildScout.classList.toggle('hint-pulse', scoutHint && show);
     }
     const iceHint = $('#ice-hint');
     if (iceHint) {
@@ -175,15 +248,16 @@ export function bindHud(root, game, hooks = {}) {
     }
     const recall = $('#btn-recall');
     if (recall) {
-      recall.hidden = !exp.launched;
-      recall.disabled = !exp.launched || !!exp.recallUsed || !!exp.ended;
+      const ok = game.canRecall();
+      recall.hidden = !ok;
+      recall.disabled = !ok;
     }
     const land = $('#btn-land-crew');
     if (land) land.hidden = !game.canLandCrew();
     const badge = $('#patch-badge');
     if (badge) badge.hidden = !exp.pendingPatch;
     const left = $('#patches-left');
-    if (left) left.textContent = `Patches left: ${game.patchesLeft()}`;
+    if (left) left.textContent = game.patchesLabel();
     const log = $('#expedition-log');
     if (log) {
       const last = exp.log[exp.log.length - 1];
@@ -203,7 +277,7 @@ export function bindHud(root, game, hooks = {}) {
         if (timeEl) timeEl.textContent = `Time  ${m}:${s}`;
         if (logi) logi.textContent = `Logistics  ${w.logistics}`;
         if (notes) notes.textContent = `Notifies  ${w.notifies}`;
-        if (patches) patches.textContent = `Patches  ${w.patches}`;
+        if (patches) patches.textContent = w.patchesLabel || game.patchesLabel();
         const iceEl = $('#win-ice');
         const pwrEl = $('#win-power');
         if (iceEl) iceEl.textContent = `Ice  ${Math.floor(w.ice + 1e-6)} / ${Math.floor((w.iceCap || 0) + 1e-6)}`;

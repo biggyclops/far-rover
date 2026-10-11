@@ -119,6 +119,7 @@ export function createGame() {
     camPan: null,
     won: false,
     win: null,
+    simAcc: 0,
   };
 
   function id() {
@@ -202,7 +203,7 @@ export function createGame() {
     return b;
   }
 
-  function addHauler(x, y) {
+  function addHauler(x, y, rally = undefined) {
     const u = {
       id: id(),
       kind: 'hauler',
@@ -217,6 +218,14 @@ export function createGame() {
       status: 'idle',
       blockedReason: null,
     };
+    if (rally !== undefined) {
+      const order = rally || defaultHaulOrder();
+      if (order) {
+        u.order = resetOrder(order);
+        u.lastOrder = cloneOrder(u.order);
+        u.status = u.order.type;
+      }
+    }
     state.units.push(u);
     return u;
   }
@@ -311,18 +320,14 @@ export function createGame() {
 
   function startRecall() {
     if (!state.expedition.launched || state.expedition.ended || state.expedition.recallUsed) return null;
+    const liveScout = state.units.some((u) => u.kind === 'scout');
+    if (liveScout) return null;
     state.expedition.recallUsed = true;
-    state.expedition.recalling = true;
-    const m = state.expedition.marker;
-    const c = tileCenter(m.tx, m.ty);
-    const scout = addScout(c.x, c.y);
-    state.expedition.scoutId = scout.id;
-    const hab = habitat();
-    const dest = tileCenter(hab.tx + 1, hab.ty + 1);
-    assignOrder([scout], { type: 'go', x: dest.x, y: dest.y }, dest);
-    noteExpedition('Recall: scout driving home');
+    state.expedition.recalling = false;
+    endExpedition();
+    noteExpedition('Recall: scout returning (no extra unit)');
     emit('recall');
-    return scout;
+    return { recalled: true };
   }
 
   function currentSol() {
@@ -364,11 +369,30 @@ export function createGame() {
     }
   }
 
+  function inCommandRange(tx, ty) {
+    const h = habitat();
+    if (!h) return false;
+    const cx = h.tx + 1;
+    const cy = h.ty + 1;
+    return Math.hypot((tx + 0.5) - cx, (ty + 0.5) - cy) <= C.commandRangeRadius + 1e-6;
+  }
+
+  function buildingInCommandRange(b) {
+    if (!b) return false;
+    const n = buildingFootprint(b.type);
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        if (inCommandRange(b.tx + x, b.ty + y)) return true;
+      }
+    }
+    return false;
+  }
+
   function storedForGoal() {
     let ice = 0, power = 0, iceCap = 0, powerCap = 0;
     for (const b of state.buildings) {
       if (!b.complete) continue;
-      if (b.type === 'habitat' || b.type === 'storage' || b.type === 'vault') {
+      if ((b.type === 'habitat' || b.type === 'storage' || b.type === 'vault') && buildingInCommandRange(b)) {
         ice += b.ice;
         iceCap += b.iceCap;
       }
@@ -378,6 +402,21 @@ export function createGame() {
       }
     }
     return { ice, power, iceCap, powerCap };
+  }
+
+  function transitIce() {
+    let ice = 0;
+    let cap = 0;
+    for (const b of state.buildings) {
+      if (!b.complete) continue;
+      if (b.type === 'tunnel-hub') {
+        ice += b.ice;
+        cap += b.iceCap;
+      }
+    }
+    const pkt = packetTotals();
+    ice += pkt.ice;
+    return { ice, cap };
   }
 
   function canLandCrew() {
@@ -396,10 +435,7 @@ export function createGame() {
       if (state.expedition.pendingPatch.remaining <= 0) {
         const p = state.expedition.pendingPatch;
         state.expedition.pendingPatch = null;
-        state.expedition.patchesThisSol += 1;
-        state.stats.patches += 1;
-        emit('patch-applied', { slot: p.slot, condition: p.condition, action: p.action });
-        noteExpedition('Patch applied');
+        emit('patch-ready', { slot: p.slot, condition: p.condition, action: p.action });
       }
     }
     const stillPending = [];
@@ -440,9 +476,13 @@ export function createGame() {
     state.won = true;
     state.win = {
       time: state.time,
-      logistics: state.stats.usedTunnel ? 'tunnel' : 'haulers only',
+      logistics: (state.stats.goalIceByTunnel || 0) > (state.stats.goalIceByHauler || 0)
+        ? 'tunnel'
+        : 'haulers only',
       notifies: state.stats.notifies,
       patches: state.stats.patches,
+      patchesLeft: patchesLeft(),
+      patchesLabel: patchesLabel(),
       ice: tot.ice,
       power: tot.power,
       iceCap: tot.iceCap,
@@ -538,6 +578,9 @@ export function createGame() {
     dest.regolith += reg;
     unit.cargo.ice -= ice;
     unit.cargo.regolith -= reg;
+    if (ice > 0 && (dest.type === 'habitat' || dest.type === 'storage' || dest.type === 'vault') && buildingInCommandRange(dest)) {
+      state.stats.goalIceByHauler = (state.stats.goalIceByHauler || 0) + ice;
+    }
     return { ice, regolith: reg, total: ice + reg };
   }
 
@@ -609,6 +652,241 @@ export function createGame() {
 
   function isDropBuilding(b) {
     return !!(b && b.complete && (b.type === 'habitat' || b.type === 'storage' || b.type === 'vault'));
+  }
+
+  function isTransitDrop(b) {
+    return !!(b && b.complete && b.type === 'tunnel-hub');
+  }
+
+  function inNoMineZone(tx, ty) {
+    const r = C.noRegolithMineRadiusTiles;
+    if (r == null) return false;
+    for (const b of state.buildings) {
+      if (chebyshevToBuilding(tx, ty, b) <= r) return true;
+    }
+    return false;
+  }
+
+  function sourceHasWork(tx, ty) {
+    const t = tileAt(tx, ty);
+    if (!t) return false;
+    if (t.type === TILE.ICE) return (t.iceRemaining || 0) > 0;
+    if (t.type === TILE.ICE_MINED || t.type === TILE.CRATER_S || t.type === TILE.PIT) return false;
+    if (t.craterM || t.buildingId) return false;
+    if (!isPlainGround(t)) return false;
+    if (inNoMineZone(tx, ty)) return false;
+    return true;
+  }
+
+  function nearestIceTile(tx, ty, radius = 1) {
+    let best = null;
+    let bestD = Infinity;
+    for (let y = ty - radius; y <= ty + radius; y++) {
+      for (let x = tx - radius; x <= tx + radius; x++) {
+        const t = tileAt(x, y);
+        if (!t || t.type !== TILE.ICE || (t.iceRemaining || 0) <= 0) continue;
+        const d = Math.max(Math.abs(x - tx), Math.abs(y - ty)) + (y > ty ? -0.15 : 0);
+        if (d < bestD) {
+          best = { tx: x, ty: y };
+          bestD = d;
+        }
+      }
+    }
+    return best;
+  }
+
+  function preferOrderTile(tx, ty) {
+    const ice = nearestIceTile(tx, ty, 1);
+    return ice || { tx, ty };
+  }
+
+  function buildingAtWorld(x, y) {
+    const { tx, ty } = worldToTile(x, y);
+    const direct = buildingAtTile(tx, ty);
+    if (direct) return direct;
+    let best = null;
+    let bestD = Infinity;
+    const pad = C.tileSize * 0.55;
+    for (const b of state.buildings) {
+      const n = buildingFootprint(b.type);
+      const x0 = b.tx * C.tileSize - pad - C.tileSize * 0.25;
+      const y0 = b.ty * C.tileSize - pad - C.tileSize * 0.25;
+      const x1 = (b.tx + n) * C.tileSize + pad;
+      const y1 = (b.ty + n) * C.tileSize + pad;
+      if (x < x0 || y < y0 || x > x1 || y > y1) continue;
+      const cx = (b.tx + n / 2) * C.tileSize;
+      const cy = (b.ty + n / 2) * C.tileSize;
+      const d = Math.hypot(x - cx, y - cy);
+      if (d < bestD) {
+        best = b;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  function unitsNear(x, y, radius = C.unitClickRadius) {
+    return state.units
+      .filter((u) => Math.hypot(u.x - x, u.y - y) < radius)
+      .sort((a, b) => a.id - b.id);
+  }
+
+  function cycleSelectAt(x, y, additive = false) {
+    const stack = unitsNear(x, y);
+    if (!stack.length) return null;
+    if (additive) {
+      selectUnits([stack[0].id], true);
+      return stack[0];
+    }
+    const cur = state.selectedIds[0];
+    const idx = stack.findIndex((u) => u.id === cur);
+    const next = idx >= 0 ? stack[(idx + 1) % stack.length] : stack[0];
+    selectUnits([next.id]);
+    return next;
+  }
+
+  function nearestHauler(x, y) {
+    let best = null;
+    let bestD = Infinity;
+    for (const u of state.units) {
+      if (u.kind !== 'hauler') continue;
+      const d = Math.hypot(u.x - x, u.y - y);
+      if (d < bestD) {
+        best = u;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  function ensureHaulers(x, y) {
+    let units = selectedUnits().filter((u) => u.kind === 'hauler');
+    if (units.length) return units;
+    const near = nearestHauler(x, y);
+    if (!near) return [];
+    selectUnits([near.id]);
+    return [near];
+  }
+
+  function defaultHaulOrder() {
+    let ice = null;
+    const shallow = tileAt(C.shallowIceTileX, C.shallowIceTileY);
+    if (shallow && shallow.type === TILE.ICE && (shallow.iceRemaining || 0) > 0) {
+      ice = { tx: C.shallowIceTileX, ty: C.shallowIceTileY };
+    } else if (state.deepIce.unlocked) {
+      const t = tileAt(state.deepIce.tx, state.deepIce.ty);
+      if (t && t.type === TILE.ICE && (t.iceRemaining || 0) > 0) {
+        ice = { tx: state.deepIce.tx, ty: state.deepIce.ty };
+      }
+    }
+    if (!ice) {
+      outer: for (let y = 0; y < C.mapHeight; y++) {
+        for (let x = 0; x < C.mapWidth; x++) {
+          const t = tileAt(x, y);
+          if (t && t.type === TILE.ICE && (t.iceRemaining || 0) > 0) {
+            ice = { tx: x, ty: y };
+            break outer;
+          }
+        }
+      }
+    }
+    if (!ice) return null;
+    const dest = nearestDrop(ice.tx, ice.ty, { cargo: { ice: 1, regolith: 0 } }, 'ice');
+    if (!dest) return null;
+    return {
+      type: 'haul',
+      sourceTx: ice.tx,
+      sourceTy: ice.ty,
+      destBuildingId: dest.id,
+      phase: 'toSource',
+    };
+  }
+
+  function rememberRally(order) {
+    if (!order || (order.type !== 'haul' && order.type !== 'mine')) return;
+    for (const b of state.buildings) {
+      if (b.type === 'printer') b.rallyOrder = cloneOrder(order);
+    }
+  }
+
+  function clearArmed() {
+    state.armedOrder = null;
+    state.haulPick = null;
+    state.digPick = null;
+    state.orderPrompt = null;
+  }
+
+  function buildCost(type) {
+    const costs = {
+      solar: { reg: C.rimSolarCostRegolith, power: 0, time: C.rimSolarBuildSeconds },
+      storage: { reg: C.storageCostRegolith, power: 0, time: C.storageBuildSeconds },
+      printer: { reg: C.printerCostRegolith, power: 0, time: C.printerBuildSeconds },
+      'tunnel-hub': { reg: C.tunnelHubCostRegolith, power: 0, time: C.tunnelHubBuildSeconds },
+      vault: { reg: C.vaultCostRegolith, power: 0, time: C.vaultBuildSeconds },
+      hauler: { reg: C.printerHaulerCostRegolith, power: C.printerHaulerCostPower, time: C.printerHaulerSeconds },
+    };
+    return costs[type] || null;
+  }
+
+  function affordReason(type) {
+    const spec = buildCost(type);
+    if (!spec) return 'Unknown';
+    const tot = totals();
+    if (tot.regolith + 1e-6 < spec.reg) return `Need ${spec.reg} regolith`;
+    if (spec.power > 0 && tot.power + 1e-6 < spec.power) return `Need ${spec.power} power`;
+    if (type === 'hauler' && !state.buildings.some((b) => b.type === 'printer' && b.complete && !b.printing)) {
+      return 'Need an idle printer';
+    }
+    if (type === 'tunnel-hub' && hubs().length >= C.tunnelHubCount) return 'Hub limit reached';
+    return null;
+  }
+
+  function canBuildScout() {
+    if (state.won) return false;
+    if (!state.expedition.launched) return true;
+    if (!state.expedition.ended) return false;
+    return !state.deepIce.unlocked;
+  }
+
+  function canRecall() {
+    return !!state.expedition.launched && !state.expedition.ended && !state.expedition.recallUsed;
+  }
+
+  function patchesUsed() {
+    return state.stats.patches || 0;
+  }
+
+  function patchesLabel() {
+    return `Patches used: ${patchesUsed()} · left: ${patchesLeft()}`;
+  }
+
+  function goalBanner() {
+    const haulers = state.units.filter((u) => u.kind === 'hauler').length;
+    const solar = state.buildings.filter((b) => b.type === 'solar' && b.complete).length;
+    if (haulers < 4 || solar < 2) return 'Build up: 4 haulers and 2 solar';
+    return `Land crew: ${C.goalIceInStorage} ice and ${C.goalPowerInStorage} power in range`;
+  }
+
+  function unitTask(unit) {
+    if (unit.blockedReason) return unit.blockedReason;
+    if (!unit.order) return 'idle';
+    if (unit.order.type === 'haul') {
+      if (unit.order.phase === 'mine') return 'mining';
+      if (unit.order.phase === 'toDest' || unit.order.phase === 'unload') return 'delivering';
+      return 'hauling';
+    }
+    return unit.order.type;
+  }
+
+  function unitCard(unit) {
+    if (!unit) return null;
+    return {
+      kind: unit.kind === 'scout' ? 'Scout' : 'Hauler',
+      battery: unit.battery,
+      cargo: cargoAmount(unit),
+      carry: C.haulerCarry,
+      task: unitTask(unit),
+    };
   }
 
   function buildingRoom(b, kind) {
@@ -729,9 +1007,9 @@ export function createGame() {
   }
 
   function noteStrand(unit) {
-    unit.blockedReason = 'Battery empty';
+    unit.blockedReason = 'Hauler stranded';
     if (!unit._strandWarned) {
-      toast('Battery empty');
+      toast('Hauler stranded');
       unit._strandWarned = true;
     }
   }
@@ -750,23 +1028,33 @@ export function createGame() {
     return tileCenter(b.tx + n / 2 - 0.5, b.ty + n);
   }
 
+  function powerStarved() {
+    return (C.haulerUpkeepPowerPerSec || 0) > 0 && totals().power <= 1e-6;
+  }
+
   function moveToward(unit, wx, wy, dt) {
     const dx = wx - unit.x;
     const dy = wy - unit.y;
     const dist = Math.hypot(dx, dy);
-    const step = C.tileSize * C.haulerSpeedTilesPerSecond * dt;
+    const crawl = unit.kind === 'hauler' && unit.battery <= 0;
+    const speed = crawl
+      ? (C.strandedCrawlTilesPerSecond || 0.25)
+      : C.haulerSpeedTilesPerSecond;
+    if (powerStarved() && unit.kind === 'hauler' && !crawl) return { status: 'starved', used: dt };
+    const step = C.tileSize * speed * dt;
     const loaded = cargoAmount(unit) > 0.001;
     const drain = loaded ? C.haulerDrainPerTileLoaded : C.haulerDrainPerTileEmpty;
-    if (unit.battery <= 0) return 'empty';
-    if (dist < 0.5) return 'arrived';
+    if (crawl) noteStrand(unit);
+    if (dist < 0.5) return { status: 'arrived', used: 0 };
     const travel = Math.min(step, dist);
     if (dist > 0.001) unit.facing = Math.atan2(dx, -dy);
     const tiles = travel / C.tileSize;
-    unit.battery = Math.max(0, unit.battery - tiles * drain);
+    if (!crawl) unit.battery = Math.max(0, unit.battery - tiles * drain);
     const k = travel / dist;
     unit.x += dx * k;
     unit.y += dy * k;
-    return travel >= dist - 0.01 ? 'arrived' : 'moving';
+    const used = step <= 0 ? dt : dt * (travel / step);
+    return { status: travel >= dist - 0.01 ? 'arrived' : 'moving', used };
   }
 
   function closeToTile(unit, tx, ty) {
@@ -780,18 +1068,8 @@ export function createGame() {
 
   function canRepeat(order) {
     if (!order) return false;
-    if (order.type === 'mine') {
-      const t = tileAt(order.tx, order.ty);
-      if (!t) return false;
-      if (t.type === TILE.ICE) return t.iceRemaining > 0;
-      return isPlainGround(t);
-    }
-    if (order.type === 'haul') {
-      const t = tileAt(order.sourceTx, order.sourceTy);
-      if (!t) return false;
-      if (t.type === TILE.ICE) return t.iceRemaining > 0;
-      return isPlainGround(t);
-    }
+    if (order.type === 'mine') return sourceHasWork(order.tx, order.ty);
+    if (order.type === 'haul') return sourceHasWork(order.sourceTx, order.sourceTy);
     if (order.type === 'build') {
       const b = buildingById(order.buildingId);
       return b && !b.complete;
@@ -825,21 +1103,30 @@ export function createGame() {
       u._strandWarned = false;
       u.status = order.type;
     }
+    rememberRally(order);
     if (marker) setOrderMarker(marker.x, marker.y);
     emit('order');
   }
 
   function commandHaulIce(units, tx, ty) {
+    return commandHaulTile(units, tx, ty);
+  }
+
+  function commandHaulTile(units, tx, ty) {
     const haulers = units.filter((u) => u.kind === 'hauler');
     if (!haulers.length) return rejectOrder('Not reachable');
     const tile = tileAt(tx, ty);
-    if (!tile || tile.type !== TILE.ICE || (tile.iceRemaining || 0) <= 0) {
+    const ice = tile && tile.type === TILE.ICE && (tile.iceRemaining || 0) > 0;
+    if (!ice && !sourceHasWork(tx, ty)) {
+      if (tile && (tile.type === TILE.ICE_MINED || tile.type === TILE.CRATER_S || tile.type === TILE.PIT || tile.craterM)) {
+        return rejectOrder('Source empty');
+      }
       return rejectOrder('Not reachable');
     }
-    if (haulers.every((u) => u.battery <= 0)) return rejectOrder('Battery empty');
-    const live = haulers.filter((u) => u.battery > 0);
+    const live = haulers;
     const sample = live.find((u) => cargoAmount(u) > 0.001) || live[0];
-    const dest = nearestDrop(tx, ty, sample, 'ice');
+    const prefer = ice ? 'ice' : 'regolith';
+    const dest = nearestDrop(tx, ty, sample, prefer);
     if (!dest) return rejectOrder('No storage room');
     assignOrder(live, {
       type: 'haul',
@@ -850,7 +1137,6 @@ export function createGame() {
     }, tileCenter(tx, ty));
     for (const u of live) {
       if (cargoAmount(u) + 1e-6 >= C.haulerCarry) u.order.phase = 'toDest';
-      else if (shouldChargeNow(u)) insertCharge(u);
     }
     return true;
   }
@@ -858,8 +1144,7 @@ export function createGame() {
   function commandDropOrCharge(units, b) {
     const haulers = units.filter((u) => u.kind === 'hauler');
     if (!haulers.length) return false;
-    if (haulers.every((u) => u.battery <= 0)) return rejectOrder('Battery empty');
-    const live = haulers.filter((u) => u.battery > 0);
+    const live = haulers;
     const loaded = live.filter((u) => cargoAmount(u) > 0.001);
     const empty = live.filter((u) => cargoAmount(u) <= 0.001);
     if (loaded.length) {
@@ -894,11 +1179,12 @@ export function createGame() {
 
   function mineTick(unit, tx, ty, dt) {
     const t = tileAt(tx, ty);
-    if (!t) return 'gone';
+    const rate = C.haulerMinePerSecond;
+    if (!t) return { status: 'gone', used: 0 };
     const space = C.haulerCarry - cargoAmount(unit);
-    if (space <= 0) return 'full';
-    if (unit.battery <= 0) return 'empty';
-    const take = Math.min(space, C.haulerMinePerSecond * dt);
+    if (space <= 0) return { status: 'full', used: 0 };
+    if (unit.battery <= 0) return { status: 'empty', used: 0 };
+    const take = Math.min(space, rate * dt);
     if (t.type === TILE.ICE && t.iceRemaining > 0) {
       const got = Math.min(take, t.iceRemaining);
       unit.cargo.ice += got;
@@ -907,13 +1193,17 @@ export function createGame() {
         t.iceRemaining = 0;
         t.type = TILE.ICE_MINED;
       }
-      return 'mined';
+      const used = rate > 0 ? got / rate : dt;
+      const status = t.iceRemaining <= 0 ? 'gone' : (cargoAmount(unit) + 1e-6 >= C.haulerCarry ? 'full' : 'mined');
+      return { status, used };
     }
-    if (isPlainGround(t)) {
+    if (isPlainGround(t) && !t.buildingId && !t.craterM && !inNoMineZone(tx, ty)) {
       unit.cargo.regolith += take;
-      return 'mined';
+      const used = rate > 0 ? take / rate : dt;
+      const status = cargoAmount(unit) + 1e-6 >= C.haulerCarry ? 'full' : 'mined';
+      return { status, used };
     }
-    return 'gone';
+    return { status: 'gone', used: 0 };
   }
 
   function refreshUnitStatus(unit) {
@@ -935,78 +1225,148 @@ export function createGame() {
     return '';
   }
 
-  function updateUnit(unit, dt) {
-    if (unit.kind === 'hauler' && unit.battery <= 0) {
-      noteStrand(unit);
-      refreshUnitStatus(unit);
-      return;
+  function pauseOnFull(unit, reason) {
+    if (unit.blockedReason !== reason) toast(reason);
+    unit.blockedReason = reason;
+    refreshUnitStatus(unit);
+  }
+
+  function endSourceEmpty(unit) {
+    unit.order = null;
+    unit.lastOrder = null;
+    unit.blockedReason = null;
+    unit.status = 'idle';
+    toast('Source empty');
+  }
+
+  function chargeAfterStep(unit) {
+    if (unit.kind !== 'hauler') return false;
+    if (unit.blockedReason && /full/i.test(unit.blockedReason)) return false;
+    if (unit.battery <= 0 || shouldChargeNow(unit) || (lowBattery(unit) && !unit.order)) {
+      insertCharge(unit);
+      return true;
     }
-    if (unit.kind === 'hauler' && shouldChargeNow(unit)) insertCharge(unit);
-    if (unit.kind === 'hauler' && !unit.order && lowBattery(unit) && unit.battery > 0 && !unit.blockedReason) {
+    return false;
+  }
+
+  function convertMineToHaul(unit, tx, ty) {
+    const dest = nearestDrop(tx, ty, unit, unit.cargo.ice > 0.001 ? 'ice' : 'regolith');
+    const blocked = storageBlockedReason(unit);
+    if (blocked && !dest) {
+      pauseOnFull(unit, blocked);
+      return false;
+    }
+    if (!dest) return false;
+    unit.order = {
+      type: 'haul',
+      sourceTx: tx,
+      sourceTy: ty,
+      destBuildingId: dest.id,
+      phase: 'toDest',
+    };
+    unit.lastOrder = cloneOrder({ ...unit.order, phase: 'toSource' });
+    unit.blockedReason = null;
+    return true;
+  }
+
+  function mayInterruptForCharge(order, unit) {
+    if (!order || order.type === 'charge') return false;
+    if (order.type === 'haul' && (order.phase === 'mine' || order.phase === 'unload')) return false;
+    if (order.type === 'mine' && closeToTile(unit, order.tx, order.ty)) return false;
+    return true;
+  }
+
+  function stepUnit(unit, dt) {
+    if (unit.kind === 'hauler' && unit.battery <= 0 && unit.order?.type !== 'charge') {
+      insertCharge(unit);
+    } else if (
+      unit.kind === 'hauler'
+      && unit.order?.type !== 'charge'
+      && shouldChargeNow(unit)
+      && mayInterruptForCharge(unit.order, unit)
+    ) {
       insertCharge(unit);
     }
-    if (!unit.order && unit.lastOrder && canRepeat(unit.lastOrder) && !unit.blockedReason) {
-      unit.order = resetOrder(unit.lastOrder);
-      if (unit.kind === 'hauler' && shouldChargeNow(unit)) insertCharge(unit);
+    if (unit.kind === 'hauler' && !unit.order && !unit.blockedReason) {
+      if (unit.lastOrder && canRepeat(unit.lastOrder)) {
+        unit.order = resetOrder(unit.lastOrder);
+      } else if (lowBattery(unit) || unit.battery <= 0) {
+        insertCharge(unit);
+      }
     }
     const order = unit.order;
     if (!order) {
       refreshUnitStatus(unit);
-      return;
+      return dt;
+    }
+    if (unit.blockedReason && /full/i.test(unit.blockedReason)) {
+      const kind = unit.cargo.ice > 0.001 ? 'ice' : 'regolith';
+      if (dropRoom(kind) > 1e-6) {
+        unit.blockedReason = null;
+      } else {
+        refreshUnitStatus(unit);
+        return dt;
+      }
     }
 
     if (order.type === 'go') {
       const moved = moveToward(unit, order.x, order.y, dt);
-      if (moved === 'empty') noteStrand(unit);
-      else if (moved === 'arrived') finishOrder(unit);
+      if (moved.status === 'arrived') {
+        finishOrder(unit);
+        refreshUnitStatus(unit);
+        return Math.max(moved.used, 1e-4);
+      }
       refreshUnitStatus(unit);
-      return;
+      return dt;
     }
 
     if (order.type === 'mine') {
       const c = tileCenter(order.tx, order.ty);
       if (!closeToTile(unit, order.tx, order.ty)) {
-        if (moveToward(unit, c.x, c.y, dt) === 'empty') noteStrand(unit);
+        const moved = moveToward(unit, c.x, c.y, dt);
+        if (moved.status === 'arrived') {
+          refreshUnitStatus(unit);
+          return Math.max(moved.used, 1e-4);
+        }
         refreshUnitStatus(unit);
-        return;
+        return dt;
       }
       const r = mineTick(unit, order.tx, order.ty, dt);
-      if (r === 'full') {
-        const dest = nearestDrop(order.tx, order.ty, unit, unit.cargo.ice > 0.001 ? 'ice' : 'regolith');
-        const blocked = storageBlockedReason(unit);
-        if (blocked && !dest) {
-          if (unit.blockedReason !== blocked) toast(blocked);
-          unit.blockedReason = blocked;
-          refreshUnitStatus(unit);
-          return;
-        }
-        if (dest) {
-          unit.order = {
-            type: 'haul',
-            sourceTx: order.tx,
-            sourceTy: order.ty,
-            destBuildingId: dest.id,
-            phase: 'toDest',
-          };
-          unit.lastOrder = cloneOrder({ ...unit.order, phase: 'toSource' });
-          unit.blockedReason = null;
-          refreshUnitStatus(unit);
-          return;
-        }
+      if (r.status === 'full') {
+        convertMineToHaul(unit, order.tx, order.ty);
+        refreshUnitStatus(unit);
+        return Math.max(r.used, 1e-4);
       }
-      if (r === 'gone') finishOrder(unit);
+      if (r.status === 'gone') {
+        if (cargoAmount(unit) > 0.001) {
+          convertMineToHaul(unit, order.tx, order.ty);
+          if (!sourceHasWork(order.tx, order.ty)) unit._emptyAfterDrop = true;
+        } else {
+          endSourceEmpty(unit);
+        }
+        refreshUnitStatus(unit);
+        return Math.max(r.used, 1e-4);
+      }
       refreshUnitStatus(unit);
-      return;
+      return dt;
     }
 
     if (order.type === 'charge') {
       const b = buildingById(order.buildingId) || habitat();
-      if (!b) { finishOrder(unit); refreshUnitStatus(unit); return; }
+      if (!b) {
+        finishOrder(unit);
+        refreshUnitStatus(unit);
+        return dt;
+      }
       if (!canChargeAt(unit, b)) {
         const spot = chargeSpot(b);
-        if (moveToward(unit, spot.x, spot.y, dt) === 'empty') noteStrand(unit);
+        const moved = moveToward(unit, spot.x, spot.y, dt);
+        if (moved.status === 'arrived') {
+          refreshUnitStatus(unit);
+          return Math.max(moved.used, 1e-4);
+        }
         refreshUnitStatus(unit);
-        return;
+        return dt;
       }
       if (unit.battery >= C.haulerBattery - 0.01) {
         if (unit.resumeOrder) {
@@ -1014,87 +1374,131 @@ export function createGame() {
           if (unit.order.type === 'haul' && !unit.order.phase) unit.order.phase = 'toSource';
           unit.lastOrder = cloneOrder(unit.resumeOrder.type === 'charge' ? unit.lastOrder : unit.resumeOrder);
           unit.resumeOrder = null;
+          unit.blockedReason = null;
         } else {
           finishOrder(unit);
         }
         refreshUnitStatus(unit);
-        return;
+        return Math.max(1e-4, dt * 0.05);
       }
       const room = C.haulerBattery - unit.battery;
       const tot = totals();
-      const amt = Math.min(room, C.haulerChargePerSecond * dt, tot.power);
+      const rate = C.haulerChargePerSecond;
+      const amt = Math.min(room, rate * dt, tot.power);
       if (amt > 0) {
         spendPower(amt);
         unit.battery += amt;
       }
+      const used = rate > 0 ? (amt > 0 ? amt / rate : dt) : dt;
       refreshUnitStatus(unit);
-      return;
+      if (unit.battery >= C.haulerBattery - 0.01) return Math.max(used, 1e-4);
+      return dt;
     }
 
     if (order.type === 'build') {
       const b = buildingById(order.buildingId);
-      if (!b || b.complete) { finishOrder(unit); refreshUnitStatus(unit); return; }
+      if (!b || b.complete) {
+        finishOrder(unit);
+        refreshUnitStatus(unit);
+        return dt;
+      }
       const spot = tileCenter(b.tx, b.ty + buildingFootprint(b.type) - 0.5);
       if (Math.hypot(unit.x - spot.x, unit.y - spot.y) > C.tileSize * 0.7) {
-        moveToward(unit, spot.x, spot.y, dt);
+        const moved = moveToward(unit, spot.x, spot.y, dt);
+        if (moved.status === 'arrived') {
+          refreshUnitStatus(unit);
+          return Math.max(moved.used, 1e-4);
+        }
         refreshUnitStatus(unit);
-        return;
+        return dt;
       }
       b._builders = (b._builders || 0) + 1;
       refreshUnitStatus(unit);
-      return;
+      return dt;
     }
 
     if (order.type === 'dig') {
       const tile = currentDigTile();
-      if (!tile) { finishOrder(unit); refreshUnitStatus(unit); return; }
+      if (!tile) {
+        finishOrder(unit);
+        refreshUnitStatus(unit);
+        return dt;
+      }
       const c = tileCenter(tile.tx, tile.ty);
       if (!closeToTile(unit, tile.tx, tile.ty)) {
-        moveToward(unit, c.x, c.y, dt);
+        const moved = moveToward(unit, c.x, c.y, dt);
+        if (moved.status === 'arrived') {
+          refreshUnitStatus(unit);
+          return Math.max(moved.used, 1e-4);
+        }
         refreshUnitStatus(unit);
-        return;
+        return dt;
       }
       tile.diggers = (tile.diggers || 0) + 1;
       unit._digging = true;
       state.digging = true;
       refreshUnitStatus(unit);
-      return;
+      return dt;
     }
 
     if (order.type === 'haul') {
       const src = tileCenter(order.sourceTx, order.sourceTy);
       let dest = buildingById(order.destBuildingId);
       const kind = unit.cargo.ice > 0.001 ? 'ice' : (unit.cargo.regolith > 0.001 ? 'regolith' : 'ice');
-      if (!dest || (buildingRoom(dest, kind) <= 1e-6 && dropRoom(kind) > 1e-6)) {
+      if (!dest || (!isDropBuilding(dest) && !isTransitDrop(dest))) {
+        dest = nearestDrop(order.sourceTx, order.sourceTy, unit, kind) || dest;
+        if (dest) order.destBuildingId = dest.id;
+      } else if (buildingRoom(dest, kind) <= 1e-6 && dropRoom(kind) > 1e-6) {
         dest = nearestDrop(order.sourceTx, order.sourceTy, unit, kind) || dest;
         if (dest) order.destBuildingId = dest.id;
       }
-      if (!dest) { finishOrder(unit); refreshUnitStatus(unit); return; }
+      if (!dest) {
+        finishOrder(unit);
+        refreshUnitStatus(unit);
+        return dt;
+      }
       if (!order.phase) order.phase = 'toSource';
       if (order.phase === 'toSource') {
         const moved = moveToward(unit, src.x, src.y, dt);
-        if (moved === 'empty') noteStrand(unit);
-        else if (moved === 'arrived' || closeToTile(unit, order.sourceTx, order.sourceTy)) {
+        if (moved.status === 'arrived' || closeToTile(unit, order.sourceTx, order.sourceTy)) {
           order.phase = 'mine';
+          refreshUnitStatus(unit);
+          return Math.max(moved.used, 1e-4);
         }
         refreshUnitStatus(unit);
-        return;
+        return dt;
       }
       if (order.phase === 'mine') {
         const r = mineTick(unit, order.sourceTx, order.sourceTy, dt);
-        if (r === 'full' || r === 'gone') order.phase = 'toDest';
+        if (r.status === 'full') {
+          order.phase = 'toDest';
+          refreshUnitStatus(unit);
+          return Math.max(r.used, 1e-4);
+        }
+        if (r.status === 'gone') {
+          if (cargoAmount(unit) > 0.001) {
+            unit._emptyAfterDrop = true;
+            order.phase = 'toDest';
+          } else {
+            endSourceEmpty(unit);
+          }
+          refreshUnitStatus(unit);
+          return Math.max(r.used, 1e-4);
+        }
         refreshUnitStatus(unit);
-        return;
+        return dt;
       }
       if (order.phase === 'toDest') {
         const spot = chargeSpot(dest);
         const moved = moveToward(unit, spot.x, spot.y, dt);
-        if (moved === 'empty') noteStrand(unit);
-        else if (moved === 'arrived' || chebyshevToBuilding(worldToTile(unit.x, unit.y).tx, worldToTile(unit.x, unit.y).ty, dest) <= 1) {
+        const beside = chebyshevToBuilding(worldToTile(unit.x, unit.y).tx, worldToTile(unit.x, unit.y).ty, dest) <= 1;
+        if (moved.status === 'arrived' || beside) {
           order.phase = 'unload';
+          refreshUnitStatus(unit);
+          return Math.max(moved.used, 1e-4);
         }
         refreshUnitStatus(unit);
-        return;
+        return dt;
       }
       if (order.phase === 'unload') {
         const moved = deposit(unit, dest);
@@ -1109,10 +1513,8 @@ export function createGame() {
         if (leftover > 0.001) {
           const reason = storageBlockedReason(unit);
           if (reason) {
-            if (unit.blockedReason !== reason) toast(reason);
-            unit.blockedReason = reason;
-            refreshUnitStatus(unit);
-            return;
+            pauseOnFull(unit, reason);
+            return dt;
           }
           const next = nearestDrop(worldToTile(unit.x, unit.y).tx, worldToTile(unit.x, unit.y).ty, unit);
           if (next && next.id !== dest.id) {
@@ -1120,22 +1522,40 @@ export function createGame() {
             order.phase = 'toDest';
             unit.blockedReason = null;
             refreshUnitStatus(unit);
-            return;
+            return Math.max(1e-4, dt * 0.05);
           }
+          pauseOnFull(unit, reason || 'Storage full');
+          return dt;
         }
         unit.blockedReason = null;
-        const t = tileAt(order.sourceTx, order.sourceTy);
-        const empty = t && t.type === TILE.ICE && t.iceRemaining <= 0;
-        if (empty) {
-          unit.order = null;
-          unit.lastOrder = null;
-        } else if (lowBattery(unit)) {
-          order.phase = 'toSource';
-          insertCharge(unit);
-        } else {
-          order.phase = 'toSource';
+        if (unit._emptyAfterDrop || !sourceHasWork(order.sourceTx, order.sourceTy)) {
+          unit._emptyAfterDrop = false;
+          endSourceEmpty(unit);
+          refreshUnitStatus(unit);
+          return dt;
         }
+        order.phase = 'toSource';
+        if (chargeAfterStep(unit)) {
+          refreshUnitStatus(unit);
+          return Math.max(1e-4, dt * 0.05);
+        }
+        refreshUnitStatus(unit);
+        return Math.max(1e-4, dt * 0.05);
       }
+    }
+    refreshUnitStatus(unit);
+    return dt;
+  }
+
+  function updateUnit(unit, dt) {
+    let left = dt;
+    let guard = 0;
+    while (left > 1e-6 && guard++ < 24) {
+      const before = left;
+      const used = stepUnit(unit, left);
+      if (used <= 1e-8) break;
+      left -= Math.min(before, used);
+      if (used >= before - 1e-8) break;
     }
     refreshUnitStatus(unit);
   }
@@ -1333,6 +1753,16 @@ export function createGame() {
     if (dest.ice > dest.iceCap) dest.ice = dest.iceCap;
     if (dest.regolith > dest.regolithCap) dest.regolith = dest.regolithCap;
     if (p.ice > 0 || p.regolith > 0) state.stats.usedTunnel = true;
+    if (p.ice > 0) {
+      const vaults = dest.type === 'tunnel-hub' ? vaultsBeside(dest) : [];
+      const counted = [dest, ...vaults].some((b) => (
+        (b.type === 'habitat' || b.type === 'storage' || b.type === 'vault' || b.type === 'tunnel-hub')
+        && buildingInCommandRange(b)
+      ));
+      if (counted && vaults.some((v) => buildingInCommandRange(v))) {
+        state.stats.goalIceByTunnel = (state.stats.goalIceByTunnel || 0) + p.ice;
+      }
+    }
   }
 
   function updateCargo(dt) {
@@ -1346,9 +1776,6 @@ export function createGame() {
     for (const hub of completeHubs()) fillVaultsFrom(hub);
     for (const hub of completeHubs()) sendFromHub(hub);
     for (const hub of completeHubs()) fillVaultsFrom(hub);
-    for (const hub of completeHubs()) {
-      if (hub.ice <= 1e-6) pullVaultsTo(hub, hub.iceCap);
-    }
   }
 
   function updateBuildings(dt) {
@@ -1365,23 +1792,36 @@ export function createGame() {
       }
       b._builders = 0;
       if (b.complete && b.printing) {
+        if (powerStarved()) continue;
         b.printTime += dt;
         if (b.printTime >= b.printNeeded) {
           b.printing = false;
           b.printTime = 0;
           const n = buildingFootprint(b.type);
-          addHauler((b.tx + n) * C.tileSize + 8, (b.ty + n * 0.5) * C.tileSize);
+          addHauler((b.tx + n) * C.tileSize + 8, (b.ty + n * 0.5) * C.tileSize, b.rallyOrder || defaultHaulOrder());
           emit('build-complete', { kind: 'hauler' });
         }
       }
     }
   }
 
-  function update(dt) {
-    if (dt <= 0) return;
+  function notePatchApplied(ok) {
+    if (!ok) return false;
+    state.expedition.patchesThisSol += 1;
+    state.stats.patches += 1;
+    noteExpedition('Patch applied');
+    emit('patch-applied');
+    return true;
+  }
+
+  function tick(dt) {
     state.digging = false;
     for (const u of state.units) u._digging = false;
     addPower(solarOutputPerSecond() * dt);
+    const upkeep = (C.haulerUpkeepPowerPerSec || 0)
+      * state.units.filter((u) => u.kind === 'hauler').length
+      * dt;
+    if (upkeep > 0) spendPower(upkeep);
     for (const u of state.units) updateUnit(u, dt);
     updateDigTiles(dt);
     updateBuildings(dt);
@@ -1399,6 +1839,17 @@ export function createGame() {
     }
   }
 
+  function update(dt) {
+    if (dt <= 0) return;
+    const step = 1 / 60;
+    state.simAcc = (state.simAcc || 0) + dt;
+    let guard = 0;
+    while (state.simAcc + 1e-12 >= step && guard++ < 4000) {
+      tick(step);
+      state.simAcc -= step;
+    }
+  }
+
   function selectUnits(ids, additive) {
     if (!additive) {
       state.selectedIds = [...ids];
@@ -1411,12 +1862,14 @@ export function createGame() {
       }
       state.selectedIds = [...set];
     }
+    if (!state.selectedIds.length && !additive) clearArmed();
     if (state.selectedIds.length) emit('select');
   }
 
   function selectBuilding(bid) {
     state.selectedBuildingId = bid;
     state.selectedIds = [];
+    if (!bid) clearArmed();
     if (bid) emit('select');
   }
 
@@ -1439,54 +1892,77 @@ export function createGame() {
     return buildingById(t.buildingId);
   }
 
-  function issueContextual(x, y) {
-    const units = selectedUnits().filter((u) => u.kind === 'hauler');
-    if (!units.length) return false;
-    const { tx, ty } = worldToTile(x, y);
-    const tile = tileAt(tx, ty);
-    const b = buildingAtTile(tx, ty);
+  function tunnelAlreadyDug() {
+    const tiles = state.tunnel.tiles;
+    return tiles.length > 0 && tiles.every((t) => t.done);
+  }
 
-    if (units.every((u) => u.battery <= 0) && !(b && (b.type === 'habitat' || b.type === 'solar'))) {
-      return rejectOrder('Battery empty');
-    }
+  function issueContextual(x, y) {
+    const units = ensureHaulers(x, y);
+    if (!units.length) return rejectOrder('Select a hauler');
+    const raw = worldToTile(x, y);
+    const pref = preferOrderTile(raw.tx, raw.ty);
+    const tx = pref.tx;
+    const ty = pref.ty;
+    const tile = tileAt(tx, ty);
+    const b = buildingAtWorld(x, y) || buildingAtTile(tx, ty);
 
     if (state.armedOrder === 'dig' || state.digPick) {
+      if (tunnelAlreadyDug()) {
+        clearArmed();
+        return rejectOrder('Tunnel already dug');
+      }
       if (!state.digPick) {
         const corridor = corridorBetweenHubs();
         if (corridor && corridor.length) {
+          if (corridor.every((t) => t.done)) {
+            clearArmed();
+            return rejectOrder('Tunnel already dug');
+          }
           state.tunnel = { tiles: corridor, packets: state.tunnel.packets };
           const mark = tileCenter(corridor[0].tx, corridor[0].ty);
           assignOrder(units, { type: 'dig' }, mark);
-          state.armedOrder = null;
+          clearArmed();
           return true;
         }
         state.digPick = { tx, ty };
+        state.orderPrompt = 'Now click the other end of the tunnel';
         return true;
       }
       startDigLine(state.digPick.tx, state.digPick.ty, tx, ty);
       assignOrder(units, { type: 'dig' }, tileCenter(tx, ty));
-      state.digPick = null;
-      state.armedOrder = null;
+      clearArmed();
       return true;
     }
 
     if (state.armedOrder === 'haul' || state.haulPick) {
-      if (tile && tile.type === TILE.ICE && !state.haulPick) {
-        state.armedOrder = null;
-        return commandHaulIce(units, tx, ty);
+      if ((b && (isDropBuilding(b) || isTransitDrop(b))) && !state.haulPick) {
+        const loaded = units.some((u) => cargoAmount(u) > 0.001);
+        if (loaded) {
+          clearArmed();
+          return commandDropOrCharge(units, b);
+        }
+        state.haulPick = null;
+        state.orderPrompt = 'Now click the resource to haul';
+        state.armedOrder = 'haul';
+        return true;
       }
       if (!state.haulPick) {
+        if (tile && (tile.type === TILE.ICE || sourceHasWork(tx, ty))) {
+          clearArmed();
+          return commandHaulTile(units, tx, ty);
+        }
         state.haulPick = { sourceTx: tx, sourceTy: ty };
+        state.orderPrompt = 'Now click the drop-off';
         return true;
       }
       const srcTile = tileAt(state.haulPick.sourceTx, state.haulPick.sourceTy);
       const prefer = srcTile?.type === TILE.ICE ? 'ice' : 'regolith';
-      const dest = (b && isDropBuilding(b) && buildingRoom(b, prefer) > 1e-6)
+      const dest = (b && (isDropBuilding(b) || isTransitDrop(b)))
         ? b
         : nearestDrop(tx, ty, units[0], prefer);
       if (!dest) {
-        state.haulPick = null;
-        state.armedOrder = null;
+        clearArmed();
         return rejectOrder('No storage room');
       }
       assignOrder(units, {
@@ -1496,27 +1972,33 @@ export function createGame() {
         destBuildingId: dest.id,
         phase: 'toSource',
       }, tileCenter(state.haulPick.sourceTx, state.haulPick.sourceTy));
-      state.haulPick = null;
-      state.armedOrder = null;
+      clearArmed();
       return true;
     }
 
-    if (state.armedOrder === 'mine' && tile) {
+    if (state.armedOrder === 'mine') {
       if (units.every((u) => cargoAmount(u) + 1e-6 >= C.haulerCarry)) {
-        const dest = nearestDrop(tx, ty, units[0], tile.type === TILE.ICE ? 'ice' : 'regolith');
-        state.armedOrder = null;
-        if (!dest) return rejectOrder("Can't: cargo full");
-        return commandHaulIce(units, tx, ty);
+        clearArmed();
+        if (!sourceHasWork(tx, ty) && !(tile && tile.type === TILE.ICE)) {
+          const dest = nearestDrop(tx, ty, units[0], units[0].cargo.ice > 0.001 ? 'ice' : 'regolith');
+          if (!dest) return rejectOrder("Can't: cargo full");
+          return commandDropOrCharge(units, dest);
+        }
+        return commandHaulTile(units, tx, ty);
+      }
+      if (tile && tile.type === TILE.ICE) {
+        clearArmed();
+        return commandHaulTile(units, tx, ty);
       }
       assignOrder(units, { type: 'mine', tx, ty }, tileCenter(tx, ty));
-      state.armedOrder = null;
+      clearArmed();
       return true;
     }
 
     if (state.armedOrder === 'charge') {
       const dest = (b && (b.type === 'habitat' || b.type === 'solar')) ? b : habitat();
       assignOrder(units, { type: 'charge', buildingId: dest.id }, tileCenter(dest.tx, dest.ty));
-      state.armedOrder = null;
+      clearArmed();
       return true;
     }
 
@@ -1524,15 +2006,19 @@ export function createGame() {
       assignOrder(units, { type: 'build', buildingId: b.id }, tileCenter(b.tx, b.ty));
       return true;
     }
-    if (b && (b.type === 'habitat' || b.type === 'storage' || b.type === 'vault' || b.type === 'solar')) {
+    if (b && (isDropBuilding(b) || isTransitDrop(b) || b.type === 'solar')) {
       return commandDropOrCharge(units, b);
     }
-    if (tile && tile.type === TILE.ICE) {
-      return commandHaulIce(units, tx, ty);
+    if (tile && (tile.type === TILE.ICE || sourceHasWork(tx, ty))) {
+      return commandHaulTile(units, tx, ty);
     }
-    if (units.every((u) => cargoAmount(u) + 1e-6 >= C.haulerCarry) && tile && isPlainGround(tile)) {
-      const dest = nearestDrop(tx, ty, units[0], 'regolith');
+    if (tile && (tile.type === TILE.ICE_MINED || tile.type === TILE.CRATER_S || tile.type === TILE.PIT || tile.craterM)) {
+      return rejectOrder('Source empty');
+    }
+    if (units.every((u) => cargoAmount(u) + 1e-6 >= C.haulerCarry)) {
+      const dest = nearestDrop(tx, ty, units[0], units[0].cargo.ice > 0.001 ? 'ice' : 'regolith');
       if (!dest) return rejectOrder("Can't: cargo full");
+      return commandDropOrCharge(units, dest);
     }
     assignOrder(units, { type: 'go', x, y }, { x, y });
     return true;
@@ -1548,8 +2034,14 @@ export function createGame() {
     };
     const spec = costs[type];
     if (!spec) return null;
-    if (!canPlace(type, tx, ty)) return null;
-    if (totals().regolith < spec.reg) return null;
+    if (!canPlace(type, tx, ty)) {
+      toast('Cannot place here');
+      return null;
+    }
+    if (totals().regolith < spec.reg) {
+      toast(`Need ${spec.reg} regolith`);
+      return null;
+    }
     spendRegolith(spec.reg);
     const b = addBuilding(type, tx, ty, {
       complete: false,
@@ -1569,9 +2061,19 @@ export function createGame() {
 
   function startPrint() {
     const p = state.buildings.find((b) => b.type === 'printer' && b.complete && !b.printing);
-    if (!p) return false;
+    if (!p) {
+      toast('Need an idle printer');
+      return false;
+    }
     const tot = totals();
-    if (tot.regolith < C.printerHaulerCostRegolith || tot.power < C.printerHaulerCostPower) return false;
+    if (tot.regolith < C.printerHaulerCostRegolith) {
+      toast(`Need ${C.printerHaulerCostRegolith} regolith`);
+      return false;
+    }
+    if (tot.power < C.printerHaulerCostPower) {
+      toast(`Need ${C.printerHaulerCostPower} power`);
+      return false;
+    }
     spendRegolith(C.printerHaulerCostRegolith);
     spendPower(C.printerHaulerCostPower);
     p.printing = true;
@@ -1788,6 +2290,25 @@ export function createGame() {
     showScoutHint,
     iceHintText,
     objectiveProgress,
-    issueContextual,
+    transitIce,
+    inCommandRange,
+    buildingInCommandRange,
+    buildingAtWorld,
+    cycleSelectAt,
+    unitsNear,
+    canBuildScout,
+    canRecall,
+    patchesUsed,
+    patchesLabel,
+    notePatchApplied,
+    affordReason,
+    buildCost,
+    goalBanner,
+    unitCard,
+    unitTask,
+    sourceHasWork,
+    inNoMineZone,
+    commandHaulTile,
+    clearArmed,
   };
 }
