@@ -136,9 +136,9 @@ export function createGame() {
     return ev;
   }
 
-  function toast(text, ttl = C.warningToastSeconds) {
-    state.toast = { text, ttl };
-    emit('warning', { text });
+  function toast(text, ttl = C.warningToastSeconds, extra = {}) {
+    state.toast = { text, ttl, kind: extra.kind || null };
+    emit('warning', { text, kind: extra.kind || null });
   }
 
   function makeTiles() {
@@ -288,17 +288,26 @@ export function createGame() {
   }
 
   function queueNotifyPing(entry) {
+    const confirmed = !!entry.confirmed;
+    const kind = entry.kind || (confirmed ? 'ice-confirm' : 'trace-ice');
     state.expedition.pendingPings.push({
       remaining: C.notifyLinkDelaySeconds,
       tx: entry.tx ?? state.expedition.marker.tx,
       ty: entry.ty ?? state.expedition.marker.ty,
-      text: entry.text || 'Notify',
-      confirmed: !!entry.confirmed,
+      text: entry.text || entry.label || 'Notify',
+      confirmed,
+      kind,
+      label: entry.label || null,
     });
   }
 
-  function noteExpedition(text) {
-    state.expedition.log.push({ t: state.time, text });
+  function noteExpedition(text, extra = {}) {
+    state.expedition.log.push({
+      t: state.time,
+      text,
+      kind: extra.kind || null,
+      label: extra.label || null,
+    });
     if (state.expedition.log.length > 12) state.expedition.log.shift();
   }
 
@@ -444,8 +453,8 @@ export function createGame() {
       if (ping.remaining <= 0) {
         state.expedition.activePings.push({ ...ping, age: 0 });
         state.stats.notifies += 1;
-        noteExpedition(ping.text);
-        toast(ping.text);
+        noteExpedition(ping.text, { kind: ping.kind, label: ping.label });
+        toast(ping.text, C.warningToastSeconds, { kind: ping.kind });
         emit('notify-ping', ping);
         if (ping.confirmed) unlockDeepIce();
       } else stillPending.push(ping);

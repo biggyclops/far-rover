@@ -55,6 +55,7 @@ let previouslyRevealed = null;
 let pendingAutoPause = null;
 let pendingStuck = null;
 let lastTickResult = null;
+let lastHostedPing = null;
 let autoPauseMode = loadAutoPauseMode();
 let autoPauseKindsSeen = new Set();
 let shownReturnCraterWarning = false;
@@ -290,7 +291,9 @@ export function showBuildScreen() {
                 <li><strong>Drill:</strong> drill ${hostedIceLabels ? 'ice' : 'ore'} on current tile (costs 2)</li>
                 <li><strong>Wait:</strong> do nothing this tick</li>
                 <li><strong>Sidestep:</strong> move to the rover's right if valid, otherwise left; facing stays the same</li>
-                ${includeNotifyAction ? '<li><strong>Notify:</strong> hold still and ping a new ice find (ore tiles) back to base</li>' : ''}
+                ${includeNotifyAction ? `<li><strong>Notify:</strong> ${hostedIceLabels
+                  ? 'side effect, not a turn. When the condition is true and there is a new ice find, it pings and checking continues; the next true rule takes the tick. Nothing new is skipped (never Wait, never holds the rover). F2 and I2 unlock Deep Ice (“Ice deposit confirmed”); other ore is “Trace ice”.'
+                  : 'hold still and ping a new ice find (ore tiles) back to base'}</li>` : ''}
               </ul>
             </div>
           </div>
@@ -697,6 +700,7 @@ function showOperateView() {
         <div class="rules-panel glass-panel">
           <h3>Rover Rules</h3>
           <div class="rule-display" id="rule-display"></div>
+          <div id="hosted-notify-ping" class="hosted-notify-ping" data-testid="hosted-notify-ping" hidden></div>
         </div>
       </div>
 
@@ -826,9 +830,48 @@ function renderMinimap() {
   }
 }
 
+function latestNotifyPing() {
+  const hosted = lastTickResult?.hostedPings?.[0];
+  if (hosted?.ping && hosted.label) {
+    lastHostedPing = hosted;
+    return hosted;
+  }
+  const ar = lastTickResult?.tickRecord?.actionResult;
+  if (ar?.ping && ar.label) {
+    lastHostedPing = ar;
+    return ar;
+  }
+  const trace = gameState?.trace || [];
+  for (let i = trace.length - 1; i >= 0; i--) {
+    const a = trace[i]?.actionResult;
+    if (a?.ping && a.label) {
+      lastHostedPing = a;
+      return a;
+    }
+  }
+  return lastHostedPing;
+}
+
+function renderHostedNotifyPing() {
+  const el = document.getElementById('hosted-notify-ping');
+  if (!el) return;
+  const ping = hostedIceLabels ? latestNotifyPing() : null;
+  if (!ping?.label) {
+    el.hidden = true;
+    el.textContent = '';
+    el.classList.remove('ice-confirm', 'trace-ice');
+    return;
+  }
+  el.hidden = false;
+  el.textContent = ping.cell ? `${ping.label} at ${ping.cell}` : ping.label;
+  el.classList.toggle('ice-confirm', !!ping.confirmedIce);
+  el.classList.toggle('trace-ice', !ping.confirmedIce);
+}
+
 function renderRuleDisplay() {
   const display = document.getElementById('rule-display');
   if (!display) return;
+  const ping = hostedIceLabels ? latestNotifyPing() : null;
   
   let html = '';
   for (let i = 0; i < 4; i++) {
@@ -838,13 +881,20 @@ function renderRuleDisplay() {
     if (rule && rule.condition && rule.action) {
       const condText = formatConditionForDisplay(rule.condition);
       const actText = Sim.ACTION_NAMES[rule.action.type] || rule.action.type;
-      html += `<div class="rule-line ${isFired ? 'fired' : ''}">
+      const isNotify = rule.action.type === Sim.ACTIONS.NOTIFY;
+      const pinged = !!(ping?.label && isNotify && (ping.slot == null || ping.slot === i + 1));
+      const badge = pinged
+        ? `<span class="notify-ping-badge ${ping.confirmedIce ? 'ice-confirm' : 'trace-ice'}">${ping.label}</span>`
+        : '';
+      html += `<div class="rule-line ${isFired ? 'fired' : ''} ${pinged ? 'notified' : ''}">
         <span class="rule-indicator">${isFired ? '▶' : ''}</span>
         <span class="rule-text">${condText} : <span class="action-name">${actText}</span></span>
+        ${badge}
       </div>`;
     }
   }
   display.innerHTML = html || '<div class="no-rules">No rules defined</div>';
+  renderHostedNotifyPing();
 }
 
 function formatConditionForDisplay(condition) {
@@ -1304,6 +1354,7 @@ function launch() {
   pendingAutoPause = null;
   pendingStuck = null;
   lastTickResult = null;
+  lastHostedPing = null;
   autoPauseKindsSeen = new Set();
   shownReturnCraterWarning = false;
   
@@ -2036,8 +2087,14 @@ export function resetForTest() {
   rules = [null, null, null, null];
   includeNotifyAction = false;
   hostedIceLabels = false;
+  lastTickResult = null;
+  lastHostedPing = null;
   log = { sessions: [], currentSession: null };
   startNewSession();
+}
+
+export function getLastHostedPing() {
+  return latestNotifyPing();
 }
 
 export function setIncludeNotifyAction(on) {

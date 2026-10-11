@@ -151,6 +151,14 @@ button:disabled {
 #toast.show {
   opacity: 1;
 }
+#toast.ice-confirm {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+#toast.trace-ice {
+  border-color: var(--warn);
+  color: var(--warn);
+}
 
 #objectives {
   position: fixed;
@@ -249,6 +257,14 @@ button:disabled {
   gap: 10px;
   color: var(--muted);
   font-size: 12px;
+}
+#expedition-log.ice-confirm {
+  color: var(--accent);
+  font-weight: 600;
+}
+#expedition-log.trace-ice {
+  color: var(--warn);
+  font-weight: 600;
 }
 .badge.delay {
   background: rgba(63, 216, 255, 0.14);

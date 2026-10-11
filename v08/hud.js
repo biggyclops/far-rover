@@ -190,8 +190,11 @@ export function bindHud(root, game, hooks = {}) {
     const toast = $('#toast');
     if (toast) {
       const msg = game.state.toast?.text || '';
+      const kind = game.state.toast?.kind || '';
       toast.textContent = msg;
       toast.classList.toggle('show', !!msg);
+      toast.classList.toggle('ice-confirm', kind === 'ice-confirm');
+      toast.classList.toggle('trace-ice', kind === 'trace-ice');
     }
     const exp = game.state.expedition;
     const buildScout = $('#btn-build-scout');
@@ -262,6 +265,8 @@ export function bindHud(root, game, hooks = {}) {
     if (log) {
       const last = exp.log[exp.log.length - 1];
       log.textContent = last ? last.text : '';
+      log.classList.toggle('ice-confirm', last?.kind === 'ice-confirm');
+      log.classList.toggle('trace-ice', last?.kind === 'trace-ice');
     }
     const win = $('#win-overlay');
     if (win) {

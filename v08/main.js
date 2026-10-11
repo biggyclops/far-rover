@@ -151,6 +151,8 @@ function serialize() {
       pendingPings: game.state.expedition.pendingPings.length,
       activePings: game.state.expedition.activePings.length,
       log: game.state.expedition.log.map((e) => e.text),
+      logKinds: game.state.expedition.log.map((e) => e.kind || null),
+      lastPingKind: game.state.expedition.log.reduce((k, e) => e.kind || k, null),
     },
     deepIce: { ...game.state.deepIce },
     deepIceTile: game.state.deepIce.unlocked
@@ -182,6 +184,8 @@ function serialize() {
     scoutOpen: scout.isOpen(),
     scoutTick: scout.getSim()?.tick ?? 0,
     iceConfirmed: !!scout.getSim()?.iceConfirmed,
+    scoutOutcome: scout.getSim()?.outcome || null,
+    toastKind: game.state.toast?.kind || null,
   };
 }
 
@@ -262,6 +266,7 @@ window.__v08Test = {
   launchProgram: (sensors, rules) => scout.launchProgram(sensors, rules),
   tickScout: (n) => scout.tickScout(n),
   confirmOnOre: () => scout.confirmOnOre(),
+  pingOreCell: (cell) => scout.pingOreCell(cell),
   openOperate: () => scout.openOperate(),
   openBuild: () => scout.openBuild(),
   hideOverlay: () => scout.hideOverlay(),

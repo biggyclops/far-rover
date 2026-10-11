@@ -950,6 +950,43 @@ button:disabled {
   color: var(--accent);
 }
 
+.hosted-notify-ping {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+.hosted-notify-ping.ice-confirm {
+  color: var(--accent);
+  border-color: rgba(255, 138, 31, 0.55);
+  background: rgba(255, 138, 31, 0.14);
+}
+.hosted-notify-ping.trace-ice {
+  color: #3FD8FF;
+  border-color: rgba(63, 216, 255, 0.5);
+  background: rgba(63, 216, 255, 0.12);
+}
+.notify-ping-badge {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+.notify-ping-badge.ice-confirm {
+  color: var(--accent);
+  background: rgba(255, 138, 31, 0.16);
+}
+.notify-ping-badge.trace-ice {
+  color: #3FD8FF;
+  background: rgba(63, 216, 255, 0.14);
+}
+.rule-line.notified {
+  border-left-color: #3FD8FF;
+}
+
 /* Map Container (center) */
 .map-container {
   display: flex;

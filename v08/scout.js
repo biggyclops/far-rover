@@ -95,6 +95,8 @@ export function bindScout(root, game, hooks = {}) {
         ty: marker.ty,
         text: `${label} at ${ar.cell}`,
         confirmed: !!ar.confirmedIce,
+        kind: ar.kind || (ar.confirmedIce ? 'ice-confirm' : 'trace-ice'),
+        label,
       });
     }
   }
@@ -155,18 +157,42 @@ export function bindScout(root, game, hooks = {}) {
   }
 
   function confirmOnOre() {
-    if (!lastSim) return false;
-    const cell = (C.confirmDepositTiles && C.confirmDepositTiles[0]) || 'F2';
+    return !!pingOreCell((C.confirmDepositTiles && C.confirmDepositTiles[0]) || 'F2').confirmed;
+  }
+
+  function pingOreCell(cell) {
+    if (!lastSim) {
+      lastSim = Sim.createInitialState([Sim.SENSORS.SPECTRAL], [
+        { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
+        { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.WAIT } },
+      ]);
+      setGameStateForTest(lastSim);
+      setSelectedSensorsForTest([Sim.SENSORS.SPECTRAL]);
+      setRulesForTest(lastSim.rules);
+      game.markExpeditionLaunched({ hasNotifyRule: true });
+    }
     const col = cell.charCodeAt(0) - 65;
     const row = parseInt(cell.slice(1), 10) - 1;
     lastSim.col = col;
     lastSim.row = row;
-    lastSim.rules = [
-      { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
-      { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.WAIT } },
-    ];
+    lastSim.notifySeen = lastSim.notifySeen || {};
+    delete lastSim.notifySeen[`${col},${row}`];
+    const hasNotify = (lastSim.rules || []).some((r) => r?.action?.type === Sim.ACTIONS.NOTIFY);
+    if (!hasNotify) {
+      lastSim.rules = [
+        { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
+        { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.WAIT } },
+      ];
+    }
     const result = tickScout(1);
-    return !!(result?.tickRecord?.actionResult?.confirmedIce || lastSim.iceConfirmed);
+    const ar = result?.tickRecord?.actionResult || {};
+    return {
+      confirmed: !!(ar.confirmedIce || lastSim.iceConfirmed),
+      label: ar.label || null,
+      cell: ar.cell || cell,
+      ping: !!ar.ping,
+      outcome: lastSim.outcome,
+    };
   }
 
   return {
@@ -177,6 +203,7 @@ export function bindScout(root, game, hooks = {}) {
     launchProgram,
     tickScout,
     confirmOnOre,
+    pingOreCell,
     applyIncomingPatch,
     handleNotify,
     getSim: () => lastSim,

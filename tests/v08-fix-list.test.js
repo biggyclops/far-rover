@@ -255,6 +255,37 @@ function scriptedHaul(game) {
 }
 
 {
+  const g = createGame();
+  g.queueNotifyPing({
+    text: 'Trace ice at D11',
+    confirmed: false,
+    kind: 'trace-ice',
+    label: 'Trace ice',
+  });
+  advance(g, 2.1);
+  const last = g.state.expedition.log[g.state.expedition.log.length - 1];
+  assert.equal(last.text, 'Trace ice at D11');
+  assert.equal(last.kind, 'trace-ice');
+  assert.equal(last.label, 'Trace ice');
+  assert.equal(g.state.deepIce.unlocked, false);
+  assert.match(g.state.toast?.text || '', /Trace ice/);
+  assert.equal(g.state.toast?.kind, 'trace-ice');
+
+  g.queueNotifyPing({
+    text: 'Ice deposit confirmed at F2',
+    confirmed: true,
+    kind: 'ice-confirm',
+    label: 'Ice deposit confirmed',
+  });
+  advance(g, 2.1);
+  const hit = g.state.expedition.log[g.state.expedition.log.length - 1];
+  assert.equal(hit.text, 'Ice deposit confirmed at F2');
+  assert.equal(hit.kind, 'ice-confirm');
+  assert.equal(g.state.deepIce.unlocked, true);
+  console.log('ok  base log distinguishes Trace ice vs Ice deposit confirmed');
+}
+
+{
   assert.equal(C.haulerUpkeepPowerPerSec, 0);
   assert.equal(C.noRegolithMineRadiusTiles, 4);
   assert.equal(C.strandedCrawlTilesPerSecond, 0.25);
