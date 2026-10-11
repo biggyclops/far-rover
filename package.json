@@ -11,6 +11,7 @@
     "test": "npm run test:sim && npm run test:ui",
     "test:sim": "node tests/simulation.test.js && node tests/v08-engine-import.test.js",
     "test:ui": "npx playwright test",
+    "test:balance": "node v08/balance/run.js",
     "serve": "npx http-server -p 8080 -c-1"
   },
   "type": "module",
