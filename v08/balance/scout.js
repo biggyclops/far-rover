@@ -1,5 +1,7 @@
-// Headless scout expedition using the real v08 engine import (simulation.js).
-// Mirrors v08/scout.js launch + pump + Notify → queueNotifyPing. No DOM.
+// Headless scout expedition using the real hosted v08 tick (Notify option b).
+// Mirrors v08/scout.js pump: runHostedScoutTick + queueNotifyPing. No DOM.
+// Hazard auto-pauses are resumed here so an unattended run can reach F2/I2
+// (the live page waits for the player to click Resume).
 
 import * as Sim from '../engine.js';
 import { runHostedScoutTick } from '../hosted-tick.js';
@@ -8,8 +10,8 @@ export const ICE_NOTIFY_PROGRAM = {
   sensors: ['distance', 'spectral'],
   rules: [
     { condition: { type: 'crater_in_front' }, action: { type: 'sidestep' } },
+    { condition: { type: 'battery_below', n: 20 }, action: { type: 'return_charge' } },
     { condition: { type: 'on_ore' }, action: { type: 'notify' } },
-    { condition: { type: 'ore_next_to' }, action: { type: 'go_to_ore' } },
     { condition: { type: 'always' }, action: { type: 'explore' } },
   ],
 };
@@ -18,6 +20,7 @@ function handleNotify(game, result) {
   const pings = result?.hostedPings?.length
     ? result.hostedPings
     : (result?.tickRecord?.actionResult?.ping ? [result.tickRecord.actionResult] : []);
+  if (!pings.length) return;
   const marker = game.state.expedition.marker;
   for (const ar of pings) {
     if (!ar?.notified || !ar.ping) continue;
@@ -43,7 +46,7 @@ export function attachScout(game, program = ICE_NOTIFY_PROGRAM) {
     launch() {
       if (sim) return sim;
       sim = Sim.createInitialState(program.sensors, program.rules);
-      game.markExpeditionLaunched();
+      game.markExpeditionLaunched({ hasNotifyRule: true });
       return sim;
     },
     pump(dt) {
@@ -54,6 +57,14 @@ export function attachScout(game, program = ICE_NOTIFY_PROGRAM) {
         acc -= 1;
         const result = runHostedScoutTick(sim);
         handleNotify(game, result);
+        // Unattended resume: hosted Notify is a side effect, so keep
+        // movement on the stripped rules after an auto-pause.
+        if (result?.continueFromStep4 && result.autoPause) {
+          const saved = sim.rules;
+          sim.rules = (saved || []).filter((r) => r?.action?.type !== Sim.ACTIONS.NOTIFY);
+          Sim.continueTickFromStep4(sim, result.tickRecord, result.tickRecord.readings || sim.readings);
+          sim.rules = saved;
+        }
       }
     },
   };

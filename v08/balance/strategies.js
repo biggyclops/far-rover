@@ -200,20 +200,23 @@ function haulMatches(u, sourceTx, sourceTy, destId) {
 }
 
 function regolithTile(game) {
+  // #28: no regolith mine within 4 tiles of any building.
   const hab = game.habitat();
-  const spots = [
-    [hab.tx - 2, hab.ty + 4],
-    [hab.tx + 4, hab.ty + 3],
-    [hab.tx - 3, hab.ty + 2],
-    [16, 24],
-    [22, 24],
-    [14, 20],
-  ];
-  for (const [tx, ty] of spots) {
-    const t = game.tileAt(tx, ty);
-    if (t && t.type === 'ground' && !t.buildingId) return { tx, ty };
+  let best = null;
+  let bestD = Infinity;
+  for (let ty = 0; ty < game.C.mapHeight; ty++) {
+    for (let tx = 0; tx < game.C.mapWidth; tx++) {
+      const t = game.tileAt(tx, ty);
+      if (!t || t.type !== 'ground' || t.buildingId || t.craterM) continue;
+      if (game.inNoMineZone(tx, ty)) continue;
+      const d = Math.hypot(tx - hab.tx, ty - hab.ty);
+      if (d < bestD) {
+        best = { tx, ty };
+        bestD = d;
+      }
+    }
   }
-  return { tx: hab.tx, ty: hab.ty + 4 };
+  return best || { tx: hab.tx, ty: hab.ty + 6 };
 }
 
 function mineRegolith(game, units) {
@@ -318,21 +321,6 @@ function assignHaul(game, units, source, dest) {
   }
 }
 
-function handleCharge(game, units) {
-  const C = game.C;
-  const power = game.storedForGoal().power;
-  const day = game.isDay();
-  const surplus = power > C.goalPowerInStorage + 25;
-  const canSpend = day || surplus;
-  const hab = game.habitat();
-  for (const u of units) {
-    if (u.order?.type === 'charge' && u.battery >= 90) continue;
-    if (u.battery <= 16 && canSpend && u.order?.type !== 'charge') {
-      issue(game, [u], { type: 'charge', buildingId: hab.id });
-    }
-  }
-}
-
 function iceCapReady(game) {
   return game.storedForGoal().iceCap + 1e-6 >= game.C.goalIceInStorage;
 }
@@ -356,7 +344,6 @@ export function createBrain(strategyId) {
       mem.launched = true;
     }
     const units = haulersOf(game);
-    handleCharge(game, units);
     if (game.canLandCrew()) {
       game.landCrew();
       return;
