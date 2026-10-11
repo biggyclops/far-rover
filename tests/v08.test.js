@@ -436,10 +436,11 @@ test.describe('Far Rover v0.8 M2', () => {
     expect(result.buildNeeded).toBe(10);
   });
 
-  test('one rover digs a tile in 6 s; two dig twice as fast', async ({ page }) => {
+  test('one rover digs a tile in digSeconds; two dig twice as fast', async ({ page }) => {
     await ready(page);
     const result = await page.evaluate(() => {
       const C = window.__v08Test.config;
+      const one = C.digSecondsPerTilePerRover;
       const s0 = window.__v08Test.getState();
       const center = (tx, ty) => ({
         x: (tx + 0.5) * C.tileSize,
@@ -451,9 +452,9 @@ test.describe('Far Rover v0.8 M2', () => {
       window.__v08Test.setUnitPos(s0.units[0].id, spot.x, spot.y);
       window.__v08Test.selectUnits([s0.units[0].id]);
       window.__v08Test.issueOrder({ type: 'dig' });
-      window.__v08Test.advance(5.5);
+      window.__v08Test.advance(one * 0.92);
       const oneEarly = window.__v08Test.getState().tunnel.tiles[0];
-      window.__v08Test.advance(0.7);
+      window.__v08Test.advance(one * 0.15);
       const oneDone = window.__v08Test.getState().tunnel.tiles[0];
 
       window.__v08Test.startDigLine(11, 10, 11, 10);
@@ -462,9 +463,9 @@ test.describe('Far Rover v0.8 M2', () => {
       window.__v08Test.setUnitPos(s0.units[1].id, spot2.x, spot2.y);
       window.__v08Test.selectUnits([s0.units[0].id, s0.units[1].id]);
       window.__v08Test.issueOrder({ type: 'dig' });
-      window.__v08Test.advance(2.8);
+      window.__v08Test.advance((one / 2) * 0.92);
       const twoEarly = window.__v08Test.getState().tunnel.tiles[0];
-      window.__v08Test.advance(0.5);
+      window.__v08Test.advance((one / 2) * 0.2);
       const twoDone = window.__v08Test.getState().tunnel.tiles[0];
 
       return {
@@ -474,6 +475,7 @@ test.describe('Far Rover v0.8 M2', () => {
         twoEarly: twoEarly.done,
         twoEarlyProgress: twoEarly.progress,
         twoDone: twoDone.done,
+        oneSeconds: one,
       };
     });
     expect(result.oneEarly).toBe(false);
@@ -834,22 +836,59 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     await ready(page);
     const result = await page.evaluate((prog) => {
       const t = window.__v08Test;
-      const s0 = t.getState();
-      t.selectUnits(s0.units.map((u) => u.id));
+      const hab0 = t.getState().buildings.find((b) => b.type === 'habitat');
+      function haulers() {
+        return t.getState().units.filter((u) => u.kind === 'hauler');
+      }
       function waitDone(id) {
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 80; i++) {
           t.advance(1);
           if (t.getState().buildings.find((b) => b.id === id)?.complete) return true;
         }
         return false;
       }
+      function tryPlace(type, preferTx, preferTy) {
+        const C = t.config;
+        t.selectUnits(haulers().map((u) => u.id));
+        const spots = [];
+        for (let ty = 0; ty < C.mapHeight - 1; ty++) {
+          for (let tx = 0; tx < C.mapWidth - 1; tx++) {
+            spots.push({ tx, ty, d: Math.hypot(tx - preferTx, ty - preferTy) });
+          }
+        }
+        spots.sort((a, b) => a.d - b.d);
+        for (const s of spots) {
+          const b = t.placeBuilding(type, s.tx, s.ty);
+          if (b) return b;
+        }
+        return null;
+      }
+      function tend(sourceTx, sourceTy, destId) {
+        const snap = t.getState();
+        const hab = snap.buildings.find((b) => b.type === 'habitat');
+        const canSpend = snap.isDay || snap.stored.power > 80;
+        const low = snap.units.filter((u) => u.kind === 'hauler' && u.battery <= 25 && u.order !== 'charge');
+        if (low.length && canSpend && hab) {
+          t.selectUnits(low.map((u) => u.id));
+          t.issueOrder({ type: 'charge', buildingId: hab.id });
+        }
+        const ready = t.getState().units.filter((u) => {
+          if (u.kind !== 'hauler') return false;
+          if (u.order === 'build' || u.order === 'dig') return false;
+          if (u.order === 'charge') return u.battery >= 90;
+          if (u.order === 'haul') return u.status === 'blocked';
+          return true;
+        });
+        if (ready.length) {
+          t.selectUnits(ready.map((u) => u.id));
+          t.issueOrder({ type: 'haul', sourceTx, sourceTy, destBuildingId: destId });
+        }
+      }
       // Habitat 30 + one storage 100 = 130, short of the 180-ice goal.
-      const storageA = t.placeBuilding('storage', 22, 21);
+      const storageA = tryPlace('storage', hab0.tx + 4, hab0.ty + 3);
       if (!storageA) return { error: 'storage A place failed' };
       if (!waitDone(storageA.id)) return { error: 'storage A not complete' };
-      const storageB = t.placeBuilding('storage', 25, 21)
-        || t.placeBuilding('storage', 22, 24)
-        || t.placeBuilding('storage', 15, 21);
+      const storageB = tryPlace('storage', hab0.tx + 7, hab0.ty + 3);
       if (!storageB) return { error: 'storage B place failed' };
       if (!waitDone(storageB.id)) return { error: 'storage B not complete' };
       t.launchProgram(prog.sensors, prog.rules);
@@ -859,33 +898,25 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
         if (t.getState().deepIce.unlocked) { unlocked = true; break; }
       }
       const deep = t.getState().deepIce;
-      t.selectUnits(t.getState().units.filter((u) => u.kind === 'hauler').map((u) => u.id));
+      if (!deep.unlocked) return { error: 'no deep ice', time: t.getState().time };
       let destId = storageA.id;
+      t.selectUnits(haulers().map((u) => u.id));
       t.issueOrder({
         type: 'haul',
         sourceTx: deep.tx,
         sourceTy: deep.ty,
         destBuildingId: destId,
       });
-      let landed = null;
       for (let i = 0; i < 1200; i++) {
         t.advance(1);
         const snap = t.getState();
         if (snap.canLandCrew) {
-          landed = t.landCrew();
+          t.landCrew();
           break;
         }
         const a = snap.buildings.find((b) => b.id === storageA.id);
-        if (a && a.ice >= a.iceCap - 0.5 && destId === storageA.id) {
-          destId = storageB.id;
-          t.selectUnits(snap.units.filter((u) => u.kind === 'hauler').map((u) => u.id));
-          t.issueOrder({
-            type: 'haul',
-            sourceTx: deep.tx,
-            sourceTy: deep.ty,
-            destBuildingId: destId,
-          });
-        }
+        if (a && a.ice >= a.iceCap - 0.5) destId = storageB.id;
+        tend(deep.tx, deep.ty, destId);
       }
       const end = t.getState();
       return {
@@ -919,15 +950,77 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     await ready(page);
     const result = await page.evaluate((prog) => {
       const t = window.__v08Test;
-      const s0 = t.getState();
-      t.selectUnits(s0.units.map((u) => u.id));
+      const hab0 = t.getState().buildings.find((b) => b.type === 'habitat');
+      function haulers() {
+        return t.getState().units.filter((u) => u.kind === 'hauler');
+      }
       function waitDone(id) {
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < 80; i++) {
           t.advance(1);
           if (t.getState().buildings.find((b) => b.id === id)?.complete) return true;
         }
         return false;
       }
+      function tryPlace(type, preferTx, preferTy) {
+        const C = t.config;
+        t.selectUnits(haulers().map((u) => u.id));
+        const spots = [];
+        for (let ty = 0; ty < C.mapHeight - 1; ty++) {
+          for (let tx = 0; tx < C.mapWidth - 1; tx++) {
+            spots.push({ tx, ty, d: Math.hypot(tx - preferTx, ty - preferTy) });
+          }
+        }
+        spots.sort((a, b) => a.d - b.d);
+        for (const s of spots) {
+          const b = t.placeBuilding(type, s.tx, s.ty);
+          if (b) return b;
+        }
+        return null;
+      }
+      function mineUntil(need) {
+        const hab = t.getState().buildings.find((b) => b.type === 'habitat');
+        const spots = [[17, 16], [19, 16], [17, 20], [20, 20], [12, 18], [21, 18]];
+        for (const [tx, ty] of spots) {
+          if (t.getState().regolith >= need) return true;
+          t.selectUnits(haulers().map((u) => u.id));
+          t.issueOrder({ type: 'mine', tx, ty });
+          for (let i = 0; i < 25; i++) {
+            t.advance(1);
+            if (t.getState().regolith >= need) return true;
+            if (haulers().every((u) => (u.cargo?.regolith || 0) >= 14)) break;
+          }
+          // Mined regolith sits in cargo; Land Crew / placeBuilding read stores.
+          t.selectUnits(haulers().map((u) => u.id));
+          t.issueOrder({ type: 'haul', sourceTx: tx, sourceTy: ty, destBuildingId: hab.id });
+          for (let i = 0; i < 50; i++) {
+            t.advance(1);
+            if (t.getState().regolith >= need) return true;
+          }
+        }
+        return t.getState().regolith >= need;
+      }
+      function tend(sourceTx, sourceTy, destId) {
+        const snap = t.getState();
+        const hab = snap.buildings.find((b) => b.type === 'habitat');
+        const canSpend = snap.isDay || snap.stored.power > 80;
+        const low = snap.units.filter((u) => u.kind === 'hauler' && u.battery <= 25 && u.order !== 'charge');
+        if (low.length && canSpend && hab) {
+          t.selectUnits(low.map((u) => u.id));
+          t.issueOrder({ type: 'charge', buildingId: hab.id });
+        }
+        const ready = t.getState().units.filter((u) => {
+          if (u.kind !== 'hauler') return false;
+          if (u.order === 'build' || u.order === 'dig') return false;
+          if (u.order === 'charge') return u.battery >= 90;
+          if (u.order === 'haul') return u.status === 'blocked';
+          return true;
+        });
+        if (ready.length) {
+          t.selectUnits(ready.map((u) => u.id));
+          t.issueOrder({ type: 'haul', sourceTx, sourceTy, destBuildingId: destId });
+        }
+      }
+      t.selectUnits(haulers().map((u) => u.id));
       const homeHub = t.placeBuilding('tunnel-hub', 14, 21);
       if (!homeHub) return { error: 'home hub place failed' };
       if (!waitDone(homeHub.id)) return { error: 'home hub not complete' };
@@ -938,6 +1031,7 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       if (!vault) return { error: 'vault place failed' };
       if (!waitDone(vault.id)) return { error: 'vault not complete' };
       const tiles = t.startDigCorridor();
+      t.selectUnits(haulers().map((u) => u.id));
       t.issueOrder({ type: 'dig' });
       for (let i = 0; i < 400; i++) {
         t.advance(1);
@@ -953,22 +1047,23 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       // Hub ice does not score and the home hub pulls from a full vault, so
       // habitat (30) + vault (150) stalls around 170. A storage pad after the
       // bore (dig yield + a short mine if needed) holds the last scoring loads.
-      if (t.getState().regolith < 30) {
-        t.selectUnits(t.getState().units.filter((u) => u.kind === 'hauler').map((u) => u.id));
-        t.issueOrder({ type: 'mine', tx: 17, ty: 16 });
-        for (let i = 0; i < 40; i++) {
-          t.advance(1);
-          if (t.getState().regolith >= 30) break;
-        }
+      const afterDig = t.getState();
+      // Dead batteries after a 24 s/tile bore cannot mine. Charge first.
+      const habCharge = afterDig.buildings.find((b) => b.type === 'habitat');
+      t.selectUnits(haulers().map((u) => u.id));
+      if (habCharge) t.issueOrder({ type: 'charge', buildingId: habCharge.id });
+      for (let i = 0; i < 40; i++) {
+        t.advance(1);
+        if (haulers().every((u) => u.battery >= 90)) break;
       }
-      t.selectUnits(t.getState().units.filter((u) => u.kind === 'hauler').map((u) => u.id));
-      const storage = t.placeBuilding('storage', 21, 16)
-        || t.placeBuilding('storage', 16, 16)
-        || t.placeBuilding('storage', 20, 15);
-      if (!storage) return { error: 'storage place failed', time: t.getState().time };
+      if (!mineUntil(30)) {
+        return { error: 'not enough regolith for storage', regolith: t.getState().regolith };
+      }
+      const storage = tryPlace('storage', hab0.tx + 4, hab0.ty + 3);
+      if (!storage) return { error: 'storage place failed', time: t.getState().time, regolith: t.getState().regolith };
       if (!waitDone(storage.id)) return { error: 'storage not complete' };
-      t.selectUnits(t.getState().units.filter((u) => u.kind === 'hauler').map((u) => u.id));
       let destId = farHub.id;
+      t.selectUnits(haulers().map((u) => u.id));
       t.issueOrder({
         type: 'haul',
         sourceTx: deep.tx,
@@ -985,16 +1080,22 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
         const v = snap.buildings.find((b) => b.id === vault.id);
         // Home hub pulls ~20 back out of the vault, so vault.ice may stall
         // near 130. Switch once scoring ice is on the pad, or the vault is close.
-        if (destId === farHub.id && ((v && v.ice >= 120) || snap.stored.ice >= 145)) {
+        // Switch before the vault/hubs trap the last scoring ice (hub ice
+        // does not count; a full vault + habitat 20 = 170).
+        if (v && v.ice >= 100 && destId !== storage.id) {
           destId = storage.id;
-          t.selectUnits(snap.units.filter((u) => u.kind === 'hauler').map((u) => u.id));
-          t.issueOrder({
-            type: 'haul',
-            sourceTx: deep.tx,
-            sourceTy: deep.ty,
-            destBuildingId: destId,
-          });
+          const crew = haulers().filter((u) => u.order !== 'charge');
+          if (crew.length) {
+            t.selectUnits(crew.map((u) => u.id));
+            t.issueOrder({
+              type: 'haul',
+              sourceTx: deep.tx,
+              sourceTy: deep.ty,
+              destBuildingId: destId,
+            });
+          }
         }
+        tend(deep.tx, deep.ty, destId);
       }
       const end = t.getState();
       return {
