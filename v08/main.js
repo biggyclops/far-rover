@@ -189,13 +189,14 @@ function serialize() {
   };
 }
 
-function advance(seconds) {
+function advance(seconds, opts = {}) {
   const step = 1 / 60;
+  const pumpScout = opts.scout !== false;
   let left = seconds;
   while (left > 0) {
     const dt = Math.min(step, left);
     game.update(dt);
-    scout.pump(dt);
+    if (pumpScout) scout.pump(dt);
     handleEvents(game.flushEvents());
     left -= dt;
   }

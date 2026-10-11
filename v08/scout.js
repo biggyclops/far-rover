@@ -162,12 +162,12 @@ export function bindScout(root, game, hooks = {}) {
 
   function pingOreCell(cell) {
     if (!lastSim) {
-      lastSim = Sim.createInitialState([Sim.SENSORS.SPECTRAL], [
+      lastSim = Sim.createInitialState([Sim.SENSORS.SPECTRAL, Sim.SENSORS.DISTANCE], [
         { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
-        { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.WAIT } },
+        { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } },
       ]);
       setGameStateForTest(lastSim);
-      setSelectedSensorsForTest([Sim.SENSORS.SPECTRAL]);
+      setSelectedSensorsForTest([Sim.SENSORS.SPECTRAL, Sim.SENSORS.DISTANCE]);
       setRulesForTest(lastSim.rules);
       game.markExpeditionLaunched({ hasNotifyRule: true });
     }
@@ -181,7 +181,7 @@ export function bindScout(root, game, hooks = {}) {
     if (!hasNotify) {
       lastSim.rules = [
         { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
-        { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.WAIT } },
+        { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } },
       ];
     }
     const result = tickScout(1);
