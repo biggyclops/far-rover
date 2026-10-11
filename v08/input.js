@@ -62,11 +62,12 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
       panLast = p;
       return;
     }
+    const hover = renderer.screenToWorld(p.x, p.y);
+    const ht = game.worldToTile(hover.x, hover.y);
+    game.state.hoverTile = { tx: ht.tx, ty: ht.ty, sx: ev.clientX, sy: ev.clientY };
     if (game.state.buildGhost) {
-      const w = renderer.screenToWorld(p.x, p.y);
-      const t = game.worldToTile(w.x, w.y);
-      game.state.buildGhost.tx = t.tx;
-      game.state.buildGhost.ty = t.ty;
+      game.state.buildGhost.tx = ht.tx;
+      game.state.buildGhost.ty = ht.ty;
     }
     if (!dragging || !start) return;
     if (!box && Math.hypot(p.x - start.x, p.y - start.y) > 6) {
@@ -142,6 +143,10 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
     if (ev.button === 0 && dragging) finishSelect(ev);
     panning = false;
     panLast = null;
+  });
+
+  canvas.addEventListener('pointerleave', () => {
+    game.state.hoverTile = null;
   });
 
   canvas.addEventListener('wheel', (ev) => {

@@ -89,7 +89,8 @@ test.describe('Far Rover v0.8 M1', () => {
       window.__v08Test.advance(20);
     });
     const s = await page.evaluate(() => window.__v08Test.getState());
-    expect(s.units[0].cargo.ice).toBeGreaterThan(0);
+    expect(s.iceTile.remaining).toBeLessThan(25);
+    expect(s.units[0].cargo.ice + (s.ice - 20)).toBeGreaterThan(0);
   });
 
   test('Build order constructs storage and plays the -build path', async ({ page }) => {
@@ -219,6 +220,176 @@ test.describe('Far Rover v0.8 M1', () => {
     await page.click('#mute-btn');
     const muted = await page.evaluate(() => window.__v08Test.getState().muted);
     expect(muted).toBe(true);
+  });
+
+  test('ice hint and live objectives are on the base map', async ({ page }) => {
+    await ready(page);
+    await expect(page.locator('#ice-hint')).toBeVisible();
+    await expect(page.locator('#ice-hint')).toContainText('Select haulers, then right-click the ice to start a delivery loop');
+    await expect(page.locator('#scout-hint-arrow')).toBeHidden();
+    await expect(page.locator('#btn-build-scout')).not.toHaveClass(/hint-pulse/);
+    await expect(page.locator('#objectives')).toContainText('Select haulers, then right-click the ice to start a delivery loop');
+    await expect(page.locator('#objectives [data-step="mineShallow"] img.step-icon'))
+      .toHaveAttribute('src', /step-dot-active\.png/);
+    await expect(page.locator('#objectives [data-step="buildScout"] img.step-icon'))
+      .toHaveAttribute('src', /step-dot\.png/);
+    const tip = await page.evaluate(() => {
+      const C = window.__v08Test.config;
+      window.__v08Test.centerOnTile(C.shallowIceTileX, C.shallowIceTileY);
+      return window.__v08Test.tileClientPos(C.shallowIceTileX, C.shallowIceTileY);
+    });
+    await page.mouse.move(tip.x, tip.y);
+    await expect(page.locator('#ice-tooltip')).toBeVisible();
+    await expect(page.locator('#ice-tooltip')).toContainText(/Shallow ice/i);
+    await expect(page.locator('#ice-tooltip')).toContainText(/delivery loop/i);
+  });
+
+  test('right-click ice starts a delivery loop', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      const s = window.__v08Test.getState();
+      const C = window.__v08Test.config;
+      window.__v08Test.selectUnits([s.units[0].id]);
+      const c = window.__v08Test.tileClientPos(C.shallowIceTileX, C.shallowIceTileY);
+      const world = {
+        x: (C.shallowIceTileX + 0.5) * C.tileSize,
+        y: (C.shallowIceTileY + 0.5) * C.tileSize,
+      };
+      window.__v08Test.issueContextual(world.x, world.y);
+      return window.__v08Test.getState();
+    });
+    expect(result.units[0].order).toBe('haul');
+    expect(result.units[0].lastOrder).toBe('haul');
+    expect(result.units[0].destBuildingId).toBeTruthy();
+  });
+
+  test('Mine with full cargo leads to an automatic deposit', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      const s0 = window.__v08Test.getState();
+      const C = window.__v08Test.config;
+      window.__v08Test.selectUnits([s0.units[0].id]);
+      window.__v08Test.issueOrder({ type: 'mine', tx: C.shallowIceTileX, ty: C.shallowIceTileY });
+      window.__v08Test.advance(45);
+      const end = window.__v08Test.getState();
+      return {
+        startIce: s0.ice,
+        endIce: end.ice,
+        cargo: end.units[0].cargo.ice,
+        order: end.units[0].order,
+        last: end.units[0].lastOrder,
+      };
+    });
+    expect(result.endIce).toBeGreaterThan(result.startIce);
+    expect(result.last).toBe('haul');
+  });
+
+  test('no false storage-full when another store has room', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      const s0 = window.__v08Test.getState();
+      const C = window.__v08Test.config;
+      const hab = s0.buildings.find((b) => b.type === 'habitat');
+      window.__v08Test.setResources({ ice: C.habitatIceCapacity });
+      window.__v08Test.selectUnits([s0.units[0].id]);
+      const storage = window.__v08Test.placeBuilding('storage', 21, 18);
+      window.__v08Test.completeBuilding(storage.id);
+      window.__v08Test.issueOrder({
+        type: 'haul',
+        sourceTx: C.shallowIceTileX,
+        sourceTy: C.shallowIceTileY,
+        destBuildingId: hab.id,
+      });
+      let blocked = false;
+      let toast = null;
+      for (let i = 0; i < 50; i++) {
+        window.__v08Test.advance(1);
+        const snap = window.__v08Test.getState();
+        if (snap.units[0].status === 'blocked') blocked = true;
+        if (snap.toast) toast = snap.toast;
+      }
+      const end = window.__v08Test.getState();
+      const store = end.buildings.find((b) => b.id === storage.id);
+      return {
+        blocked,
+        toast,
+        storeIce: store.ice,
+        label: end.units[0].label,
+        status: end.units[0].status,
+      };
+    });
+    expect(result.blocked).toBe(false);
+    expect(result.toast).not.toBe('Ice storage full');
+    expect(result.storeIce).toBeGreaterThan(0);
+  });
+
+  test('low battery inserts a charge then resumes the loop', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      const s0 = window.__v08Test.getState();
+      const C = window.__v08Test.config;
+      const hab = s0.buildings.find((b) => b.type === 'habitat');
+      window.__v08Test.selectUnits([s0.units[0].id]);
+      window.__v08Test.issueOrder({
+        type: 'haul',
+        sourceTx: C.shallowIceTileX,
+        sourceTy: C.shallowIceTileY,
+        destBuildingId: hab.id,
+      });
+      window.__v08Test.setBattery(s0.units[0].id, 18);
+      window.__v08Test.advance(0.25);
+      const mid = window.__v08Test.getState();
+      window.__v08Test.advance(14);
+      const charged = window.__v08Test.getState();
+      window.__v08Test.advance(25);
+      const end = window.__v08Test.getState();
+      return {
+        midOrder: mid.units[0].order,
+        midResume: mid.units[0].resumeOrder,
+        chargedBat: charged.units[0].battery,
+        chargedOrder: charged.units[0].order,
+        endOrder: end.units[0].order,
+        endLast: end.units[0].lastOrder,
+        endIce: end.ice,
+      };
+    });
+    expect(result.midOrder === 'charge' || result.midResume === 'haul').toBe(true);
+    expect(result.chargedBat).toBeGreaterThan(50);
+    expect(result.endLast).toBe('haul');
+    expect(result.endOrder === 'haul' || result.endIce > 20).toBe(true);
+  });
+
+  test('rejected order shows a toast', async ({ page }) => {
+    await ready(page);
+    const empty = await page.evaluate(() => {
+      const s = window.__v08Test.getState();
+      const C = window.__v08Test.config;
+      window.__v08Test.selectUnits([s.units[0].id]);
+      window.__v08Test.setBattery(s.units[0].id, 0);
+      window.__v08Test.issueContextual(
+        (C.shallowIceTileX + 0.5) * C.tileSize,
+        (C.shallowIceTileY + 0.5) * C.tileSize,
+      );
+      window.__v08Test.syncHud();
+      return window.__v08Test.getState().toast;
+    });
+    expect(empty).toBe('Battery empty');
+    await expect(page.locator('#toast')).toContainText('Battery empty');
+
+    const room = await page.evaluate(() => {
+      const s = window.__v08Test.getState();
+      const C = window.__v08Test.config;
+      window.__v08Test.setBattery(s.units[0].id, C.haulerBattery);
+      window.__v08Test.setResources({ ice: C.habitatIceCapacity });
+      window.__v08Test.selectUnits([s.units[0].id]);
+      window.__v08Test.issueContextual(
+        (C.shallowIceTileX + 0.5) * C.tileSize,
+        (C.shallowIceTileY + 0.5) * C.tileSize,
+      );
+      window.__v08Test.syncHud();
+      return window.__v08Test.getState().toast;
+    });
+    expect(room).toBe('No storage room');
   });
 });
 
@@ -433,14 +604,26 @@ const NOTIFY_PROGRAM = {
 };
 
 test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
-  test('Build Scout opens the imported build screen', async ({ page }) => {
+  test('Build Scout opens a prefilled ice Notify program', async ({ page }) => {
     await ready(page);
     await page.click('#btn-build-scout');
     await expect(page.locator('#scout-overlay')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('.build-screen')).toBeVisible();
-    await expect(page.locator('.action-select').first()).toHaveValue('');
+    await expect(page.locator('.condition-select').nth(0)).toHaveValue('crater_in_front');
+    await expect(page.locator('.action-select').nth(0)).toHaveValue('sidestep');
+    await expect(page.locator('.condition-select').nth(1)).toHaveValue('on_ore');
+    await expect(page.locator('.action-select').nth(1)).toHaveValue('notify');
+    await expect(page.locator('.condition-select').nth(2)).toHaveValue('ore_next_to');
+    await expect(page.locator('.action-select').nth(2)).toHaveValue('go_to_ore');
+    await expect(page.locator('.condition-select').nth(3)).toHaveValue('always');
+    await expect(page.locator('.action-select').nth(3)).toHaveValue('explore');
     const notify = page.locator('.action-select').first().locator('option[value="notify"]');
     await expect(notify).toHaveCount(1);
+    await expect(page.locator('.condition-select').nth(1).locator('option[value="on_ore"]'))
+      .toContainText('On ore tile (ice)');
+    await expect(page.locator('.condition-select').nth(2).locator('option[value="ore_next_to"]'))
+      .toContainText('Ore (ice) next to rover');
+    await expect(page.locator('.sensor-desc').filter({ hasText: /ice nearby/i })).toHaveCount(1);
   });
 
   test('unit: setResources cannot put ice above the habitat cap', async ({ page }) => {
@@ -460,8 +643,10 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
 
   test('unit: scout confirm unlocks Deep Ice', async ({ page }) => {
     await ready(page);
-    await expect(page.locator('#objectives')).toContainText('Build a scout and confirm ice');
-    await expect(page.locator('#objectives')).toContainText('Bring 60 ice and 50 power home');
+    await expect(page.locator('#objectives')).toContainText('Select haulers, then right-click the ice to start a delivery loop');
+    await expect(page.locator('#objectives')).toContainText('Build Scout and give it an On ore tile: Notify rule');
+    await expect(page.locator('#objectives')).toContainText('Haul Deep Ice home');
+    await expect(page.locator('#objectives')).toContainText('Land crew (60 ice + 50 power)');
     const result = await page.evaluate(() => {
       window.__v08Test.launchProgram(['spectral'], [
         { condition: { type: 'on_ore' }, action: { type: 'notify' } },
@@ -479,7 +664,9 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     expect(result.after.deepIceTile.type).toBe('ice');
     expect(result.after.deepIceTile.remaining).toBe(200);
     expect(result.after.stats.notifies).toBeGreaterThanOrEqual(1);
-    expect(result.after.toast).toMatch(/Ice confirmed|Notify/);
+    expect(result.after.toast).toMatch(/Deep Ice found|Ice confirmed|Notify/);
+    expect(result.after.objectives.buildScout).toBe(true);
+    expect(result.after.scoutHint).toBe(false);
     expect(result.after.canLandCrew).toBe(false);
   });
 
@@ -511,6 +698,28 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     expect(art.src).toMatch(/\/assets\/art\/hirise-board\.jpg$/);
     await page.click('#scout-back');
     await expect(page.locator('#scout-overlay')).toBeHidden();
+  });
+
+  test('hosted scout failure note asks for On ice tile Notify', async ({ page }) => {
+    await ready(page);
+    page.on('dialog', (d) => d.accept());
+    await page.click('#btn-build-scout');
+    await expect(page.locator('.build-screen')).toBeVisible({ timeout: 15000 });
+    await page.evaluate(async () => {
+      const ui = await import('../ui.js');
+      ui.setRulesForTest([
+        { condition: { type: 'always' }, action: { type: 'wait' } },
+        null,
+        null,
+        null,
+      ]);
+    });
+    await page.click('#launch-btn');
+    await expect(page.locator('#scout-overlay')).toBeHidden();
+    await page.evaluate(() => window.__v08Test.openOperate());
+    await expect(page.locator('.operate-view')).toBeVisible({ timeout: 15000 });
+    await page.click('#end-run-btn');
+    await expect(page.locator('.end-reason')).toContainText("No Notify fired: add 'On ice tile: Notify'.");
   });
 
   test('unit: one free Recall drives the scout home and disables the button', async ({ page }) => {

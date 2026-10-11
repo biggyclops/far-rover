@@ -223,18 +223,59 @@ export function createRenderer(canvas, assets, game) {
 
   function drawUnitLabel(u, z) {
     const label = game.unitLabel(u);
-    if (!label) return;
     const s = worldToScreen(u.x, u.y);
+    if (label) {
+      ctx.save();
+      ctx.font = `600 ${Math.max(9, 10 * z)}px "IBM Plex Mono", ui-monospace, monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      const y = s.y - C.tileSize * z * 0.42;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(8, 8, 10, 0.75)';
+      ctx.strokeText(label, s.x, y);
+      ctx.fillStyle = u.status === 'blocked' ? C.warningNotify : '#f2f0ec';
+      ctx.fillText(label, s.x, y);
+      ctx.restore();
+    }
+    const low = u.kind === 'hauler' && u.battery <= C.haulerBattery * 0.2 + 1e-6;
+    if (low) {
+      const icon = img(u.battery <= 0 ? 'icon-power' : 'icon-power-orange') || img('icon-power');
+      const size = 16 * Math.max(1, z);
+      if (icon) ctx.drawImage(icon, s.x + C.tileSize * z * 0.16, s.y - C.tileSize * z * 0.52, size, size);
+    }
+  }
+
+  function drawHaulRoutes(z) {
     ctx.save();
-    ctx.font = `600 ${Math.max(9, 10 * z)}px "IBM Plex Mono", ui-monospace, monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    const y = s.y - C.tileSize * z * 0.42;
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(8, 8, 10, 0.75)';
-    ctx.strokeText(label, s.x, y);
-    ctx.fillStyle = u.status === 'blocked' ? C.warningNotify : '#f2f0ec';
-    ctx.fillText(label, s.x, y);
+    ctx.strokeStyle = C.playerAccent;
+    ctx.lineWidth = Math.max(1.5, 2 * z);
+    ctx.setLineDash([7 * z, 5 * z]);
+    ctx.globalAlpha = 0.88;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const u of game.state.units) {
+      if (u.kind !== 'hauler') continue;
+      const o = (u.order && u.order.type === 'haul')
+        ? u.order
+        : (u.resumeOrder && u.resumeOrder.type === 'haul')
+          ? u.resumeOrder
+          : (u.lastOrder && u.lastOrder.type === 'haul' && u.order?.type === 'charge')
+            ? u.lastOrder
+            : null;
+      if (!o || o.sourceTx == null) continue;
+      const from = worldToScreen(u.x, u.y);
+      const src = worldToScreen((o.sourceTx + 0.5) * C.tileSize, (o.sourceTy + 0.5) * C.tileSize);
+      const dest = o.destBuildingId ? game.buildingById(o.destBuildingId) : null;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(src.x, src.y);
+      if (dest) {
+        const n = dest.type === 'vault' ? 3 : 2;
+        const ds = worldToScreen((dest.tx + n / 2) * C.tileSize, (dest.ty + n / 2) * C.tileSize);
+        ctx.lineTo(ds.x, ds.y);
+      }
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -443,26 +484,53 @@ export function createRenderer(canvas, assets, game) {
     }
   }
 
-  function drawDeepIce(z) {
+  function drawIceMarkers() {
+    const steps = game.objectiveProgress();
+    const hintOn = game.showIceHint();
     const d = game.state.deepIce;
-    if (!d.unlocked || d.tx == null) return;
-    const s = worldToScreen((d.tx + 0.5) * C.tileSize, (d.ty + 0.5) * C.tileSize);
-    const size = C.tileSize * z;
-    ctx.save();
-    ctx.strokeStyle = '#E8F2F6';
-    ctx.lineWidth = Math.max(2, 2.4 * z);
-    ctx.setLineDash([5, 4]);
-    ctx.strokeRect(s.x - size / 2 + 3, s.y - size / 2 + 3, size - 6, size - 6);
-    ctx.setLineDash([]);
-    ctx.font = `600 ${Math.max(10, 11 * z)}px "IBM Plex Mono", ui-monospace, monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(8, 8, 10, 0.75)';
-    ctx.strokeText('Deep Ice', s.x, s.y - size * 0.52);
-    ctx.fillStyle = '#E8F2F6';
-    ctx.fillText('Deep Ice', s.x, s.y - size * 0.52);
-    ctx.restore();
+    const pulseFrame = Math.floor((game.state.time * 10) % 6);
+    const ring = img(`pulse-ring-${pulseFrame}`);
+    const marker = img('ice-marker');
+    const marks = [
+      { tx: C.shallowIceTileX, ty: C.shallowIceTileY, pulse: hintOn || !steps.mineShallow },
+    ];
+    if (d.unlocked && d.tx != null) {
+      const age = d.foundAt == null ? 99 : game.state.time - d.foundAt;
+      marks.push({ tx: d.tx, ty: d.ty, pulse: age < 6 || !steps.haulDeep, deep: true });
+    }
+    for (const m of marks) {
+      const tile = game.tileAt(m.tx, m.ty);
+      if (!tile || (tile.type !== TILE.ICE && tile.type !== TILE.ICE_MINED)) continue;
+      const s = worldToScreen((m.tx + 0.5) * C.tileSize, (m.ty + 0.5) * C.tileSize);
+      if (m.pulse && ring) ctx.drawImage(ring, s.x - 64, s.y - 64, 128, 128);
+      if (marker) ctx.drawImage(marker, s.x - 32, s.y - 62, 64, 64);
+      if (m.deep) {
+        ctx.save();
+        ctx.font = '600 11px "IBM Plex Mono", ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(8, 8, 10, 0.75)';
+        ctx.strokeText('Deep Ice', s.x, s.y - 64);
+        ctx.fillStyle = '#E8F2F6';
+        ctx.fillText('Deep Ice', s.x, s.y - 64);
+        ctx.restore();
+      }
+    }
+  }
+
+  function tickCamPan(dt) {
+    const pan = game.state.camPan;
+    if (!pan || dt <= 0) return;
+    const { w, h } = viewSize();
+    const z = game.state.camera.zoom;
+    const destX = (pan.tx + 0.5) * C.tileSize - (w / z) / 2;
+    const destY = (pan.ty + 0.5) * C.tileSize - (h / z) / 2;
+    const k = 1 - Math.exp(-dt * 4);
+    game.state.camera.x += (destX - game.state.camera.x) * k;
+    game.state.camera.y += (destY - game.state.camera.y) * k;
+    pan.t -= dt;
+    if (pan.t <= 0) game.state.camPan = null;
   }
 
   function drawBox() {
@@ -535,9 +603,10 @@ export function createRenderer(canvas, assets, game) {
       for (const u of game.state.units) {
         if (game.state.selectedIds.includes(u.id)) drawSelection(u, z);
       }
+      drawHaulRoutes(z);
       for (const u of game.state.units) drawUnitLabel(u, z);
       drawExpedition(z);
-      drawDeepIce(z);
+      drawIceMarkers();
       drawNotifyPings(z);
     }
     drawOrderMarker(z);
@@ -545,5 +614,5 @@ export function createRenderer(canvas, assets, game) {
     drawBox();
   }
 
-  return { draw, resize, worldToScreen, screenToWorld, viewSize, centerOnHabitat };
+  return { draw, resize, worldToScreen, screenToWorld, viewSize, centerOnHabitat, tickCamPan };
 }

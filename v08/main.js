@@ -56,6 +56,7 @@ function frame(now) {
   const raw = Math.min(0.05, (now - last) / 1000);
   last = now;
   pumpPan(raw);
+  renderer.tickCamPan(raw);
   const dt = raw * game.state.speed;
   if (dt > 0) {
     game.update(dt);
@@ -95,9 +96,12 @@ function serialize() {
       cargo: { ...u.cargo },
       order: u.order ? u.order.type : null,
       lastOrder: u.lastOrder ? u.lastOrder.type : null,
+      resumeOrder: u.resumeOrder ? u.resumeOrder.type : null,
+      destBuildingId: u.order?.destBuildingId || u.resumeOrder?.destBuildingId || null,
       phase: u.order?.phase || null,
       status: u.status,
       label: game.unitLabel(u),
+      blockedReason: u.blockedReason || null,
     })),
     buildings: game.state.buildings.map((b) => ({
       id: b.id,
@@ -155,6 +159,13 @@ function serialize() {
     patchesLeft: game.patchesLeft(),
     stored: game.storedForGoal(),
     canLandCrew: game.canLandCrew(),
+    iceHint: game.showIceHint(),
+    iceHintText: game.iceHintText(),
+    scoutHint: game.showScoutHint(),
+    objectives: game.objectiveProgress(),
+    hoverTip: game.state.hoverTile
+      ? game.iceHoverText(game.state.hoverTile.tx, game.state.hoverTile.ty)
+      : '',
     won: game.state.won,
     win: game.state.win ? { ...game.state.win } : null,
     scoutOpen: scout.isOpen(),
@@ -200,6 +211,7 @@ window.__v08Test = {
   },
   selectUnits: (ids, additive) => game.selectUnits(ids, additive),
   selectBuilding: (id) => game.selectBuilding(id),
+  issueContextual: (x, y) => game.issueContextual(x, y),
   issueOrder: (order) => {
     const units = game.selectedUnits();
     if (!units.length) return false;

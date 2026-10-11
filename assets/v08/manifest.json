@@ -56,7 +56,22 @@
     "notify-4": { "file": "assets/v08/art/notify-4.png", "w": 128, "h": 128 },
     "notify-5": { "file": "assets/v08/art/notify-5.png", "w": 128, "h": 128 },
     "glow-unit": { "file": "assets/v08/art/glow-unit.png", "w": 128, "h": 128 },
-    "glow-building": { "file": "assets/v08/art/glow-building.png", "w": 256, "h": 256 }
+    "glow-building": { "file": "assets/v08/art/glow-building.png", "w": 256, "h": 256 },
+    "ice-marker": { "file": "assets/v08/art/ice-marker.png", "w": 64, "h": 64 },
+    "hint-arrow-0": { "file": "assets/v08/art/hint-arrow-0.png", "w": 64, "h": 64 },
+    "hint-arrow-1": { "file": "assets/v08/art/hint-arrow-1.png", "w": 64, "h": 64 },
+    "hint-arrow-2": { "file": "assets/v08/art/hint-arrow-2.png", "w": 64, "h": 64 },
+    "hint-arrow-3": { "file": "assets/v08/art/hint-arrow-3.png", "w": 64, "h": 64 },
+    "pulse-ring-0": { "file": "assets/v08/art/pulse-ring-0.png", "w": 128, "h": 128 },
+    "pulse-ring-1": { "file": "assets/v08/art/pulse-ring-1.png", "w": 128, "h": 128 },
+    "pulse-ring-2": { "file": "assets/v08/art/pulse-ring-2.png", "w": 128, "h": 128 },
+    "pulse-ring-3": { "file": "assets/v08/art/pulse-ring-3.png", "w": 128, "h": 128 },
+    "pulse-ring-4": { "file": "assets/v08/art/pulse-ring-4.png", "w": 128, "h": 128 },
+    "pulse-ring-5": { "file": "assets/v08/art/pulse-ring-5.png", "w": 128, "h": 128 },
+    "check": { "file": "assets/v08/art/check.png", "w": 32, "h": 32 },
+    "check-cyan": { "file": "assets/v08/art/check-cyan.png", "w": 32, "h": 32 },
+    "step-dot": { "file": "assets/v08/art/step-dot.png", "w": 32, "h": 32 },
+    "step-dot-active": { "file": "assets/v08/art/step-dot-active.png", "w": 32, "h": 32 }
   },
   "sfx": {
     "select": { "ogg": "assets/v08/sfx/select.ogg", "mp3": "assets/v08/sfx/select.mp3" },
