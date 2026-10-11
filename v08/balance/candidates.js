@@ -1,5 +1,6 @@
-// Candidate number sets. Each changes as little as possible from the
-// current Proposed values in v08/config.js.
+// First-search candidate sets, written against the original 60-ice / 6 s-dig
+// Proposed values. Shipped defaults are now Set B + haulerCarry 15; these
+// overrides are kept so `--report` can still replay the historical tables.
 
 export const CANDIDATES = [
   {

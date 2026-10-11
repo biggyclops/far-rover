@@ -646,7 +646,7 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     await expect(page.locator('#objectives')).toContainText('Select haulers, then right-click the ice to start a delivery loop');
     await expect(page.locator('#objectives')).toContainText('Build Scout and give it an On ore tile: Notify rule');
     await expect(page.locator('#objectives')).toContainText('Haul Deep Ice home');
-    await expect(page.locator('#objectives')).toContainText('Land crew (60 ice + 50 power)');
+    await expect(page.locator('#objectives')).toContainText('Land crew (180 ice + 50 power)');
     const result = await page.evaluate(() => {
       window.__v08Test.launchProgram(['spectral'], [
         { condition: { type: 'on_ore' }, action: { type: 'notify' } },
@@ -830,18 +830,28 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
   });
 
   test('honest hauler route lands the crew', async ({ page }) => {
-    test.setTimeout(120000);
+    test.setTimeout(180000);
     await ready(page);
     const result = await page.evaluate((prog) => {
       const t = window.__v08Test;
       const s0 = t.getState();
       t.selectUnits(s0.units.map((u) => u.id));
-      const storage = t.placeBuilding('storage', 22, 21);
-      if (!storage) return { error: 'storage place failed' };
-      for (let i = 0; i < 40; i++) {
-        t.advance(1);
-        if (t.getState().buildings.find((b) => b.id === storage.id)?.complete) break;
+      function waitDone(id) {
+        for (let i = 0; i < 50; i++) {
+          t.advance(1);
+          if (t.getState().buildings.find((b) => b.id === id)?.complete) return true;
+        }
+        return false;
       }
+      // Habitat 30 + one storage 100 = 130, short of the 180-ice goal.
+      const storageA = t.placeBuilding('storage', 22, 21);
+      if (!storageA) return { error: 'storage A place failed' };
+      if (!waitDone(storageA.id)) return { error: 'storage A not complete' };
+      const storageB = t.placeBuilding('storage', 25, 21)
+        || t.placeBuilding('storage', 22, 24)
+        || t.placeBuilding('storage', 15, 21);
+      if (!storageB) return { error: 'storage B place failed' };
+      if (!waitDone(storageB.id)) return { error: 'storage B not complete' };
       t.launchProgram(prog.sensors, prog.rules);
       let unlocked = false;
       for (let i = 0; i < 80; i++) {
@@ -850,19 +860,31 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       }
       const deep = t.getState().deepIce;
       t.selectUnits(t.getState().units.filter((u) => u.kind === 'hauler').map((u) => u.id));
+      let destId = storageA.id;
       t.issueOrder({
         type: 'haul',
         sourceTx: deep.tx,
         sourceTy: deep.ty,
-        destBuildingId: storage.id,
+        destBuildingId: destId,
       });
       let landed = null;
-      for (let i = 0; i < 500; i++) {
+      for (let i = 0; i < 1200; i++) {
         t.advance(1);
         const snap = t.getState();
         if (snap.canLandCrew) {
           landed = t.landCrew();
           break;
+        }
+        const a = snap.buildings.find((b) => b.id === storageA.id);
+        if (a && a.ice >= a.iceCap - 0.5 && destId === storageA.id) {
+          destId = storageB.id;
+          t.selectUnits(snap.units.filter((u) => u.kind === 'hauler').map((u) => u.id));
+          t.issueOrder({
+            type: 'haul',
+            sourceTx: deep.tx,
+            sourceTy: deep.ty,
+            destBuildingId: destId,
+          });
         }
       }
       const end = t.getState();
@@ -880,10 +902,10 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     expect(result.unlocked).toBe(true);
     expect(result.win).toBeTruthy();
     expect(result.win.logistics).toBe('haulers only');
-    expect(result.stored.ice).toBeGreaterThanOrEqual(60);
+    expect(result.stored.ice).toBeGreaterThanOrEqual(180);
     expect(result.stored.ice).toBeLessThanOrEqual(result.stored.iceCap);
     expect(result.stored.power).toBeGreaterThanOrEqual(50);
-    expect(result.win.time).toBeGreaterThan(60);
+    expect(result.win.time).toBeGreaterThanOrEqual(240);
     expect(result.usedTunnel).toBe(false);
     console.log(`honest hauler win: ${result.win.time.toFixed(1)}s (${result.stored.ice.toFixed(1)} ice / ${result.stored.iceCap} cap)`);
     await page.evaluate(() => window.__v08Test.syncHud());
@@ -893,7 +915,7 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
   });
 
   test('honest tunnel route lands the crew', async ({ page }) => {
-    test.setTimeout(120000);
+    test.setTimeout(180000);
     await ready(page);
     const result = await page.evaluate((prog) => {
       const t = window.__v08Test;
@@ -917,7 +939,7 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       if (!waitDone(vault.id)) return { error: 'vault not complete' };
       const tiles = t.startDigCorridor();
       t.issueOrder({ type: 'dig' });
-      for (let i = 0; i < 120; i++) {
+      for (let i = 0; i < 400; i++) {
         t.advance(1);
         if (t.getState().tunnel.ready) break;
       }
@@ -928,18 +950,50 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       }
       const deep = t.getState().deepIce;
       if (!deep.unlocked) return { error: 'no deep ice', time: t.getState().time };
+      // Hub ice does not score and the home hub pulls from a full vault, so
+      // habitat (30) + vault (150) stalls around 170. A storage pad after the
+      // bore (dig yield + a short mine if needed) holds the last scoring loads.
+      if (t.getState().regolith < 30) {
+        t.selectUnits(t.getState().units.filter((u) => u.kind === 'hauler').map((u) => u.id));
+        t.issueOrder({ type: 'mine', tx: 17, ty: 16 });
+        for (let i = 0; i < 40; i++) {
+          t.advance(1);
+          if (t.getState().regolith >= 30) break;
+        }
+      }
       t.selectUnits(t.getState().units.filter((u) => u.kind === 'hauler').map((u) => u.id));
+      const storage = t.placeBuilding('storage', 21, 16)
+        || t.placeBuilding('storage', 16, 16)
+        || t.placeBuilding('storage', 20, 15);
+      if (!storage) return { error: 'storage place failed', time: t.getState().time };
+      if (!waitDone(storage.id)) return { error: 'storage not complete' };
+      t.selectUnits(t.getState().units.filter((u) => u.kind === 'hauler').map((u) => u.id));
+      let destId = farHub.id;
       t.issueOrder({
         type: 'haul',
         sourceTx: deep.tx,
         sourceTy: deep.ty,
-        destBuildingId: farHub.id,
+        destBuildingId: destId,
       });
-      for (let i = 0; i < 500; i++) {
+      for (let i = 0; i < 1200; i++) {
         t.advance(1);
-        if (t.getState().canLandCrew) {
+        const snap = t.getState();
+        if (snap.canLandCrew) {
           t.landCrew();
           break;
+        }
+        const v = snap.buildings.find((b) => b.id === vault.id);
+        // Home hub pulls ~20 back out of the vault, so vault.ice may stall
+        // near 130. Switch once scoring ice is on the pad, or the vault is close.
+        if (destId === farHub.id && ((v && v.ice >= 120) || snap.stored.ice >= 145)) {
+          destId = storage.id;
+          t.selectUnits(snap.units.filter((u) => u.kind === 'hauler').map((u) => u.id));
+          t.issueOrder({
+            type: 'haul',
+            sourceTx: deep.tx,
+            sourceTy: deep.ty,
+            destBuildingId: destId,
+          });
         }
       }
       const end = t.getState();
@@ -957,9 +1011,9 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     expect(result.usedTunnel).toBe(true);
     expect(result.win).toBeTruthy();
     expect(result.win.logistics).toBe('tunnel');
-    expect(result.stored.ice).toBeGreaterThanOrEqual(60);
+    expect(result.stored.ice).toBeGreaterThanOrEqual(180);
     expect(result.stored.ice).toBeLessThanOrEqual(result.stored.iceCap);
-    expect(result.win.time).toBeGreaterThan(60);
+    expect(result.win.time).toBeGreaterThanOrEqual(240);
     console.log(`honest tunnel win: ${result.win.time.toFixed(1)}s (${result.stored.ice.toFixed(1)} ice / ${result.stored.iceCap} cap)`);
     await page.evaluate(() => window.__v08Test.syncHud());
     await expect(page.locator('#win-overlay')).toBeVisible();

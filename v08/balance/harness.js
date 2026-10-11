@@ -43,7 +43,10 @@ export function withOverrides(overrides, fn) {
 }
 
 export function runStrategy(strategyId, overrides = {}, opts = {}) {
-  const dt = opts.dt ?? 1 / 20;
+  // Match the live page's 1x integrator (main.js advance uses 1/60).
+  // Player 2 measured 44.8 / 45.4 / 47.2 s at 1x / 4x / 16x — do not run this
+  // harness at 4x or 16x if you want numbers that match a 1x playtest.
+  const dt = opts.dt ?? 1 / 60;
   const thinkEvery = opts.thinkEvery ?? 0.5;
   const maxSeconds = opts.maxSeconds ?? 30 * 60;
 

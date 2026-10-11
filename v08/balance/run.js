@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Far Rover v0.8 balance harness.
+// Far Rover v0.8 balance harness. Default step is 1x (dt = 1/60).
+// Player 2: same route was 44.8 / 45.4 / 47.2 s at 1x / 4x / 16x — do not
+// pass a larger dt if you want numbers that match a 1x playtest.
 //   node v08/balance/run.js
 //   node v08/balance/run.js --overrides '{"goalIceInStorage":180}'
 //   node v08/balance/run.js --strategy haulers-2
