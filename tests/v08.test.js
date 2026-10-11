@@ -183,7 +183,8 @@ test.describe('Far Rover v0.8 M1', () => {
     await ready(page);
     const result = await page.evaluate(() => {
       window.__v08Test.setResources({ power: 50 });
-      window.__v08Test.setTime(window.__v08Test.config.daySecondsAt1x + 1);
+      const firstNight = (window.__v08Test.config.startDaylightRemainingSec ?? window.__v08Test.config.daySecondsAt1x) + 1;
+      window.__v08Test.setTime(firstNight);
       const night = window.__v08Test.getState();
       window.__v08Test.advance(2);
       const afterNight = window.__v08Test.getState();
@@ -899,10 +900,11 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     const result = await page.evaluate(() => {
       const before = window.__v08Test.getState().unitCount;
       window.__v08Test.launchProgram(['spectral'], [
+        { condition: { type: 'on_ore' }, action: { type: 'notify' } },
         { condition: { type: 'always' }, action: { type: 'wait' } },
       ]);
       window.__v08Test.confirmOnOre();
-      window.__v08Test.advance(2.1);
+      window.__v08Test.advance(2.1, { scout: false });
       const unlocked = window.__v08Test.getState().deepIce.unlocked;
       window.__v08Test.syncHud();
       const first = window.__v08Test.startRecall();
