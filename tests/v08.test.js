@@ -10,6 +10,10 @@ async function ready(page) {
 test.describe('Far Rover v0.8 M1', () => {
   test('loads the base with starting stock', async ({ page }) => {
     await ready(page);
+    await page.evaluate(() => {
+      window.__v08Test.setSpeed(0);
+      window.__v08Test.syncHud();
+    });
     const s = await page.evaluate(() => window.__v08Test.getState());
     expect(Math.floor(s.ice)).toBe(20);
     expect(Math.floor(s.regolith)).toBe(80);
@@ -1019,7 +1023,7 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       }
       function mineUntil(need) {
         const hab = t.getState().buildings.find((b) => b.type === 'habitat');
-        const spots = [[17, 16], [19, 16], [17, 20], [20, 20], [12, 18], [21, 18]];
+        const spots = [[10, 22], [24, 12], [8, 18], [28, 18], [18, 8], [8, 28]];
         for (const [tx, ty] of spots) {
           if (t.getState().regolith >= need) return true;
           t.selectUnits(haulers().map((u) => u.id));
