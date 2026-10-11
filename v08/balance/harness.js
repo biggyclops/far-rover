@@ -82,6 +82,7 @@ export function runStrategy(strategyId, overrides = {}, opts = {}) {
     if (!game.isDay()) hitNight = true;
 
     const win = game.state.win;
+    const firstNightAt = game.C.startDaylightRemainingSec ?? game.C.daySecondsAt1x;
     return {
       strategy: strategyId,
       label: STRATEGY_META[strategyId].label,
@@ -89,7 +90,7 @@ export function runStrategy(strategyId, overrides = {}, opts = {}) {
       won: !!win,
       winTime: win ? win.time : null,
       winTimeLabel: win ? formatTime(win.time) : 'timeout',
-      hitNight: hitNight || (win ? win.time >= game.C.daySecondsAt1x : game.state.time >= game.C.daySecondsAt1x),
+      hitNight: hitNight || (win ? win.time >= firstNightAt : game.state.time >= firstNightAt),
       powerMin: Number.isFinite(minPower) ? round1(minPower) : null,
       ice: round1(stored.ice),
       power: round1(stored.power),
@@ -99,6 +100,14 @@ export function runStrategy(strategyId, overrides = {}, opts = {}) {
       deepIceUnlocked: !!game.state.deepIce.unlocked,
       time: round1(game.state.time),
       haulerCount: haulersOf(game).length,
+      orders: haulersOf(game).map((u) => ({
+        order: u.order?.type || null,
+        status: u.status,
+        blocked: u.blockedReason || null,
+        cargo: Math.round((u.cargo?.ice || 0) + (u.cargo?.regolith || 0)),
+        battery: Math.round(u.battery),
+      })),
+      buildings: game.state.buildings.map((b) => `${b.type}${b.complete ? '' : '*'}`),
       overrides: applied,
     };
   });
