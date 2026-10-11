@@ -190,4 +190,4 @@ if (resolve(process.argv[1] || '') === fileURLToPath(import.meta.url)) {
   main();
 }
 
-export { SETS, printSet, runPrinterSpam, rank };
+export { SETS, printSet, rank };

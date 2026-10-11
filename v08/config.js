@@ -30,7 +30,7 @@ export const CONFIG = {
   startPower: 100, // Proposed (Game Designer)
 
   // Habitat stores power and ice (and the starting regolith pad).
-  habitatPowerCapacity: 200, // Proposed (Game Designer)
+  habitatPowerCapacity: 120, // Proposed (Game Designer)
   habitatIceCapacity: 30, // Proposed (Game Designer)
   habitatRegolithCapacity: 200, // Proposed (Game Designer) — holds the starting 80; GD named ice/power only
 
@@ -66,7 +66,7 @@ export const CONFIG = {
   printerBuildSeconds: 15, // Proposed (Game Designer)
   printerHaulerCostRegolith: 25, // Proposed (Game Designer)
   printerHaulerCostPower: 10, // Proposed (Game Designer)
-  printerHaulerSeconds: 20, // Proposed (Game Designer)
+  printerHaulerSeconds: 30, // Proposed (Game Designer)
 
   showBuildSpriteWhileConstructing: true, // Proposed (Game Designer)
 
@@ -167,7 +167,7 @@ export const CONFIG = {
   goalIceInStorage: 180, // Proposed (Game Designer)
   goalPowerInStorage: 50, // Proposed (Game Designer)
   confirmDepositTiles: ['F2', 'I2'],
-  haulerUpkeepPowerPerSec: 0,
+  haulerUpkeepPowerPerSec: 0.3,
   noRegolithMineRadiusTiles: 4,
   strandedCrawlTilesPerSecond: 0.25,
   // Both at once → "Land crew" button.

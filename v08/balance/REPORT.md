@@ -17,6 +17,54 @@ The live page integrates at `dt = 1/60` (`v08/main.js` `advance`). Player 2 meas
 
 The first-search A/B/C tables farther down were recorded at `dt = 1/20` before that lock. Shape and ranking match the 1x rerun; exact seconds differ by a couple of ticks.
 
+## Shipped set (2026-10-11, post-#28): upkeep 0.3 + habitat 120 + print 30s
+
+Fix-list #28 added haul instincts, a 4-tile no-mine radius, 1x/16x determinism, `haulerUpkeepPowerPerSec` (default 0), hosted Notify option (b), and `confirmDepositTiles: ['F2','I2']`. This pass updates harness strategies for that loop and retunes on top of live B + carry 15.
+
+| Key | Was (live after #27) | Shipped | Why |
+|---|---:|---:|---|
+| `haulerUpkeepPowerPerSec` | 0 | 0.3 | Main lever for criterion 4. Top of the 0.05–0.3 band. |
+| `habitatPowerCapacity` | 200 | 120 | Floor of GD’s 120–200 range. With 0.3 upkeep, the 1-digger tunnel dips to 48. |
+| `printerHaulerSeconds` | 20 | 30 | Section 5 print *time* only. Keeps print-1 after first night so it still beats two starters without a sub-4:00 win. |
+
+Two knobs never hit 5/5: print-30s alone misses 4 (and the 20% band); upkeep 0.3 + cap 120 alone leaves print-1 at 3:45 (fails 3 and 5). Section 5’s 50-reg / 20-power print loses criterion 1 once night upkeep is on. `haulerMinePerSecond` 0.25 stretches every route past 8 minutes and is not shipped.
+
+### 1x route table (dt = 1/60)
+
+| Strategy | Win | Night | Power min | Ice |
+|---|---:|:---:|---:|---:|
+| Haulers only (2 start) | 6:45 | yes | 0 | 185 |
+| Haulers + print 1 | 6:12 | yes | 0 | 203.1 |
+| Haulers + print 2 | 6:55 | yes | 0 | 200 |
+| Tunnel, 1 digger | timeout | yes | 48 | 170 |
+| Tunnel, 2 diggers | 4:26 | yes | 100.1 | 180 |
+| Mixed (1 hauls, 1 digs) | 5:19 | yes | 69.4 | 180 |
+
+Best haulers-only: **Haulers + print 1** at 6:12.
+Best tunnel: **Tunnel, 2 diggers** at 4:26 (**28.4% faster**).
+
+### Five criteria
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Haulers + print 1 beats haulers only | **Pass.** 6:12 vs 6:45. |
+| 2 | Tunnel with 2 diggers is 20–35% faster than the best haulers-only route including prints | **Pass.** 28.4% (4:26 vs 6:12). |
+| 3 | Every winning route crosses at least one night | **Pass.** |
+| 4 | Power drops below 50 on at least one tunnel route | **Pass.** 1-digger tunnel `powerMin` 48 (timeout at 170 ice; home hub still pulls a full vault). Mixed dips to 69.4; 2-digger wins at 4:26 so it never sees a long night. |
+| 5 | No route wins under 4:00 | **Pass.** Earliest win is 4:26. |
+
+### Printer spam (10 min)
+
+Keep-printing run at the shipped knobs: power hits 0, printers pause while starved, hauler count caps at **16** (solar 5/s ÷ upkeep 0.3). Not unbounded.
+
+### Scout (hosted tick, Notify option b)
+
+Paper map through `runHostedScoutTick`. Hazard auto-pauses waste one tick then continue (same as a player hitting Resume).
+
+- **Starter + On ice: Notify** does **not** unlock Deep Ice. Ends `success-scan` at **Lander on tick 46** (resume) / **tick 48** (live page, no resume). Two trace-ice pings (G9, E7). Never stands on F2 or I2.
+- **4-rule that confirms:** crater → sidestep; battery below **8** → return/charge; on ore → notify; always → explore. **F2 on tick 16, confirmed tick 17** (under GD’s ~60). Battery-below-20 loops at F12 because start/restore battery is 20 (`battery < 20` after one tile). Highest N that confirms is 8 (N=5..8 work).
+- **Simple programs:** **0 / 49** one-rule and **0 / 2401** two-rule programs confirm F2/I2. You need sidestep + notify + explore, and the battery-return *turn* at H3 is what steers onto F2.
+
 ## Shipped set (2026-10-11): B + `haulerCarry` 15
 
 Game Designer approved Set B (`goalIceInStorage` 180, `digSecondsPerTilePerRover` 24) and asked for the smallest extra change that meets five criteria. **No set met all five.** Per GD: ship B plus the single knob that meets the most. That knob is `haulerCarry` 10 → 15 (3 of 5).
