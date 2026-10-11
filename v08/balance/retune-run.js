@@ -10,11 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { createGame } from '../game.js';
 import { applyOverrides, restoreConfig } from './config-override.js';
 import {
-  formatTime,
   runAllStrategies,
-  runStrategy,
   criteriaScore,
-  STRATEGY_IDS,
 } from './harness.js';
 import { createBrain, haulersOf } from './strategies.js';
 import { attachScout } from './scout.js';
