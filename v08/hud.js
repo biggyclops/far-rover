@@ -184,15 +184,22 @@ export function bindHud(root, game, hooks = {}) {
         card.innerHTML = `<strong>${data.kind}</strong> · bat ${fmt(data.battery)} · cargo ${fmt(data.cargo)}/${data.carry} · ${data.task}`;
       }
     }
-    const banner = $('#goal-banner');
-    if (banner) banner.textContent = game.goalBanner();
-    syncAfford();
     const toast = $('#toast');
+    const toastOn = !!(game.state.toast?.text);
     if (toast) {
       const msg = game.state.toast?.text || '';
+      const kind = game.state.toast?.kind || '';
       toast.textContent = msg;
-      toast.classList.toggle('show', !!msg);
+      toast.classList.toggle('show', toastOn);
+      toast.classList.toggle('ice-confirm', kind === 'ice-confirm');
+      toast.classList.toggle('trace-ice', kind === 'trace-ice');
     }
+    const banner = $('#goal-banner');
+    if (banner) {
+      banner.textContent = game.goalBanner();
+      banner.hidden = toastOn;
+    }
+    syncAfford();
     const exp = game.state.expedition;
     const buildScout = $('#btn-build-scout');
     const hintOn = game.showIceHint();
@@ -262,6 +269,8 @@ export function bindHud(root, game, hooks = {}) {
     if (log) {
       const last = exp.log[exp.log.length - 1];
       log.textContent = last ? last.text : '';
+      log.classList.toggle('ice-confirm', last?.kind === 'ice-confirm');
+      log.classList.toggle('trace-ice', last?.kind === 'trace-ice');
     }
     const win = $('#win-overlay');
     if (win) {

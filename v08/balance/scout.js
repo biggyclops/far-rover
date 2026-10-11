@@ -2,6 +2,7 @@
 // Mirrors v08/scout.js launch + pump + Notify → queueNotifyPing. No DOM.
 
 import * as Sim from '../engine.js';
+import { runHostedScoutTick } from '../hosted-tick.js';
 
 export const ICE_NOTIFY_PROGRAM = {
   sensors: ['distance', 'spectral'],
@@ -14,15 +15,22 @@ export const ICE_NOTIFY_PROGRAM = {
 };
 
 function handleNotify(game, result) {
-  const ar = result?.tickRecord?.actionResult;
-  if (!ar?.notified || !ar.ping) return;
+  const pings = result?.hostedPings?.length
+    ? result.hostedPings
+    : (result?.tickRecord?.actionResult?.ping ? [result.tickRecord.actionResult] : []);
   const marker = game.state.expedition.marker;
-  game.queueNotifyPing({
-    tx: marker.tx,
-    ty: marker.ty,
-    text: ar.confirmedIce ? `Ice confirmed at ${ar.cell}` : `Notify: ice at ${ar.cell}`,
-    confirmed: !!ar.confirmedIce,
-  });
+  for (const ar of pings) {
+    if (!ar?.notified || !ar.ping) continue;
+    const label = ar.label || (ar.confirmedIce ? 'Ice deposit confirmed' : 'Trace ice');
+    game.queueNotifyPing({
+      tx: marker.tx,
+      ty: marker.ty,
+      text: `${label} at ${ar.cell}`,
+      confirmed: !!ar.confirmedIce,
+      kind: ar.kind || (ar.confirmedIce ? 'ice-confirm' : 'trace-ice'),
+      label,
+    });
+  }
 }
 
 export function attachScout(game, program = ICE_NOTIFY_PROGRAM) {
@@ -44,12 +52,8 @@ export function attachScout(game, program = ICE_NOTIFY_PROGRAM) {
       acc += dt;
       while (acc >= 1 && sim && !sim.outcome) {
         acc -= 1;
-        let result = Sim.runTick(sim);
+        const result = runHostedScoutTick(sim);
         handleNotify(game, result);
-        if (result.continueFromStep4 && result.autoPause) {
-          Sim.continueTickFromStep4(sim, result.tickRecord, result.tickRecord.readings || sim.readings);
-          handleNotify(game, { tickRecord: sim.trace[sim.trace.length - 1] });
-        }
       }
     },
   };

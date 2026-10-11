@@ -17,12 +17,12 @@ function isConfirmDeposit(cell) {
 function applyNotifySideEffects(state) {
   const readings = Sim.computeReadings(state);
   const pings = [];
-  for (const rule of state.rules || []) {
-    if (!rule?.condition || !rule?.action || rule.action.type !== Sim.ACTIONS.NOTIFY) continue;
-    if (!Sim.evaluateCondition(rule.condition, state, readings)) continue;
-    if (!onOre(state)) continue;
+  (state.rules || []).forEach((rule, i) => {
+    if (!rule?.condition || !rule?.action || rule.action.type !== Sim.ACTIONS.NOTIFY) return;
+    if (!Sim.evaluateCondition(rule.condition, state, readings)) return;
+    if (!onOre(state)) return;
     const key = `${state.col},${state.row}`;
-    if (state.notifySeen[key]) continue;
+    if (state.notifySeen[key]) return;
     state.notifySeen[key] = true;
     state.notifyCount = (state.notifyCount || 0) + 1;
     const cell = cellOf(state);
@@ -34,8 +34,10 @@ function applyNotifySideEffects(state) {
       confirmedIce: confirm,
       cell,
       label: confirm ? 'Ice deposit confirmed' : 'Trace ice',
+      kind: confirm ? 'ice-confirm' : 'trace-ice',
+      slot: i + 1,
     });
-  }
+  });
   return pings;
 }
 

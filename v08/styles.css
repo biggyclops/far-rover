@@ -135,8 +135,8 @@ button:disabled {
   position: fixed;
   top: 56px;
   left: 50%;
-  transform: translate(-50%, -8px);
-  z-index: 4;
+  transform: translateX(-50%);
+  z-index: 5;
   padding: 6px 14px;
   border-radius: 4px;
   background: rgba(8, 8, 10, 0.88);
@@ -150,6 +150,14 @@ button:disabled {
 }
 #toast.show {
   opacity: 1;
+}
+#toast.ice-confirm {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+#toast.trace-ice {
+  border-color: var(--warn);
+  color: var(--warn);
 }
 
 #objectives {
@@ -250,6 +258,14 @@ button:disabled {
   color: var(--muted);
   font-size: 12px;
 }
+#expedition-log.ice-confirm {
+  color: var(--accent);
+  font-weight: 600;
+}
+#expedition-log.trace-ice {
+  color: var(--warn);
+  font-weight: 600;
+}
 .badge.delay {
   background: rgba(63, 216, 255, 0.14);
   color: var(--warn);
@@ -333,6 +349,7 @@ button.unaffordable:hover { border-color: rgba(255, 255, 255, 0.18); }
   pointer-events: none;
   white-space: nowrap;
 }
+#goal-banner[hidden] { display: none !important; }
 
 #unit-card {
   position: fixed;

@@ -136,9 +136,9 @@ export function createGame() {
     return ev;
   }
 
-  function toast(text, ttl = C.warningToastSeconds) {
-    state.toast = { text, ttl };
-    emit('warning', { text });
+  function toast(text, ttl = C.warningToastSeconds, extra = {}) {
+    state.toast = { text, ttl, kind: extra.kind || null };
+    emit('warning', { text, kind: extra.kind || null });
   }
 
   function makeTiles() {
@@ -288,17 +288,26 @@ export function createGame() {
   }
 
   function queueNotifyPing(entry) {
+    const confirmed = !!entry.confirmed;
+    const kind = entry.kind || (confirmed ? 'ice-confirm' : 'trace-ice');
     state.expedition.pendingPings.push({
       remaining: C.notifyLinkDelaySeconds,
       tx: entry.tx ?? state.expedition.marker.tx,
       ty: entry.ty ?? state.expedition.marker.ty,
-      text: entry.text || 'Notify',
-      confirmed: !!entry.confirmed,
+      text: entry.text || entry.label || 'Notify',
+      confirmed,
+      kind,
+      label: entry.label || null,
     });
   }
 
-  function noteExpedition(text) {
-    state.expedition.log.push({ t: state.time, text });
+  function noteExpedition(text, extra = {}) {
+    state.expedition.log.push({
+      t: state.time,
+      text,
+      kind: extra.kind || null,
+      label: extra.label || null,
+    });
     if (state.expedition.log.length > 12) state.expedition.log.shift();
   }
 
@@ -444,8 +453,8 @@ export function createGame() {
       if (ping.remaining <= 0) {
         state.expedition.activePings.push({ ...ping, age: 0 });
         state.stats.notifies += 1;
-        noteExpedition(ping.text);
-        toast(ping.text);
+        noteExpedition(ping.text, { kind: ping.kind, label: ping.label });
+        toast(ping.text, C.warningToastSeconds, { kind: ping.kind });
         emit('notify-ping', ping);
         if (ping.confirmed) unlockDeepIce();
       } else stillPending.push(ping);
@@ -861,10 +870,21 @@ export function createGame() {
   }
 
   function goalBanner() {
-    const haulers = state.units.filter((u) => u.kind === 'hauler').length;
-    const solar = state.buildings.filter((b) => b.type === 'solar' && b.complete).length;
-    if (haulers < 4 || solar < 2) return 'Build up: 4 haulers and 2 solar';
-    return `Land crew: ${C.goalIceInStorage} ice and ${C.goalPowerInStorage} power in range`;
+    const steps = objectiveProgress();
+    const stored = storedForGoal();
+    const ice = Math.floor(stored.ice + 1e-6);
+    const power = Math.floor(stored.power + 1e-6);
+    if (state.won) return 'Crew landed';
+    if (state.deepIce.unlocked && !steps.haulDeep) {
+      return `Haul Deep Ice home: ${ice} / ${C.goalIceInStorage}`;
+    }
+    if (!steps.mineShallow) return 'Select haulers, then right-click the ice to start a delivery loop';
+    if (!steps.buildScout) return 'Build Scout and give it an On ore tile: Notify rule';
+    if (!steps.haulDeep) return `Haul Deep Ice home: ${ice} / ${C.goalIceInStorage}`;
+    if (!steps.landCrew) {
+      return `Land crew: ${ice} / ${C.goalIceInStorage} ice · ${power} / ${C.goalPowerInStorage} power`;
+    }
+    return 'Land crew';
   }
 
   function unitTask(unit) {

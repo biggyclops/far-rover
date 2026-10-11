@@ -246,7 +246,7 @@ test.describe('Far Rover v0.8 M1', () => {
     await expect(page.locator('#ice-tooltip')).toBeVisible();
     await expect(page.locator('#ice-tooltip')).toContainText(/Shallow ice/i);
     await expect(page.locator('#ice-tooltip')).toContainText(/delivery loop/i);
-    await expect(page.locator('#goal-banner')).toContainText('Build up: 4 haulers and 2 solar');
+    await expect(page.locator('#goal-banner')).toContainText('Select haulers, then right-click the ice to start a delivery loop');
     await expect(page.locator('#build-solar small')).toContainText('30 reg');
     await expect(page.locator('#print-hauler small')).toContainText('25 reg');
     await expect(page.locator('#res-transit')).toContainText('Hubs + transit');
@@ -649,6 +649,10 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     await expect(page.locator('.condition-select').nth(2).locator('option[value="ore_next_to"]'))
       .toContainText('Ore (ice) next to rover');
     await expect(page.locator('.sensor-desc').filter({ hasText: /ice nearby/i })).toHaveCount(1);
+    await expect(page.locator('.reference-col li').filter({ hasText: /Notify/ }))
+      .toContainText('side effect, not a turn');
+    await expect(page.locator('.reference-col li').filter({ hasText: /Notify/ }))
+      .not.toContainText('hold still');
   });
 
   test('unit: setResources cannot put ice above the habitat cap', async ({ page }) => {
@@ -693,6 +697,30 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     expect(result.after.objectives.buildScout).toBe(true);
     expect(result.after.scoutHint).toBe(false);
     expect(result.after.canLandCrew).toBe(false);
+    expect(result.after.goalBanner).toMatch(/Haul Deep Ice home:/);
+    await page.evaluate(() => window.__v08Test.syncHud());
+    await expect(page.locator('#toast')).toBeVisible();
+    await expect(page.locator('#goal-banner')).toBeHidden();
+    await page.evaluate(() => {
+      window.__v08Test.advance(5.1, { scout: false });
+      window.__v08Test.syncHud();
+    });
+    await expect(page.locator('#toast')).not.toHaveClass(/show/);
+    await expect(page.locator('#goal-banner')).toBeVisible();
+    await expect(page.locator('#goal-banner')).toContainText('Haul Deep Ice home:');
+    const vis = await page.evaluate(() => {
+      const s = window.__v08Test.getState();
+      const d = s.deepIce;
+      return {
+        screen: window.__v08Test.tileScreenPos(d.tx, d.ty),
+        view: window.__v08Test.viewSize(),
+        pad: window.__v08Test.hudSafeInsets(),
+      };
+    });
+    expect(vis.screen.x).toBeGreaterThan(vis.pad.left - 8);
+    expect(vis.screen.x).toBeLessThan(vis.view.w - vis.pad.right + 8);
+    expect(vis.screen.y).toBeGreaterThan(vis.pad.top - 8);
+    expect(vis.screen.y).toBeLessThan(vis.view.h - vis.pad.bottom + 8);
   });
 
   test('operate view is the imported demo view', async ({ page }) => {
@@ -723,6 +751,118 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     expect(art.src).toMatch(/\/assets\/art\/hirise-board\.jpg$/);
     await page.click('#scout-back');
     await expect(page.locator('#scout-overlay')).toBeHidden();
+  });
+
+  test('starter Notify does not unlock Deep Ice and never sticks', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate((program) => {
+      window.__v08Test.launchProgram(program.sensors, program.rules);
+      let confirmed = false;
+      for (let i = 0; i < 80; i++) {
+        window.__v08Test.tickScout(1);
+        const snap = window.__v08Test.getState();
+        if (snap.iceConfirmed) confirmed = true;
+        if (snap.scoutOutcome) break;
+      }
+      window.__v08Test.advance(2.1);
+      window.__v08Test.syncHud();
+      const end = window.__v08Test.getState();
+      return {
+        confirmed,
+        iceConfirmed: end.iceConfirmed,
+        unlocked: end.deepIce.unlocked,
+        outcome: end.scoutOutcome,
+        notifies: end.stats.notifies,
+      };
+    }, NOTIFY_PROGRAM);
+    expect(result.confirmed).toBe(false);
+    expect(result.iceConfirmed).toBe(false);
+    expect(result.unlocked).toBe(false);
+    expect(result.outcome).not.toBe('stuck-no-move');
+  });
+
+  test('trace ice pings but does not unlock Deep Ice', async ({ page }) => {
+    await ready(page);
+    const ping = await page.evaluate(() => window.__v08Test.pingOreCell('D11'));
+    expect(ping.ping).toBe(true);
+    expect(ping.confirmed).toBe(false);
+    expect(ping.label).toBe('Trace ice');
+    await page.evaluate(() => {
+      window.__v08Test.advance(2.1, { scout: false });
+      window.__v08Test.syncHud();
+    });
+    const after = await page.evaluate(() => window.__v08Test.getState());
+    expect(after.deepIce.unlocked).toBe(false);
+    expect(after.toast).toMatch(/Trace ice/);
+    expect(after.toastKind).toBe('trace-ice');
+    expect(after.expedition.log.some((t) => t.includes('Trace ice'))).toBe(true);
+    expect(after.expedition.lastPingKind).toBe('trace-ice');
+    expect(after.scoutOutcome).not.toBe('stuck-no-move');
+    await expect(page.locator('#expedition-log')).toContainText('Trace ice');
+    await expect(page.locator('#expedition-log')).toHaveClass(/trace-ice/);
+    await expect(page.locator('#toast')).toContainText('Trace ice');
+    await page.evaluate(() => window.__v08Test.openOperate());
+    await expect(page.locator('#hosted-notify-ping')).toBeVisible();
+    await expect(page.locator('#hosted-notify-ping')).toContainText('Trace ice');
+    await expect(page.locator('#hosted-notify-ping')).toHaveClass(/trace-ice/);
+    await expect(page.locator('.notify-ping-badge')).toContainText('Trace ice');
+  });
+
+  test('Notify on F2 unlocks Deep Ice and shows Ice deposit confirmed', async ({ page }) => {
+    await ready(page);
+    const ping = await page.evaluate(() => window.__v08Test.pingOreCell('F2'));
+    expect(ping.ping).toBe(true);
+    expect(ping.confirmed).toBe(true);
+    expect(ping.label).toBe('Ice deposit confirmed');
+    const before = await page.evaluate(() => window.__v08Test.getState());
+    expect(before.deepIce.unlocked).toBe(false);
+    await page.evaluate(() => {
+      window.__v08Test.advance(2.1, { scout: false });
+      window.__v08Test.syncHud();
+    });
+    const after = await page.evaluate(() => window.__v08Test.getState());
+    expect(after.deepIce.unlocked).toBe(true);
+    expect(after.expedition.log.some((t) => t.includes('Ice deposit confirmed'))).toBe(true);
+    expect(after.expedition.lastPingKind).toBe('ice-confirm');
+    expect(after.scoutOutcome).not.toBe('stuck-no-move');
+    await expect(page.locator('#expedition-log')).toContainText('Ice deposit confirmed');
+    await expect(page.locator('#expedition-log')).toHaveClass(/ice-confirm/);
+    await page.evaluate(() => window.__v08Test.openOperate());
+    await expect(page.locator('#hosted-notify-ping')).toBeVisible();
+    await expect(page.locator('#hosted-notify-ping')).toContainText('Ice deposit confirmed');
+    await expect(page.locator('#hosted-notify-ping')).toHaveClass(/ice-confirm/);
+    await expect(page.locator('.notify-ping-badge')).toContainText('Ice deposit confirmed');
+  });
+
+  test('Notify never trips the stuck rule', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => {
+      window.__v08Test.launchProgram(['spectral', 'distance'], [
+        { condition: { type: 'on_ore' }, action: { type: 'notify' } },
+        { condition: { type: 'always' }, action: { type: 'sidestep' } },
+      ]);
+      const first = window.__v08Test.pingOreCell('F2');
+      const afterFirst = window.__v08Test.getState();
+      const ticks = [];
+      for (let i = 0; i < 3; i++) {
+        window.__v08Test.tickScout(1);
+        ticks.push(window.__v08Test.getState().scoutOutcome);
+      }
+      const end = window.__v08Test.getState();
+      return {
+        firstLabel: first.label,
+        firstOutcome: first.outcome,
+        firstTick: afterFirst.scoutTick,
+        ticks,
+        endOutcome: end.scoutOutcome,
+        endTick: end.scoutTick,
+      };
+    });
+    expect(result.firstLabel).toBe('Ice deposit confirmed');
+    expect(result.firstOutcome).not.toBe('stuck-no-move');
+    expect(result.ticks.every((o) => o !== 'stuck-no-move')).toBe(true);
+    expect(result.endOutcome).not.toBe('stuck-no-move');
+    expect(result.endTick).toBeGreaterThanOrEqual(4);
   });
 
   test('hosted scout failure note asks for On ice tile Notify', async ({ page }) => {

@@ -551,18 +551,51 @@ export function createRenderer(canvas, assets, game) {
     }
   }
 
+  function hudSafeInsets() {
+    const { w, h } = viewSize();
+    return {
+      left: Math.min(380, Math.max(24, w * 0.28)),
+      right: 28,
+      top: Math.min(140, Math.max(96, h * 0.16)),
+      bottom: 86,
+    };
+  }
+
+  function cameraDestForTile(tx, ty) {
+    const { w, h } = viewSize();
+    const z = game.state.camera.zoom || 1;
+    const pad = hudSafeInsets();
+    const playW = Math.max(160, w - pad.left - pad.right);
+    const playH = Math.max(160, h - pad.top - pad.bottom);
+    const wx = (tx + 0.5) * C.tileSize;
+    const wy = (ty + 0.5) * C.tileSize;
+    return {
+      x: wx - (pad.left + playW / 2) / z,
+      y: wy - (pad.top + playH / 2) / z,
+    };
+  }
+
+  function focusTile(tx, ty) {
+    const dest = cameraDestForTile(tx, ty);
+    game.state.camera.x = dest.x;
+    game.state.camera.y = dest.y;
+    game.state.camPan = { tx, ty, t: 1.2 };
+    return dest;
+  }
+
   function tickCamPan(dt) {
     const pan = game.state.camPan;
     if (!pan || dt <= 0) return;
-    const { w, h } = viewSize();
-    const z = game.state.camera.zoom;
-    const destX = (pan.tx + 0.5) * C.tileSize - (w / z) / 2;
-    const destY = (pan.ty + 0.5) * C.tileSize - (h / z) / 2;
+    const dest = cameraDestForTile(pan.tx, pan.ty);
     const k = 1 - Math.exp(-dt * 4);
-    game.state.camera.x += (destX - game.state.camera.x) * k;
-    game.state.camera.y += (destY - game.state.camera.y) * k;
+    game.state.camera.x += (dest.x - game.state.camera.x) * k;
+    game.state.camera.y += (dest.y - game.state.camera.y) * k;
     pan.t -= dt;
-    if (pan.t <= 0) game.state.camPan = null;
+    if (pan.t <= 0) {
+      game.state.camera.x = dest.x;
+      game.state.camera.y = dest.y;
+      game.state.camPan = null;
+    }
   }
 
   function drawBox() {
@@ -646,5 +679,16 @@ export function createRenderer(canvas, assets, game) {
     drawBox();
   }
 
-  return { draw, resize, worldToScreen, screenToWorld, viewSize, centerOnHabitat, tickCamPan };
+  return {
+    draw,
+    resize,
+    worldToScreen,
+    screenToWorld,
+    viewSize,
+    centerOnHabitat,
+    tickCamPan,
+    focusTile,
+    cameraDestForTile,
+    hudSafeInsets,
+  };
 }

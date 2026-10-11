@@ -48,6 +48,7 @@ function handleEvents(evs) {
     if (ev.type === 'order') audio.play(C.sfxOrder);
     if (ev.type === 'build-complete') audio.play(C.sfxBuildComplete);
     if (ev.type === 'notify-ping') audio.play(C.sfxNotify);
+    if (ev.type === 'deep-ice') renderer.focusTile(ev.tx, ev.ty);
     if (ev.type === 'patch-ready') {
       const ok = scout.applyIncomingPatch(ev);
       game.notePatchApplied(ok);
@@ -151,6 +152,8 @@ function serialize() {
       pendingPings: game.state.expedition.pendingPings.length,
       activePings: game.state.expedition.activePings.length,
       log: game.state.expedition.log.map((e) => e.text),
+      logKinds: game.state.expedition.log.map((e) => e.kind || null),
+      lastPingKind: game.state.expedition.log.reduce((k, e) => e.kind || k, null),
     },
     deepIce: { ...game.state.deepIce },
     deepIceTile: game.state.deepIce.unlocked
@@ -182,16 +185,19 @@ function serialize() {
     scoutOpen: scout.isOpen(),
     scoutTick: scout.getSim()?.tick ?? 0,
     iceConfirmed: !!scout.getSim()?.iceConfirmed,
+    scoutOutcome: scout.getSim()?.outcome || null,
+    toastKind: game.state.toast?.kind || null,
   };
 }
 
-function advance(seconds) {
+function advance(seconds, opts = {}) {
   const step = 1 / 60;
+  const pumpScout = opts.scout !== false;
   let left = seconds;
   while (left > 0) {
     const dt = Math.min(step, left);
     game.update(dt);
-    scout.pump(dt);
+    if (pumpScout) scout.pump(dt);
     handleEvents(game.flushEvents());
     left -= dt;
   }
@@ -262,6 +268,7 @@ window.__v08Test = {
   launchProgram: (sensors, rules) => scout.launchProgram(sensors, rules),
   tickScout: (n) => scout.tickScout(n),
   confirmOnOre: () => scout.confirmOnOre(),
+  pingOreCell: (cell) => scout.pingOreCell(cell),
   openOperate: () => scout.openOperate(),
   openBuild: () => scout.openBuild(),
   hideOverlay: () => scout.hideOverlay(),
@@ -275,11 +282,15 @@ window.__v08Test = {
   },
   unlockDeepIce: () => game.unlockDeepIce(),
   syncHud: () => hud.sync(),
-  centerOnTile: (tx, ty) => {
-    const { w, h } = renderer.viewSize();
+  focusTile: (tx, ty) => renderer.focusTile(tx, ty),
+  tileScreenPos: (tx, ty) => {
     const c = game.tileCenter(tx, ty);
-    game.state.camera.x = c.x - (w / game.state.camera.zoom) / 2;
-    game.state.camera.y = c.y - (h / game.state.camera.zoom) / 2;
+    return renderer.worldToScreen(c.x, c.y);
+  },
+  viewSize: () => renderer.viewSize(),
+  hudSafeInsets: () => renderer.hudSafeInsets(),
+  centerOnTile: (tx, ty) => {
+    renderer.focusTile(tx, ty);
   },
   config: C,
 };
