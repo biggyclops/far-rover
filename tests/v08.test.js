@@ -564,19 +564,25 @@ test.describe('Far Rover v0.8 M2', () => {
       const afterHub = window.__v08Test.getState();
       const vaultAfter = afterHub.buildings.find((x) => x.id === vault.id);
       const hubAfter = afterHub.buildings.find((x) => x.id === hub.id);
+      const habAfter = afterHub.buildings.find((x) => x.type === 'habitat');
       return {
         placed: !!vault,
         iceCap: placed.iceCap,
         filled: filled.ice,
         vaultAfter: vaultAfter.ice,
         hubAfter: hubAfter.ice,
+        habAfter: habAfter.ice,
+        habCap: habAfter.iceCap,
+        goal: afterHub.stored.ice,
       };
     });
     expect(result.placed).toBe(true);
     expect(result.iceCap).toBe(150);
     expect(result.filled).toBe(150);
     expect(result.vaultAfter).toBe(150);
-    expect(result.hubAfter).toBe(20);
+    expect(result.habAfter).toBe(result.habCap);
+    expect(result.goal).toBe(180);
+    expect(result.hubAfter).toBe(10);
   });
 
   test('full ice storage shows a warning and a blocked label', async ({ page }) => {
