@@ -242,6 +242,24 @@ test.describe('Far Rover v0.8 M1', () => {
     await expect(page.locator('#ice-tooltip')).toBeVisible();
     await expect(page.locator('#ice-tooltip')).toContainText(/Shallow ice/i);
     await expect(page.locator('#ice-tooltip')).toContainText(/delivery loop/i);
+    await expect(page.locator('#goal-banner')).toContainText('Build up: 4 haulers and 2 solar');
+    await expect(page.locator('#build-solar small')).toContainText('30 reg');
+    await expect(page.locator('#print-hauler small')).toContainText('25 reg');
+    await expect(page.locator('#res-transit')).toContainText('Hubs + transit');
+  });
+
+  test('selecting a hauler shows the unit status card', async ({ page }) => {
+    await ready(page);
+    const pos = await page.evaluate(() => {
+      const s = window.__v08Test.getState();
+      return window.__v08Test.unitClientPos(s.units[0].id);
+    });
+    await page.mouse.click(pos.x, pos.y);
+    await page.evaluate(() => window.__v08Test.syncHud());
+    await expect(page.locator('#unit-card')).toBeVisible();
+    await expect(page.locator('#unit-card')).toContainText('Hauler');
+    await expect(page.locator('#unit-card')).toContainText('bat');
+    await expect(page.locator('#unit-card')).toContainText('cargo');
   });
 
   test('right-click ice starts a delivery loop', async ({ page }) => {
@@ -370,11 +388,12 @@ test.describe('Far Rover v0.8 M1', () => {
         (C.shallowIceTileX + 0.5) * C.tileSize,
         (C.shallowIceTileY + 0.5) * C.tileSize,
       );
+      window.__v08Test.advance(0.2);
       window.__v08Test.syncHud();
-      return window.__v08Test.getState().toast;
+      return window.__v08Test.getState();
     });
-    expect(empty).toBe('Battery empty');
-    await expect(page.locator('#toast')).toContainText('Battery empty');
+    expect(empty.toast).toMatch(/Hauler stranded|Source empty|No storage/);
+    expect(empty.units[0].order === 'charge' || empty.units[0].blockedReason === 'Hauler stranded').toBeTruthy();
 
     const room = await page.evaluate(() => {
       const s = window.__v08Test.getState();
@@ -724,9 +743,10 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     await expect(page.locator('.end-reason')).toContainText("No Notify fired: add 'On ice tile: Notify'.");
   });
 
-  test('unit: one free Recall drives the scout home and disables the button', async ({ page }) => {
+  test('unit: Recall ends an active expedition and never spawns a unit', async ({ page }) => {
     await ready(page);
     const result = await page.evaluate(() => {
+      const before = window.__v08Test.getState().unitCount;
       window.__v08Test.launchProgram(['spectral'], [
         { condition: { type: 'always' }, action: { type: 'wait' } },
       ]);
@@ -734,31 +754,52 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
       window.__v08Test.advance(2.1);
       const unlocked = window.__v08Test.getState().deepIce.unlocked;
       window.__v08Test.syncHud();
-      const scout = window.__v08Test.startRecall();
+      const first = window.__v08Test.startRecall();
       const second = window.__v08Test.startRecall();
-      window.__v08Test.advance(30);
       window.__v08Test.syncHud();
       const end = window.__v08Test.getState();
       return {
         unlocked,
-        scoutId: scout && scout.id,
+        first,
         second,
         ended: end.expedition.ended,
         recallUsed: end.expedition.recallUsed,
         stillUnlocked: end.deepIce.unlocked,
-        kind: end.units.find((u) => u.id === (scout && scout.id))?.kind,
+        unitCount: end.unitCount,
+        before,
+        canRecall: end.canRecall,
+        canBuildScout: end.canBuildScout,
       };
     });
     expect(result.unlocked).toBe(true);
-    expect(result.scoutId).toBeTruthy();
+    expect(result.first?.recalled).toBe(true);
     expect(result.second).toBeNull();
     expect(result.ended).toBe(true);
     expect(result.recallUsed).toBe(true);
     expect(result.stillUnlocked).toBe(true);
-    expect(result.kind).toBe('scout');
-    await expect(page.locator('#btn-recall')).toBeVisible();
-    await expect(page.locator('#btn-recall')).toBeDisabled();
-    await expect(page.locator('#patches-left')).toContainText('Patches left:');
+    expect(result.unitCount).toBe(result.before);
+    expect(result.canRecall).toBe(false);
+    expect(result.canBuildScout).toBe(false);
+    await expect(page.locator('#btn-recall')).toBeHidden();
+    await expect(page.locator('#patches-left')).toContainText('Patches used:');
+  });
+
+  test('unit: Build Scout returns after an expedition with no confirmed find', async ({ page }) => {
+    await ready(page);
+    const end = await page.evaluate(() => {
+      const t = window.__v08Test;
+      t.launchProgram(['spectral'], [
+        { condition: { type: 'always' }, action: { type: 'wait' } },
+      ]);
+      t.startRecall();
+      t.syncHud();
+      return t.getState();
+    });
+    expect(end.deepIce.unlocked).toBe(false);
+    expect(end.expedition.ended).toBe(true);
+    expect(end.canBuildScout).toBe(true);
+    expect(end.unitCount).toBe(2);
+    await expect(page.locator('#btn-build-scout')).toBeVisible();
   });
 
   test('unit: one rule patch per sol with a 2s link delay', async ({ page }) => {
@@ -943,6 +984,7 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     await expect(page.locator('#win-overlay')).toBeVisible();
     await expect(page.locator('#win-logistics')).toContainText('haulers only');
     await expect(page.locator('#win-ice')).toContainText('/');
+    await expect(page.locator('#win-patches')).toContainText('Patches used:');
   });
 
   test('honest tunnel route lands the crew', async ({ page }) => {
@@ -1119,5 +1161,39 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     await page.evaluate(() => window.__v08Test.syncHud());
     await expect(page.locator('#win-overlay')).toBeVisible();
     await expect(page.locator('#win-logistics')).toContainText('tunnel');
+  });
+
+  test('1x and 16x reach the crew goal within 1%', async ({ page }) => {
+    test.setTimeout(180000);
+    await ready(page);
+    const times = await page.evaluate(async () => {
+      const { createGame } = await import('/v08/game.js');
+      const C = window.__v08Test.config;
+      function run(step) {
+        const g = createGame();
+        const storage = g.placeBuilding('storage', 22, 21, false);
+        g.completeBuilding(storage.id);
+        g.unlockDeepIce();
+        const deep = g.state.deepIce;
+        const haulers = g.state.units.filter((u) => u.kind === 'hauler');
+        g.assignOrder(haulers, {
+          type: 'haul',
+          sourceTx: deep.tx,
+          sourceTy: deep.ty,
+          destBuildingId: storage.id,
+          phase: 'toSource',
+        });
+        let guard = 0;
+        while (!g.canLandCrew() && guard++ < 8000) g.update(step);
+        if (g.canLandCrew()) g.landCrew();
+        return g.state.win?.time ?? null;
+      }
+      return { t1: run(1 / 60), t16: run(16 / 60), goal: C.goalIceInStorage };
+    });
+    expect(times.t1).toBeTruthy();
+    expect(times.t16).toBeTruthy();
+    const drift = Math.abs(times.t1 - times.t16) / times.t1;
+    expect(drift).toBeLessThanOrEqual(0.01);
+    console.log(`determinism win: 1x=${times.t1.toFixed(2)}s 16x=${times.t16.toFixed(2)}s drift=${(drift * 100).toFixed(2)}%`);
   });
 });

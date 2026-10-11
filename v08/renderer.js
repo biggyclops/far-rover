@@ -188,6 +188,35 @@ export function createRenderer(canvas, assets, game) {
       if (pass === 'sprite') {
         const key = (!b.complete && C.showBuildSpriteWhileConstructing) ? `${b.type}-build` : b.type;
         drawImg(img(key) || img(b.type), s.x, s.y, dw, dw);
+        if (!b.complete) {
+          ctx.save();
+          ctx.font = `600 ${Math.max(9, 10 * z)}px "IBM Plex Mono", ui-monospace, monospace`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          const label = 'Needs a hauler to build';
+          const lx = s.x + dw / 2;
+          const ly = s.y + dw + 2;
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'rgba(8, 8, 10, 0.75)';
+          ctx.strokeText(label, lx, ly);
+          ctx.fillStyle = '#f2f0ec';
+          ctx.fillText(label, lx, ly);
+          ctx.restore();
+        } else if ((b.type === 'storage' || b.type === 'vault') && game.buildingInCommandRange && !game.buildingInCommandRange(b)) {
+          ctx.save();
+          ctx.font = `600 ${Math.max(9, 10 * z)}px "IBM Plex Mono", ui-monospace, monospace`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          const label = "Out of range: doesn't count";
+          const lx = s.x + dw / 2;
+          const ly = s.y + dw + 2;
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'rgba(8, 8, 10, 0.75)';
+          ctx.strokeText(label, lx, ly);
+          ctx.fillStyle = C.warningNotify;
+          ctx.fillText(label, lx, ly);
+          ctx.restore();
+        }
       }
     }
   }
@@ -332,11 +361,14 @@ export function createRenderer(canvas, assets, game) {
     const s = worldToScreen(g.tx * C.tileSize, g.ty * C.tileSize);
     const dw = n * C.tileSize * z;
     ctx.save();
-    ctx.globalAlpha = 0.45;
+    ctx.globalAlpha = 0.38;
     drawImg(img(`${g.type}-build`) || img(g.type), s.x, s.y, dw, dw);
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = ok ? 'rgba(70, 190, 90, 0.55)' : 'rgba(200, 48, 48, 0.55)';
+    ctx.fillRect(s.x, s.y, dw, dw);
     ctx.globalAlpha = 1;
-    ctx.strokeStyle = ok ? C.playerAccent : '#c04040';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = ok ? '#3ecf64' : '#e04848';
+    ctx.lineWidth = 3;
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(s.x, s.y, dw, dw);
     ctx.restore();

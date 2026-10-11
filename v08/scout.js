@@ -1,4 +1,6 @@
 import * as Sim from './engine.js';
+import { CONFIG as C } from './config.js';
+import { runHostedScoutTick } from './hosted-tick.js';
 import {
   showBuildScreen,
   prepareHostedScout,
@@ -80,15 +82,21 @@ export function bindScout(root, game, hooks = {}) {
   }
 
   function handleNotify(result) {
-    const ar = result?.tickRecord?.actionResult;
-    if (!ar?.notified || !ar.ping) return;
+    const pings = result?.hostedPings?.length
+      ? result.hostedPings
+      : (result?.tickRecord?.actionResult?.ping ? [result.tickRecord.actionResult] : []);
+    if (!pings.length) return;
     const marker = game.state.expedition.marker;
-    game.queueNotifyPing({
-      tx: marker.tx,
-      ty: marker.ty,
-      text: ar.confirmedIce ? `Ice confirmed at ${ar.cell}` : `Notify: ice at ${ar.cell}`,
-      confirmed: !!ar.confirmedIce,
-    });
+    for (const ar of pings) {
+      if (!ar?.notified || !ar.ping) continue;
+      const label = ar.label || (ar.confirmedIce ? 'Ice deposit confirmed' : 'Trace ice');
+      game.queueNotifyPing({
+        tx: marker.tx,
+        ty: marker.ty,
+        text: `${label} at ${ar.cell}`,
+        confirmed: !!ar.confirmedIce,
+      });
+    }
   }
 
   function applyIncomingPatch(ev) {
@@ -104,26 +112,12 @@ export function bindScout(root, game, hooks = {}) {
       return;
     }
     const operateOpen = overlay && !overlay.hidden;
-    const paused = operateOpen ? isOperatePaused() : false;
-    const speed = operateOpen ? (getOperateSpeed() || 1) : 1;
-    if (paused) {
-      if (operateOpen) updateOperateView();
-      return;
-    }
-    scoutAcc += dt * speed;
+    scoutAcc += dt;
     while (scoutAcc >= 1 && lastSim && !lastSim.outcome) {
       scoutAcc -= 1;
-      if (operateOpen) {
-        runHostedTick();
-        if (isOperatePaused() || lastSim.outcome) break;
-        continue;
-      }
-      const result = Sim.runTick(lastSim);
+      const result = runHostedScoutTick(lastSim);
       handleNotify(result);
-      if (result.continueFromStep4 && result.autoPause) {
-        Sim.continueTickFromStep4(lastSim, result.tickRecord, result.tickRecord.readings || lastSim.readings);
-        handleNotify({ tickRecord: lastSim.trace[lastSim.trace.length - 1] });
-      }
+      lastSim = getGameState() || lastSim;
     }
     if (operateOpen) updateOperateView();
   }
@@ -154,20 +148,15 @@ export function bindScout(root, game, hooks = {}) {
     let last = null;
     for (let i = 0; i < n; i++) {
       if (lastSim.outcome) break;
-      last = Sim.runTick(lastSim);
+      last = runHostedScoutTick(lastSim);
       handleNotify(last);
-      if (last.continueFromStep4 && last.autoPause) {
-        last = Sim.continueTickFromStep4(lastSim, last.tickRecord, last.tickRecord.readings || lastSim.readings);
-        handleNotify({ tickRecord: lastSim.trace[lastSim.trace.length - 1] });
-      }
     }
     return last;
   }
 
   function confirmOnOre() {
     if (!lastSim) return false;
-    const ores = Sim.TERRAIN_DATA.ores;
-    const cell = ores[0];
+    const cell = (C.confirmDepositTiles && C.confirmDepositTiles[0]) || 'F2';
     const col = cell.charCodeAt(0) - 65;
     const row = parseInt(cell.slice(1), 10) - 1;
     lastSim.col = col;

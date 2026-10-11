@@ -26,7 +26,6 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
 
   canvas.addEventListener('pointerdown', (ev) => {
     if (blocked()) return;
-    canvas.setPointerCapture(ev.pointerId);
     const p = cssPos(ev);
     if (ev.button === 1 || ev.button === 2 && ev.altKey) {
       panning = true;
@@ -39,6 +38,7 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
       hooks.onOrder?.();
       return;
     }
+    if (ev.button === 0) canvas.setPointerCapture(ev.pointerId);
     if (ev.button !== 0) return;
     if (game.state.buildGhost) {
       const w = worldPos(ev);
@@ -46,6 +46,15 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
       const b = game.placeBuilding(game.state.buildGhost.type, tx, ty, true);
       if (b) hooks.onOrder?.();
       return;
+    }
+    if (game.state.armedOrder) {
+      const w = worldPos(ev);
+      if (game.issueContextual(w.x, w.y)) {
+        hooks.onOrder?.();
+        dragging = false;
+        start = null;
+        return;
+      }
     }
     dragging = true;
     box = false;
@@ -65,6 +74,8 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
     const hover = renderer.screenToWorld(p.x, p.y);
     const ht = game.worldToTile(hover.x, hover.y);
     game.state.hoverTile = { tx: ht.tx, ty: ht.ty, sx: ev.clientX, sy: ev.clientY };
+    const hu = game.unitAtWorld(hover.x, hover.y, C.unitClickRadius);
+    game.state.hoverUnitId = hu ? hu.id : null;
     if (game.state.buildGhost) {
       game.state.buildGhost.tx = ht.tx;
       game.state.buildGhost.ty = ht.ty;
@@ -110,13 +121,12 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
           return;
         }
       }
-      const unit = game.unitAtWorld(w.x, w.y, C.unitClickRadius);
-      if (unit) {
-        game.selectUnits([unit.id], additive);
+      if (game.state.armedOrder) {
+        if (game.issueContextual(w.x, w.y)) hooks.onOrder?.();
+      } else if (game.cycleSelectAt(w.x, w.y, additive)) {
         hooks.onSelect?.();
       } else {
-        const t = game.worldToTile(w.x, w.y);
-        const bld = game.buildingAtTile(t.tx, t.ty);
+        const bld = game.buildingAtWorld(w.x, w.y) || game.buildingAtTile(game.worldToTile(w.x, w.y).tx, game.worldToTile(w.x, w.y).ty);
         if (bld) game.selectBuilding(bld.id);
         else if (!additive) {
           game.selectUnits([]);

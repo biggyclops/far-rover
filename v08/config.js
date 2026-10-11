@@ -166,6 +166,10 @@ export const CONFIG = {
   // --- Goal (M4) ---
   goalIceInStorage: 180, // Proposed (Game Designer)
   goalPowerInStorage: 50, // Proposed (Game Designer)
+  confirmDepositTiles: ['F2', 'I2'],
+  haulerUpkeepPowerPerSec: 0,
+  noRegolithMineRadiusTiles: 4,
+  strandedCrawlTilesPerSecond: 0.25,
   // Both at once → "Land crew" button.
   winScreenShowsTime: true,
   winScreenShowsLogistics: true, // haulers only vs tunnel

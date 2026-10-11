@@ -48,7 +48,10 @@ function handleEvents(evs) {
     if (ev.type === 'order') audio.play(C.sfxOrder);
     if (ev.type === 'build-complete') audio.play(C.sfxBuildComplete);
     if (ev.type === 'notify-ping') audio.play(C.sfxNotify);
-    if (ev.type === 'patch-applied') scout.applyIncomingPatch(ev);
+    if (ev.type === 'patch-ready') {
+      const ok = scout.applyIncomingPatch(ev);
+      game.notePatchApplied(ok);
+    }
   }
 }
 
@@ -157,7 +160,15 @@ function serialize() {
         }
       : null,
     patchesLeft: game.patchesLeft(),
+    patchesUsed: game.patchesUsed(),
+    patchesLabel: game.patchesLabel(),
     stored: game.storedForGoal(),
+    transit: game.transitIce(),
+    goalBanner: game.goalBanner(),
+    canBuildScout: game.canBuildScout(),
+    canRecall: game.canRecall(),
+    armedOrder: game.state.armedOrder,
+    orderPrompt: game.state.orderPrompt || null,
     canLandCrew: game.canLandCrew(),
     iceHint: game.showIceHint(),
     iceHintText: game.iceHintText(),
@@ -256,7 +267,12 @@ window.__v08Test = {
   hideOverlay: () => scout.hideOverlay(),
   queuePatch: (slot, condition, action) => game.queuePatch(slot, condition, action),
   startRecall: () => game.startRecall(),
+  notePatchApplied: (ok) => game.notePatchApplied(ok),
   landCrew: () => game.landCrew(),
+  createDetachedGame: async () => {
+    const mod = await import('./game.js');
+    return mod.createGame();
+  },
   unlockDeepIce: () => game.unlockDeepIce(),
   syncHud: () => hud.sync(),
   centerOnTile: (tx, ty) => {

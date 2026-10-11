@@ -310,3 +310,50 @@ button:disabled {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+button.unaffordable {
+  opacity: 0.42;
+  filter: grayscale(0.35);
+}
+button.unaffordable:hover { border-color: rgba(255, 255, 255, 0.18); }
+
+#goal-banner {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  padding: 5px 14px;
+  background: rgba(8, 8, 10, 0.82);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  border-radius: 999px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+#unit-card {
+  position: fixed;
+  left: 14px;
+  bottom: 78px;
+  z-index: 5;
+  min-width: 220px;
+  padding: 8px 12px;
+  background: rgba(8, 8, 10, 0.9);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  font-size: 12px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+#unit-card[hidden] { display: none !important; }
+
+.res.transit {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+#hud-bottom { min-height: 72px; }

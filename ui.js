@@ -2,6 +2,7 @@
 // Handles all screen rendering and user interaction
 
 import * as Sim from './simulation.js';
+import { runHostedScoutTick } from './v08/hosted-tick.js';
 import { GameRenderer, MinimapRenderer, loadAssets, hasRealArt, getBackgroundImage, getIcon } from './renderer.js';
 import { shouldUse3D } from './renderer3d.js';
 import { OrbitalRenderer, warmupOrbitalArt } from './orbital.js';
@@ -1516,7 +1517,9 @@ function doTick(now) {
     pendingAutoPause = null;
     result = Sim.continueTickFromStep4(gameState, tickRecord, readings);
   } else {
-    result = Sim.runTick(gameState, previouslyRevealed);
+    result = hostedIceLabels
+      ? runHostedScoutTick(gameState, previouslyRevealed)
+      : Sim.runTick(gameState, previouslyRevealed);
   }
   
   lastTickResult = result;
