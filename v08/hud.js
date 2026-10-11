@@ -190,19 +190,23 @@ export function bindHud(root, game, hooks = {}) {
     if (toast) {
       const msg = game.state.toast?.text || '';
       const kind = game.state.toast?.kind || '';
-      toast.replaceChildren();
-      if (msg) toast.append(document.createTextNode(msg));
+      const key = `${kind}|${msg}`;
+      if (toast.dataset.key !== key) {
+        toast.dataset.key = key;
+        toast.replaceChildren();
+        if (msg) toast.append(document.createTextNode(msg));
+        if (kind === 'scout-result') {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = 'View trace';
+          btn.addEventListener('click', () => hooks.onViewTrace?.());
+          toast.append(btn);
+        }
+      }
       toast.classList.toggle('show', toastOn);
       toast.classList.toggle('ice-confirm', kind === 'ice-confirm');
       toast.classList.toggle('trace-ice', kind === 'trace-ice');
       toast.classList.toggle('has-action', kind === 'scout-result');
-      if (kind === 'scout-result') {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.textContent = 'View trace';
-        btn.addEventListener('click', () => hooks.onViewTrace?.());
-        toast.append(btn);
-      }
     }
     const banner = $('#goal-banner');
     if (banner) {

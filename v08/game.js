@@ -325,6 +325,11 @@ export function createGame() {
     state.expedition.scoutStatus = 'running';
     state.expedition.resultLine = null;
     state.expedition.paper = { path: [], revealed: [], pings: [], tick: 0 };
+    state.expedition.pendingPings = [];
+    state.expedition.activePings = [];
+    if (state.toast && (state.toast.kind === 'scout-result' || state.toast.kind === 'trace-ice' || state.toast.kind === 'ice-confirm')) {
+      state.toast = null;
+    }
     if (info.hasNotifyRule != null) state.expedition.hasNotifyRule = !!info.hasNotifyRule;
     noteExpedition('Scout launched');
   }
@@ -968,6 +973,7 @@ export function createGame() {
   function unitTask(unit) {
     if (unit.blockedReason) return unit.blockedReason;
     if (!unit.order) {
+      if (unit.resumeOrder?.type === 'haul') return 'hauling';
       if (unit.lastOrder?.type === 'haul' && canRepeat(unit.lastOrder)) return 'hauling';
       return 'idle';
     }
@@ -1188,8 +1194,16 @@ export function createGame() {
   }
 
   function finishOrder(unit) {
+    const resume = unit.resumeOrder;
     const last = unit.lastOrder;
     unit.order = null;
+    if (resume && canRepeat(resume)) {
+      unit.order = resetOrder(resume);
+      if (resume.type !== 'charge') unit.lastOrder = cloneOrder(resume);
+      unit.resumeOrder = null;
+      return;
+    }
+    unit.resumeOrder = null;
     if (last && canRepeat(last)) unit.order = resetOrder(last);
   }
 

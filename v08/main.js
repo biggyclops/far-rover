@@ -105,6 +105,7 @@ function serialize() {
       destBuildingId: u.order?.destBuildingId || u.resumeOrder?.destBuildingId || null,
       phase: u.order?.phase || null,
       status: u.status,
+      task: game.unitTask(u),
       label: game.unitLabel(u),
       blockedReason: u.blockedReason || null,
     })),
@@ -155,6 +156,8 @@ function serialize() {
       log: game.state.expedition.log.map((e) => e.text),
       logKinds: game.state.expedition.log.map((e) => e.kind || null),
       lastPingKind: game.state.expedition.log.reduce((k, e) => e.kind || k, null),
+      scoutStatus: game.state.expedition.scoutStatus || null,
+      resultLine: game.state.expedition.resultLine || null,
     },
     deepIce: { ...game.state.deepIce },
     deepIceTile: game.state.deepIce.unlocked

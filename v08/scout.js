@@ -16,6 +16,7 @@ import {
   getOperateSpeed,
   stopOperateTicking,
   runHostedTick,
+  recordHostedRunIfNeeded,
 } from '../ui.js';
 
 function ensureDemoCss() {
@@ -161,11 +162,15 @@ export function bindScout(root, game, hooks = {}) {
   }
 
   function finishIfNeeded() {
-    if (!lastSim?.outcome || game.state.expedition.ended) return;
+    if (!lastSim?.outcome || game.state.expedition.ended) {
+      if (game.state.expedition.ended) recordHostedRunIfNeeded(lastSim);
+      return;
+    }
     const status = statusFor(lastSim);
     const line = resultLineFor(lastSim);
     game.updateScoutPaper(paperSnapshot(lastSim, status));
     game.endExpedition({ line, status, paper: paperSnapshot(lastSim, status) });
+    recordHostedRunIfNeeded(lastSim);
   }
 
   function pump(dt) {

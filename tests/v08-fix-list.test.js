@@ -422,6 +422,38 @@ function setupHomeTunnel(game) {
 }
 
 {
+  const g = createGame();
+  const u = g.state.units[0];
+  g.selectUnits([u.id]);
+  const ice = g.tileCenter(C.shallowIceTileX, C.shallowIceTileY);
+  assert.equal(g.issueContextual(ice.x, ice.y), true);
+  assert.equal(u.order?.type, 'haul');
+  const solar = g.placeBuilding('solar', C.habitatTileX - 4, C.habitatTileY + 4, true);
+  assert.ok(solar, 'solar places for construction resume');
+  assert.equal(u.order?.type, 'build');
+  assert.equal(u.resumeOrder?.type, 'haul');
+  assert.notEqual(g.unitTask(u), 'idle');
+  g.completeBuilding(solar.id);
+  advance(g, 1);
+  assert.equal(u.order?.type, 'haul', 'hauler resumes the haul loop after the build');
+  assert.notEqual(g.unitCard(u).task, 'idle');
+  console.log('ok  hauler resumes haul after construction and card is not idle');
+}
+
+{
+  const g = createGame();
+  g.markExpeditionLaunched({ hasNotifyRule: true });
+  g.endExpedition({ line: 'Returned, trace ice only', status: 'returned' });
+  assert.equal(g.state.toast?.kind, 'scout-result');
+  assert.match(g.state.toast.text, /Returned/);
+  g.markExpeditionLaunched({ hasNotifyRule: true });
+  assert.equal(g.state.toast, null, 'new launch does not replay the stale result toast');
+  assert.equal(g.state.expedition.pendingPings.length, 0);
+  assert.equal(g.state.expedition.scoutStatus, 'running');
+  console.log('ok  new expedition clears the stale scout-result toast');
+}
+
+{
   const state = Sim.createInitialState(
     [Sim.SENSORS.SPECTRAL, Sim.SENSORS.DISTANCE],
     [
