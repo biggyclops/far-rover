@@ -478,27 +478,13 @@ function thinkTunnel(game, mem, units, meta) {
 
   const src = iceSource(game, mem, true);
   if (!src) return;
-  const vault = game.buildingById(mem.vault);
-  // Hubs are not scoring storage, and the home hub will pull ice back out of a
-  // full vault. Keep feeding the tube until the vault is actually full, then
-  // finish into habitat/storage.
-  const vaultFull = vault && vault.ice >= vault.iceCap - 8;
-  const dest = (!vaultFull && stored.iceCap - stored.ice > 8)
-    ? game.buildingById(mem.farHub)
-    : stickyDest(game, mem, ['storage', 'habitat']);
+  // Ice delivered to the far hub settles into the home vault / habitat.
+  // Do not drive the last loads home by rover — that was a workaround for
+  // the vault↔hub ping-pong.
+  const dest = game.buildingById(mem.farHub) || stickyDest(game, mem, ['storage', 'habitat']);
   if (!dest) return;
   const haulers = units.filter((u) => u.order?.type !== 'build');
-  if (vaultFull) {
-    for (const u of haulers) {
-      const aimed = u.order?.destBuildingId || u.lastOrder?.destBuildingId;
-      if (aimed === mem.farHub && (u.order?.phase === 'toSource' || !u.order || u.blockedReason)) {
-        u.order = null;
-        u.lastOrder = null;
-        u.resumeOrder = null;
-      }
-    }
-  }
-  assignHaul(game, haulers, src, dest, !vaultFull);
+  assignHaul(game, haulers, src, dest, true);
 }
 
 function thinkMixed(game, mem, units, meta) {

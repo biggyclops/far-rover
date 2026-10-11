@@ -7,6 +7,7 @@ import {
   runHostedScoutTick,
   hostedNotifyMovementEqualsStripped,
 } from '../v08/hosted-tick.js';
+import { runStrategy } from '../v08/balance/harness.js';
 
 function advance(game, seconds, step = 1 / 60) {
   let left = seconds;
@@ -299,6 +300,57 @@ function scriptedHaul(game) {
   assert.equal(C.strandedCrawlTilesPerSecond, 0.25);
   assert.deepEqual(C.confirmDepositTiles, ['F2', 'I2']);
   console.log('ok  new config keys keep economy defaults');
+}
+
+function setupHomeTunnel(game) {
+  game.selectUnits([game.state.units[0].id]);
+  const home = game.placeBuilding('tunnel-hub', 14, 21);
+  const far = game.placeBuilding('tunnel-hub', 22, 21);
+  const vault = game.placeBuilding('vault', 11, 21);
+  assert.ok(home && far && vault, 'tunnel buildings place');
+  game.completeBuilding(home.id);
+  game.completeBuilding(far.id);
+  game.completeBuilding(vault.id);
+  const tiles = game.startDigCorridor();
+  assert.ok(tiles && tiles.length, 'corridor exists');
+  game.markTunnelDone();
+  assert.equal(game.tunnelReady(), true);
+  return { home, far, vault, hab: game.habitat() };
+}
+
+{
+  const g = createGame();
+  const { home, vault, hab } = setupHomeTunnel(g);
+  vault.ice = vault.iceCap;
+  hab.ice = 20;
+  home.ice = 0;
+  home.outboundIce = 20;
+  advance(g, 2);
+  assert.equal(vault.ice, vault.iceCap);
+  assert.ok(Math.abs(g.storedForGoal().ice - 170) < 1e-6, `vault stayed full, goal ${g.storedForGoal().ice}`);
+  assert.ok((home.outboundIce || 0) < 1e-6, 'home hub does not keep outbound ice');
+  console.log('ok  full vault is not pulled back into the home hub');
+}
+
+{
+  const g = createGame();
+  const { far, vault, hab } = setupHomeTunnel(g);
+  vault.ice = vault.iceCap;
+  hab.ice = 20;
+  g.depositToBuilding(far.id, { ice: 20 });
+  advance(g, 8);
+  assert.equal(vault.ice, vault.iceCap);
+  assert.ok(hab.ice + 1e-6 >= hab.iceCap, `overflow reached habitat ${hab.ice}/${hab.iceCap}`);
+  assert.ok(g.storedForGoal().ice + 1e-6 >= C.goalIceInStorage, `goal ${g.storedForGoal().ice}`);
+  console.log('ok  packet into a full vault overflows into habitat and scores 180');
+}
+
+{
+  const r = runStrategy('tunnel-1-digger', {}, { maxSeconds: 15 * 60 });
+  assert.equal(r.won, true, `1-digger should win, ice=${r.ice} t=${r.time}`);
+  assert.ok(r.ice + 1e-6 >= 180, `1-digger ice ${r.ice}`);
+  assert.equal(r.logistics, 'tunnel');
+  console.log(`ok  1-digger tunnel wins at ${r.winTimeLabel} (${r.ice} ice)`);
 }
 
 console.log('v08 fix-list node tests passed');
