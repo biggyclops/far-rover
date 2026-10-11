@@ -78,7 +78,7 @@
     <div class="obj-title">First goal</div>
     <ol>
       <li data-step="mineShallow"><img class="step-icon" alt="" src="../assets/v08/art/step-dot-active.png" width="32" height="32">Select haulers, then right-click the ice to start a delivery loop</li>
-      <li data-step="buildScout"><img class="step-icon" alt="" src="../assets/v08/art/step-dot.png" width="32" height="32">Build Scout and give it an On ore tile: Notify rule</li>
+      <li data-step="buildScout"><img class="step-icon" alt="" src="../assets/v08/art/step-dot.png" width="32" height="32">Scout: confirm a DEEP ice deposit (far side of the site)</li>
       <li data-step="haulDeep"><img class="step-icon" alt="" src="../assets/v08/art/step-dot.png" width="32" height="32">Haul Deep Ice home</li>
       <li data-step="landCrew"><img class="step-icon" alt="" src="../assets/v08/art/step-dot.png" width="32" height="32">Land crew (180 ice + 50 power)</li>
     </ol>
@@ -88,6 +88,15 @@
   </div>
   <img id="scout-hint-arrow" data-testid="scout-hint-arrow" alt="" hidden src="../assets/v08/art/hint-arrow-0.png" width="64" height="64">
   <div id="ice-tooltip" data-testid="ice-tooltip" hidden></div>
+  <div id="power-alert" data-testid="power-alert" hidden>Power deficit: build solar</div>
+  <aside id="expedition-panel" data-testid="expedition-panel" hidden>
+    <div class="exp-head">
+      <strong id="exp-status">Scout</strong>
+      <button id="exp-view-trace" type="button">View trace</button>
+    </div>
+    <canvas id="exp-minimap" width="168" height="168"></canvas>
+    <ol id="exp-log"></ol>
+  </aside>
   <div id="toast" role="status" aria-live="polite"></div>
   <div id="scout-overlay" hidden>
     <button id="scout-back" type="button">Back to base</button>

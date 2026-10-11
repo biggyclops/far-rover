@@ -38,8 +38,9 @@ export function predictDeepIce(game) {
   const dx = C.expeditionTileX - hx;
   const dy = C.expeditionTileY - hy;
   const len = Math.hypot(dx, dy) || 1;
-  const aimX = Math.round(hx + (dx / len) * C.commandRangeRadius);
-  const aimY = Math.round(hy + (dy / len) * C.commandRangeRadius);
+    const dist = C.deepIceTilesFromStartStorage || (C.commandRangeRadius + 8);
+    const aimX = Math.round(hx + (dx / len) * dist);
+    const aimY = Math.round(hy + (dy / len) * dist);
   const candidates = [];
   for (let r = 0; r < 8; r++) {
     for (let y = aimY - r; y <= aimY + r; y++) {
@@ -434,13 +435,6 @@ function thinkTunnel(game, mem, units, meta) {
   const homeSt = ensureBuilding(game, mem, all, 'homeHub', 'tunnel-hub', home.tx, home.ty);
   if (homeSt === 'blocked') { mem.sites = planTunnelSites(game); return; }
   if (homeSt !== 'ready') return;
-  const farSt = ensureBuilding(game, mem, all, 'farHub', 'tunnel-hub', far.tx, far.ty);
-  if (farSt === 'blocked') {
-    mem.sites = planTunnelSites(game);
-    delete mem.farHub;
-    return;
-  }
-  if (farSt !== 'ready') return;
   const vaultSpot = mem.sites.vault || findPlace(game, 'vault', home.tx - 3, home.ty);
   const vaultSt = vaultSpot
     ? ensureBuilding(game, mem, all, 'vault', 'vault', vaultSpot.tx, vaultSpot.ty)
@@ -452,6 +446,29 @@ function thinkTunnel(game, mem, units, meta) {
     }
     return;
   }
+
+  if (!game.state.deepIce.unlocked) return;
+  if (!mem.sitesAfterIce) {
+    mem.sites = planTunnelSites(game);
+    const existing = mem.homeHub && game.buildingById(mem.homeHub);
+    if (existing) mem.sites.home = { tx: existing.tx, ty: existing.ty };
+    mem.sitesAfterIce = true;
+    delete mem.farHub;
+  }
+  const farSite = mem.sites?.far || far;
+  const farSt = farSite
+    ? ensureBuilding(game, mem, all, 'farHub', 'tunnel-hub', farSite.tx, farSite.ty)
+    : 'blocked';
+  if (farSt === 'blocked') {
+    mem.sites = planTunnelSites(game);
+    if (mem.homeHub && game.buildingById(mem.homeHub)) {
+      const existing = game.buildingById(mem.homeHub);
+      mem.sites.home = { tx: existing.tx, ty: existing.ty };
+    }
+    delete mem.farHub;
+    return;
+  }
+  if (farSt !== 'ready') return;
 
   if (!game.tunnelReady()) {
     if (!mem.digging) {

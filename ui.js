@@ -302,6 +302,7 @@ export function showBuildScreen() {
       
       <div class="build-footer glass-panel">
         <button id="launch-btn" class="primary-btn glow-btn" disabled>🚀 Launch</button>
+        <span id="launch-why" class="launch-why" hidden>Pick 3 sensors</span>
         <button id="view-log-btn" class="secondary-btn">View Log</button>
       </div>
     </div>
@@ -366,7 +367,7 @@ function renderRuleSlots() {
             ${renderConditionOptions(rule?.condition)}
           </select>
           ${rule?.condition?.type === Sim.CONDITIONS.BATTERY_BELOW ? 
-            `<input type="number" class="battery-n" data-slot="${i}" min="1" max="20" value="${rule.condition.n || 8}">` : ''}
+            `<input type="number" class="battery-n" data-slot="${i}" min="1" max="20" value="${rule.condition.n || 8}"><span class="battery-max-hint">Battery max 20</span>` : ''}
           <span class="rule-arrow">→</span>
           <select class="action-select" data-slot="${i}">
             ${renderActionOptions(rule?.action)}
@@ -448,6 +449,8 @@ function handleSensorChange(e) {
       selectedSensors.push(sensor);
     } else {
       e.target.checked = false;
+      updateLaunchButton();
+      refreshBuildWarnings();
       return;
     }
   } else {
@@ -584,6 +587,15 @@ function updateLaunchButton() {
   const allLegal = rules.every(r => Sim.isRuleLegal(r, selectedSensors));
   
   btn.disabled = !(sensorsOk && hasRule && allLegal);
+  if (!sensorsOk) btn.title = 'Pick 3 sensors';
+  else if (!hasRule) btn.title = 'Add a complete if-then rule';
+  else if (!allLegal) btn.title = 'A rule needs a missing sensor';
+  else btn.title = '';
+  const why = document.getElementById('launch-why');
+  if (why) {
+    why.textContent = btn.disabled ? (btn.title || '') : '';
+    why.hidden = !btn.disabled;
+  }
 }
 
 // === OPERATE VIEW ===
@@ -2143,7 +2155,7 @@ export async function prepareHostedScout() {
   if (!rules.some((r) => r && r.condition && r.action)) {
     applyHostedNotifyPreset();
   }
-  if (!log.currentSession) startNewSession('v08-scout');
+  startNewSession('v08-scout');
 }
 
 export { showOperateView, updateOperateView, pause as pauseOperate, setSpeed as setOperateSpeed, togglePause as toggleOperatePause };

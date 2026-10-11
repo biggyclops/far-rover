@@ -28,6 +28,7 @@ const hud = bindHud(document, game, {
   onBuildScout: () => { scout.openBuild(); },
   onRecall: () => { game.startRecall(); },
   onLandCrew: () => { game.landCrew(); },
+  onViewTrace: () => { scout.openOperate(); },
 });
 
 onHostedPatch((slot, condition, action) => game.queuePatch(slot, condition, action));
@@ -209,7 +210,7 @@ function clientPosForWorld(wx, wy) {
   return { x: r.left + s.x, y: r.top + s.y };
 }
 
-window.__v08Test = {
+const debugHooks = {
   ready: true,
   getState: serialize,
   setSpeed: (s) => { game.state.speed = s; },
@@ -229,6 +230,7 @@ window.__v08Test = {
   selectUnits: (ids, additive) => game.selectUnits(ids, additive),
   selectBuilding: (id) => game.selectBuilding(id),
   issueContextual: (x, y) => game.issueContextual(x, y),
+  armOrder: (kind) => { game.state.armedOrder = kind || null; },
   issueOrder: (order) => {
     const units = game.selectedUnits();
     if (!units.length) return false;
@@ -294,3 +296,7 @@ window.__v08Test = {
   },
   config: C,
 };
+
+if (new URLSearchParams(location.search).has('debug')) {
+  window.__v08Test = debugHooks;
+}

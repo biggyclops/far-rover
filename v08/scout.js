@@ -106,9 +106,72 @@ export function bindScout(root, game, hooks = {}) {
     return Sim.applyPatch(lastSim, ev.slot, ev.condition, ev.action);
   }
 
+  function paperSnapshot(sim, status) {
+    if (!sim) return null;
+    const path = (sim.trace || []).map((t) => ({
+      col: t.col,
+      row: t.row,
+      tick: t.tick,
+    }));
+    const revealed = [];
+    if (sim.revealed) {
+      for (let r = 0; r < sim.revealed.length; r++) {
+        for (let c = 0; c < (sim.revealed[r] || []).length; c++) {
+          if (sim.revealed[r][c]) revealed.push({ col: c, row: r });
+        }
+      }
+    }
+    const pings = (sim.trace || [])
+      .filter((t) => t.actionResult?.ping || t.actionResult?.notified)
+      .map((t) => ({
+        col: t.col,
+        row: t.row,
+        label: t.actionResult?.label || null,
+        kind: t.actionResult?.kind || null,
+      }));
+    return { path, revealed, pings, tick: sim.tick || 0, status };
+  }
+
+  function resultLineFor(sim) {
+    if (!sim?.outcome) return null;
+    const cell = Sim.isOnLander(sim.col, sim.row) ? 'Lander' : Sim.formatCell(sim.col, sim.row);
+    const turn = sim.tick;
+    if (sim.hostedResultLine) return sim.hostedResultLine;
+    if (sim.outcome === Sim.OUTCOMES.LOST_CRATER) {
+      return `Lost at ${cell}, turn ${turn}: drove into a crater`;
+    }
+    if (sim.outcome === Sim.OUTCOMES.LOST_BATTERY) {
+      return `Lost at ${cell}, turn ${turn}: battery empty`;
+    }
+    if (sim.outcome === Sim.OUTCOMES.STUCK_LOOP || sim.outcome === Sim.OUTCOMES.STUCK_CHARGE || sim.outcome === Sim.OUTCOMES.STUCK_NO_MOVE) {
+      return 'Stuck';
+    }
+    if (sim.outcome === Sim.OUTCOMES.SUCCESS_SCAN || sim.outcome === Sim.OUTCOMES.SUCCESS_ORE) {
+      return sim.iceConfirmed ? 'Returned' : 'Returned, trace ice only';
+    }
+    return `Returned at ${cell}, turn ${turn}`;
+  }
+
+  function statusFor(sim) {
+    if (!sim) return null;
+    if (!sim.outcome) return 'running';
+    if (sim.outcome === Sim.OUTCOMES.LOST_CRATER || sim.outcome === Sim.OUTCOMES.LOST_BATTERY) return 'lost';
+    if (String(sim.outcome).startsWith('stuck')) return 'stuck';
+    return 'returned';
+  }
+
+  function finishIfNeeded() {
+    if (!lastSim?.outcome || game.state.expedition.ended) return;
+    const status = statusFor(lastSim);
+    const line = resultLineFor(lastSim);
+    game.updateScoutPaper(paperSnapshot(lastSim, status));
+    game.endExpedition({ line, status, paper: paperSnapshot(lastSim, status) });
+  }
+
   function pump(dt) {
     if (!lastSim || game.state.expedition.ended || !game.state.expedition.launched) return;
     if (lastSim.outcome) {
+      finishIfNeeded();
       const operateOpen = overlay && !overlay.hidden;
       if (operateOpen) updateOperateView();
       return;
@@ -120,7 +183,9 @@ export function bindScout(root, game, hooks = {}) {
       const result = runHostedScoutTick(lastSim);
       handleNotify(result);
       lastSim = getGameState() || lastSim;
+      game.updateScoutPaper(paperSnapshot(lastSim, statusFor(lastSim)));
     }
+    if (lastSim?.outcome) finishIfNeeded();
     if (operateOpen) updateOperateView();
   }
 
@@ -153,6 +218,7 @@ export function bindScout(root, game, hooks = {}) {
       last = runHostedScoutTick(lastSim);
       handleNotify(last);
     }
+    if (lastSim?.outcome) finishIfNeeded();
     return last;
   }
 
@@ -185,6 +251,7 @@ export function bindScout(root, game, hooks = {}) {
       ];
     }
     const result = tickScout(1);
+    if (lastSim?.outcome) finishIfNeeded();
     const ar = result?.tickRecord?.actionResult || {};
     return {
       confirmed: !!(ar.confirmedIce || lastSim.iceConfirmed),

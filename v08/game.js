@@ -113,6 +113,9 @@ export function createGame() {
       pendingPings: [],
       activePings: [],
       log: [],
+      scoutStatus: null,
+      resultLine: null,
+      paper: null,
     },
     deepIce: { unlocked: false, tx: null, ty: null, foundAt: null },
     hoverTile: null,
@@ -255,8 +258,9 @@ export function createGame() {
     const dx = C.expeditionTileX - hx;
     const dy = C.expeditionTileY - hy;
     const len = Math.hypot(dx, dy) || 1;
-    const aimX = Math.round(hx + (dx / len) * C.commandRangeRadius);
-    const aimY = Math.round(hy + (dy / len) * C.commandRangeRadius);
+    const dist = C.deepIceTilesFromStartStorage || (C.commandRangeRadius + 8);
+    const aimX = Math.round(hx + (dx / len) * dist);
+    const aimY = Math.round(hy + (dy / len) * dist);
     const candidates = [];
     for (let r = 0; r < 6; r++) {
       for (let y = aimY - r; y <= aimY + r; y++) {
@@ -294,7 +298,9 @@ export function createGame() {
       remaining: C.notifyLinkDelaySeconds,
       tx: entry.tx ?? state.expedition.marker.tx,
       ty: entry.ty ?? state.expedition.marker.ty,
-      text: entry.text || entry.label || 'Notify',
+      text: entry.kind === 'trace-ice' || (!confirmed && !entry.text)
+        ? 'Trace ice only. Big deposits are farther out, past the craters.'
+        : (entry.text || entry.label || 'Notify'),
       confirmed,
       kind,
       label: entry.label || null,
@@ -316,15 +322,32 @@ export function createGame() {
     state.expedition.ended = false;
     state.expedition.recallUsed = false;
     state.expedition.recalling = false;
+    state.expedition.scoutStatus = 'running';
+    state.expedition.resultLine = null;
+    state.expedition.paper = { path: [], revealed: [], pings: [], tick: 0 };
     if (info.hasNotifyRule != null) state.expedition.hasNotifyRule = !!info.hasNotifyRule;
     noteExpedition('Scout launched');
   }
 
-  function endExpedition() {
+  function endExpedition(result = {}) {
+    if (state.expedition.ended && !result.force) return state.expedition;
     state.expedition.ended = true;
     state.expedition.recalling = false;
-    noteExpedition('Expedition ended');
-    emit('expedition-ended');
+    const line = result.line || result.text || 'Expedition ended';
+    state.expedition.resultLine = line;
+    state.expedition.scoutStatus = result.status || state.expedition.scoutStatus || 'returned';
+    if (result.paper) state.expedition.paper = result.paper;
+    noteExpedition(line, { kind: 'scout-result', label: state.expedition.scoutStatus });
+    if (!result.silent) {
+      toast(line, 8, { kind: 'scout-result', action: 'view-trace' });
+    }
+    emit('expedition-ended', { line, status: state.expedition.scoutStatus });
+    return state.expedition;
+  }
+
+  function updateScoutPaper(paper) {
+    state.expedition.paper = paper || state.expedition.paper;
+    if (paper?.status && !state.expedition.ended) state.expedition.scoutStatus = paper.status;
   }
 
   function startRecall() {
@@ -333,14 +356,20 @@ export function createGame() {
     if (liveScout) return null;
     state.expedition.recallUsed = true;
     state.expedition.recalling = false;
-    endExpedition();
-    noteExpedition('Recall: scout returning (no extra unit)');
+    endExpedition({ line: 'Recall: scout returning (no extra unit)', status: 'returned' });
     emit('recall');
     return { recalled: true };
   }
 
+  function solOffset() {
+    const day = C.daySecondsAt1x || 0;
+    const left = C.startDaylightRemainingSec;
+    if (left == null) return 0;
+    return Math.max(0, day - left);
+  }
+
   function currentSol() {
-    return Math.floor(state.time / C.solSecondsAt1x) + 1;
+    return Math.floor((state.time + solOffset()) / C.solSecondsAt1x) + 1;
   }
 
   function patchesLeft() {
@@ -369,7 +398,9 @@ export function createGame() {
 
   function clampStores() {
     for (const b of state.buildings) {
-      if (b.iceCap > 0) b.ice = Math.max(0, Math.min(b.iceCap, b.ice));
+      if (b.type === 'tunnel-hub') {
+        b.ice = Math.max(0, b.ice || 0);
+      } else if (b.iceCap > 0) b.ice = Math.max(0, Math.min(b.iceCap, b.ice));
       else b.ice = 0;
       if (b.regolithCap > 0) b.regolith = Math.max(0, Math.min(b.regolithCap, b.regolith));
       else b.regolith = 0;
@@ -386,15 +417,46 @@ export function createGame() {
     return Math.hypot((tx + 0.5) - cx, (ty + 0.5) - cy) <= C.commandRangeRadius + 1e-6;
   }
 
+  function buildingCenterTile(b, tx = b?.tx, ty = b?.ty, type = b?.type) {
+    const n = buildingFootprint(type);
+    return { tx: tx + Math.floor(n / 2), ty: ty + Math.floor(n / 2) };
+  }
+
   function buildingInCommandRange(b) {
     if (!b) return false;
-    const n = buildingFootprint(b.type);
-    for (let y = 0; y < n; y++) {
-      for (let x = 0; x < n; x++) {
-        if (inCommandRange(b.tx + x, b.ty + y)) return true;
-      }
-    }
-    return false;
+    const c = buildingCenterTile(b);
+    return inCommandRange(c.tx, c.ty);
+  }
+
+  function placementInCommandRange(type, tx, ty) {
+    const c = buildingCenterTile(null, tx, ty, type);
+    return inCommandRange(c.tx, c.ty);
+  }
+
+  function hubBesideDeepIceAt(tx, ty) {
+    if (!state.deepIce.unlocked) return false;
+    return chebyshevToBuilding(state.deepIce.tx, state.deepIce.ty, {
+      type: 'tunnel-hub',
+      tx,
+      ty,
+    }) === 1;
+  }
+
+  function hubBesideDeepIce(hub) {
+    return !!(hub && hubBesideDeepIceAt(hub.tx, hub.ty));
+  }
+
+  function hubSeparationOk(tx, ty) {
+    const min = C.tunnelHubMinSeparationTiles || 0;
+    if (!min) return true;
+    return hubs().every((h) => minChebyshevBetween('tunnel-hub', tx, ty, h) >= min);
+  }
+
+  function isValidDropTarget(b) {
+    if (!b || !b.complete) return false;
+    if (isTransitDrop(b)) return buildingInCommandRange(b) || hubBesideDeepIce(b);
+    if (!isDropBuilding(b)) return false;
+    return buildingInCommandRange(b);
   }
 
   function storedForGoal() {
@@ -623,18 +685,31 @@ export function createGame() {
       }
     }
     if (type === 'tunnel-hub' && hubs().length >= C.tunnelHubCount) return false;
+    if (type === 'tunnel-hub' && !hubSeparationOk(tx, ty)) return false;
     if (type === 'vault' && !hubBesideVault(type, tx, ty)) return false;
+    const inRange = placementInCommandRange(type, tx, ty);
+    if (!inRange) {
+      if (type === 'tunnel-hub' && hubBesideDeepIceAt(tx, ty)) return true;
+      return false;
+    }
     return true;
   }
 
   function solTime() {
     const cycle = C.solSecondsAt1x;
-    const t = ((state.time % cycle) + cycle) % cycle;
+    const t = (((state.time + solOffset()) % cycle) + cycle) % cycle;
     return t;
   }
 
   function isDay() {
     return solTime() < C.daySecondsAt1x;
+  }
+
+  function powerDeficit() {
+    const gen = solarOutputPerSecond();
+    const upkeep = (C.haulerUpkeepPowerPerSec || 0)
+      * state.units.filter((u) => u.kind === 'hauler').length;
+    return upkeep > gen + 1e-9;
   }
 
   function solarOutputPerSecond() {
@@ -882,7 +957,7 @@ export function createGame() {
       return `Haul Deep Ice home: ${ice} / ${C.goalIceInStorage}`;
     }
     if (!steps.mineShallow) return 'Select haulers, then right-click the ice to start a delivery loop';
-    if (!steps.buildScout) return 'Build Scout and give it an On ore tile: Notify rule';
+    if (!state.deepIce.unlocked) return 'Scout: confirm a DEEP ice deposit (far side of the site)';
     if (!steps.haulDeep) return `Haul Deep Ice home: ${ice} / ${C.goalIceInStorage}`;
     if (!steps.landCrew) {
       return `Land crew: ${ice} / ${C.goalIceInStorage} ice · ${power} / ${C.goalPowerInStorage} power`;
@@ -892,7 +967,10 @@ export function createGame() {
 
   function unitTask(unit) {
     if (unit.blockedReason) return unit.blockedReason;
-    if (!unit.order) return 'idle';
+    if (!unit.order) {
+      if (unit.lastOrder?.type === 'haul' && canRepeat(unit.lastOrder)) return 'hauling';
+      return 'idle';
+    }
     if (unit.order.type === 'haul') {
       if (unit.order.phase === 'mine') return 'mining';
       if (unit.order.phase === 'toDest' || unit.order.phase === 'unload') return 'delivering';
@@ -924,7 +1002,7 @@ export function createGame() {
   function dropRoom(kind) {
     let room = 0;
     for (const b of state.buildings) {
-      if (!isDropBuilding(b)) continue;
+      if (!isValidDropTarget(b)) continue;
       room += buildingRoom(b, kind);
     }
     return room;
@@ -937,7 +1015,7 @@ export function createGame() {
     let best = null;
     let bestD = Infinity;
     for (const b of state.buildings) {
-      if (!isDropBuilding(b)) continue;
+      if (!isValidDropTarget(b)) continue;
       const iceOk = buildingRoom(b, 'ice') > 1e-6;
       const regOk = buildingRoom(b, 'regolith') > 1e-6;
       if (needIce && !needReg && !iceOk) continue;
@@ -958,9 +1036,9 @@ export function createGame() {
     const regNeed = unit.cargo.regolith > 0.001;
     const ice = dropRoom('ice');
     const reg = dropRoom('regolith');
-    if (iceNeed && ice <= 1e-6 && !regNeed) return 'Ice storage full';
+    if (iceNeed && ice <= 1e-6 && !regNeed) return 'Ice storage full: build Storage or a Vault.';
     if (regNeed && reg <= 1e-6 && !iceNeed) return 'Storage full';
-    if ((iceNeed || regNeed) && ice <= 1e-6 && reg <= 1e-6) return 'Storage full';
+    if ((iceNeed || regNeed) && ice <= 1e-6 && reg <= 1e-6) return 'Ice storage full: build Storage or a Vault.';
     return null;
   }
 
@@ -1066,7 +1144,6 @@ export function createGame() {
     const speed = crawl
       ? (C.strandedCrawlTilesPerSecond || 0.25)
       : C.haulerSpeedTilesPerSecond;
-    if (powerStarved() && unit.kind === 'hauler' && !crawl) return { status: 'starved', used: dt };
     const step = C.tileSize * speed * dt;
     const loaded = cargoAmount(unit) > 0.001;
     const drain = loaded ? C.haulerDrainPerTileLoaded : C.haulerDrainPerTileEmpty;
@@ -1122,9 +1199,17 @@ export function createGame() {
 
   function assignOrder(units, order, marker) {
     for (const u of units) {
+      const priorHaul = (u.order?.type === 'haul' && cloneOrder(u.order))
+        || (u.lastOrder?.type === 'haul' && cloneOrder(u.lastOrder))
+        || (u.resumeOrder?.type === 'haul' && cloneOrder(u.resumeOrder));
+      u._emptyAfterDrop = false;
       u.order = resetOrder(order);
-      u.lastOrder = cloneOrder(u.order);
-      u.resumeOrder = null;
+      if (order.type === 'build' && priorHaul) {
+        u.lastOrder = resetOrder(priorHaul);
+      } else {
+        u.lastOrder = cloneOrder(u.order);
+      }
+      u.resumeOrder = order.type === 'build' && priorHaul ? resetOrder(priorHaul) : null;
       u.blockedReason = null;
       u._strandWarned = false;
       u.status = order.type;
@@ -1175,8 +1260,10 @@ export function createGame() {
     const empty = live.filter((u) => cargoAmount(u) <= 0.001);
     if (loaded.length) {
       const kind = loaded[0].cargo.ice > 0.001 ? 'ice' : 'regolith';
-      let dest = isDropBuilding(b) ? b : null;
-      if (!dest || buildingRoom(dest, kind) <= 1e-6) dest = nearestDrop(b.tx, b.ty, loaded[0], kind);
+      let dest = isValidDropTarget(b) ? b : null;
+      if (!dest || (buildingRoom(dest, kind) <= 1e-6 && !hubPipelineHasRoom(dest))) {
+        dest = nearestDrop(b.tx, b.ty, loaded[0], kind);
+      }
       if (!dest) return rejectOrder('No storage room');
       for (const u of loaded) {
         const src = u.lastOrder?.sourceTx != null
@@ -1199,6 +1286,18 @@ export function createGame() {
     }
     if (empty.length && (b.type === 'habitat' || b.type === 'solar')) {
       assignOrder(empty, { type: 'charge', buildingId: b.id }, tileCenter(b.tx, b.ty));
+    }
+    if (empty.length && isTransitDrop(b) && !loaded.length) {
+      const dest = isValidDropTarget(b) ? b : null;
+      if (dest) {
+        assignOrder(empty, {
+          type: 'haul',
+          sourceTx: empty[0].lastOrder?.sourceTx ?? worldToTile(empty[0].x, empty[0].y).tx,
+          sourceTy: empty[0].lastOrder?.sourceTy ?? worldToTile(empty[0].x, empty[0].y).ty,
+          destBuildingId: dest.id,
+          phase: 'toSource',
+        }, tileCenter(dest.tx, dest.ty));
+      }
     }
     return loaded.length > 0 || empty.length > 0;
   }
@@ -1471,7 +1570,7 @@ export function createGame() {
       const src = tileCenter(order.sourceTx, order.sourceTy);
       let dest = buildingById(order.destBuildingId);
       const kind = unit.cargo.ice > 0.001 ? 'ice' : (unit.cargo.regolith > 0.001 ? 'regolith' : 'ice');
-      if (!dest || (!isDropBuilding(dest) && !isTransitDrop(dest))) {
+      if (!dest || !isValidDropTarget(dest)) {
         dest = nearestDrop(order.sourceTx, order.sourceTy, unit, kind) || dest;
         if (dest) order.destBuildingId = dest.id;
       } else if (
@@ -2011,7 +2110,10 @@ export function createGame() {
     const tx = pref.tx;
     const ty = pref.ty;
     const tile = tileAt(tx, ty);
-    const b = buildingAtWorld(x, y) || buildingAtTile(tx, ty);
+    const resource = tile && (tile.type === TILE.ICE || sourceHasWork(tx, ty));
+    const b = (resource && !state.armedOrder && !state.haulPick && !state.digPick)
+      ? null
+      : (buildingAtWorld(x, y) || buildingAtTile(tx, ty));
 
     if (state.armedOrder === 'dig' || state.digPick) {
       if (tunnelAlreadyDug()) {
@@ -2323,8 +2425,7 @@ export function createGame() {
     const minedShallow = !shallow
       || shallow.type === TILE.ICE_MINED
       || (shallow.iceRemaining + 1e-6) < C.shallowIceAmount;
-    const launched = !!state.expedition.launched;
-    const notifyReady = launched && (state.expedition.hasNotifyRule || state.stats.notifies > 0 || state.deepIce.unlocked);
+      const notifyReady = state.stats.notifies > 0 || state.deepIce.unlocked;
     const deep = state.deepIce;
     const deepTile = deep.unlocked ? tileAt(deep.tx, deep.ty) : null;
     const hauledDeep = !!(deep.unlocked && deepTile && (
@@ -2387,6 +2488,9 @@ export function createGame() {
     startRecall,
     markExpeditionLaunched,
     endExpedition,
+    updateScoutPaper,
+    powerDeficit,
+    isValidDropTarget,
     canLandCrew,
     landCrew,
     currentSol,

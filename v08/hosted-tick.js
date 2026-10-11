@@ -47,12 +47,43 @@ function stripNotifyRules(rules) {
   ));
 }
 
+function parseCell(cell) {
+  const col = cell.charCodeAt(0) - 65;
+  const row = parseInt(cell.slice(1), 10) - 1;
+  return { col, row };
+}
+
+function restoreConfirmDepositTiles(state) {
+  for (const cell of C.confirmDepositTiles || []) {
+    const { col, row } = parseCell(cell);
+    if (state.drilled?.[row]) state.drilled[row][col] = false;
+  }
+}
+
+function annotateReturnChargeLoop(state, result) {
+  const outcome = state.outcome;
+  if (outcome !== Sim.OUTCOMES.STUCK_LOOP && outcome !== Sim.OUTCOMES.STUCK_CHARGE) return;
+  const trace = state.trace || [];
+  const recent = trace.slice(-10);
+  const returns = recent.filter((t) => {
+    const reason = `${t.ruleReason || ''} ${t.action || ''}`;
+    return /return/i.test(reason);
+  }).length;
+  if (returns >= 3 && state.battery >= 19) {
+    const msg = 'Returned to charge with full battery. Threshold too high?';
+    if (result?.tickRecord) result.tickRecord.ruleReason = msg;
+    state.hostedResultLine = msg;
+  }
+}
+
 export function runHostedScoutTick(state, previouslyRevealed = null) {
   const pings = applyNotifySideEffects(state);
   const saved = state.rules;
   state.rules = stripNotifyRules(saved);
   const result = Sim.runTick(state, previouslyRevealed);
   state.rules = saved;
+  restoreConfirmDepositTiles(state);
+  annotateReturnChargeLoop(state, result);
   if (pings.length) {
     const ping = pings[0];
     result.hostedPings = pings;

@@ -444,9 +444,9 @@ export function createRenderer(canvas, assets, game) {
     const c = worldToScreen((m.tx + 0.5) * C.tileSize, (m.ty + 0.5) * C.tileSize);
     const size = C.tileSize * z;
     const scoutImg = img('scout');
-    if (scoutImg && exp.launched && !exp.ended && !exp.recalling) {
+    if (scoutImg && exp.launched && !exp.recalling) {
       ctx.save();
-      ctx.globalAlpha = 0.95;
+      ctx.globalAlpha = exp.ended ? 0.7 : 0.95;
       ctx.drawImage(scoutImg, c.x - size / 2, c.y - size / 2, size, size);
       ctx.restore();
     }
@@ -457,6 +457,19 @@ export function createRenderer(canvas, assets, game) {
     ctx.arc(c.x, c.y, size * 0.42, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
+    if (exp.launched) {
+      const label = exp.scoutStatus === 'lost'
+        ? 'Scout: Lost'
+        : exp.scoutStatus === 'returned' || exp.scoutStatus === 'stuck'
+          ? 'Scout: Returned'
+          : 'Scout: Running';
+      ctx.save();
+      ctx.fillStyle = '#E8F2F6';
+      ctx.font = `${Math.max(10, 11 * z)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(label, c.x, c.y + size * 0.62);
+      ctx.restore();
+    }
     drawEdgeBeacon(m.tx, m.ty, z);
   }
 

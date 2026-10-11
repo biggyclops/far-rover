@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const V08 = 'http://localhost:8080/v08/';
+const V08 = 'http://localhost:8080/v08/?debug';
 
 async function ready(page) {
   await page.goto(V08);
@@ -603,7 +603,7 @@ test.describe('Far Rover v0.8 M2', () => {
       for (let i = 0; i < 50; i++) {
         window.__v08Test.advance(1);
         const snap = window.__v08Test.getState();
-        if (snap.toast === 'Ice storage full') seenToast = snap.toast;
+        if (String(snap.toast || '').startsWith('Ice storage full')) seenToast = snap.toast;
         if (snap.units[0].status === 'blocked') {
           return {
             toast: seenToast || snap.toast,
@@ -619,9 +619,9 @@ test.describe('Far Rover v0.8 M2', () => {
         label: end.units[0].label,
       };
     });
-    expect(result.toast).toBe('Ice storage full');
+    expect(result.toast).toMatch(/Ice storage full: build Storage or a Vault/);
     expect(result.status).toBe('blocked');
-    expect(result.label).toBe('Ice storage full');
+    expect(result.label).toMatch(/Ice storage full: build Storage or a Vault/);
   });
 });
 
@@ -680,7 +680,7 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
   test('unit: scout confirm unlocks Deep Ice', async ({ page }) => {
     await ready(page);
     await expect(page.locator('#objectives')).toContainText('Select haulers, then right-click the ice to start a delivery loop');
-    await expect(page.locator('#objectives')).toContainText('Build Scout and give it an On ore tile: Notify rule');
+    await expect(page.locator('#objectives')).toContainText('Scout: confirm a DEEP ice deposit (far side of the site)');
     await expect(page.locator('#objectives')).toContainText('Haul Deep Ice home');
     await expect(page.locator('#objectives')).toContainText('Land crew (180 ice + 50 power)');
     const result = await page.evaluate(() => {
@@ -1055,14 +1055,18 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
         }
         return null;
       }
-      function tend(sourceTx, sourceTy, destId) {
+      function worldTile(tx, ty) {
+        return { x: (tx + 0.5) * t.config.tileSize, y: (ty + 0.5) * t.config.tileSize };
+      }
+      function tend(sourceTx, sourceTy) {
         const snap = t.getState();
         const hab = snap.buildings.find((b) => b.type === 'habitat');
         const canSpend = snap.isDay || snap.stored.power > 80;
         const low = snap.units.filter((u) => u.kind === 'hauler' && u.battery <= 25 && u.order !== 'charge');
         if (low.length && canSpend && hab) {
           t.selectUnits(low.map((u) => u.id));
-          t.issueOrder({ type: 'charge', buildingId: hab.id });
+          const c = worldTile(hab.tx + 1, hab.ty + 1);
+          t.issueContextual(c.x, c.y);
         }
         const ready = t.getState().units.filter((u) => {
           if (u.kind !== 'hauler') return false;
@@ -1073,7 +1077,8 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
         });
         if (ready.length) {
           t.selectUnits(ready.map((u) => u.id));
-          t.issueOrder({ type: 'haul', sourceTx, sourceTy, destBuildingId: destId });
+          const w = worldTile(sourceTx, sourceTy);
+          t.issueContextual(w.x, w.y);
         }
       }
       // Habitat 30 + one storage 100 = 130, short of the 180-ice goal.
@@ -1089,14 +1094,11 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       const deep = t.getState().deepIce;
       const unlocked = !!deep.unlocked;
       if (!deep.unlocked) return { error: 'no deep ice', time: t.getState().time };
-      let destId = storageA.id;
       t.selectUnits(haulers().map((u) => u.id));
-      t.issueOrder({
-        type: 'haul',
-        sourceTx: deep.tx,
-        sourceTy: deep.ty,
-        destBuildingId: destId,
-      });
+      {
+        const w = worldTile(deep.tx, deep.ty);
+        t.issueContextual(w.x, w.y);
+      }
       for (let i = 0; i < 1200; i++) {
         t.advance(1);
         const snap = t.getState();
@@ -1104,9 +1106,7 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
           t.landCrew();
           break;
         }
-        const a = snap.buildings.find((b) => b.id === storageA.id);
-        if (a && a.ice >= a.iceCap - 0.5) destId = storageB.id;
-        tend(deep.tx, deep.ty, destId);
+        tend(deep.tx, deep.ty);
       }
       const end = t.getState();
       return {
@@ -1136,10 +1136,10 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     await expect(page.locator('#win-patches')).toContainText('Patches used:');
   });
 
-  test('honest tunnel route lands the crew', async ({ page }) => {
+  async function honestTunnel(page, diggers) {
     test.setTimeout(180000);
     await ready(page);
-    const result = await page.evaluate((prog) => {
+    const result = await page.evaluate(({ prog, diggers: n }) => {
       const t = window.__v08Test;
       function haulers() {
         return t.getState().units.filter((u) => u.kind === 'hauler');
@@ -1151,14 +1151,18 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
         }
         return false;
       }
-      function tend(sourceTx, sourceTy, destId) {
+      function worldTile(tx, ty) {
+        return { x: (tx + 0.5) * t.config.tileSize, y: (ty + 0.5) * t.config.tileSize };
+      }
+      function tend(sourceTx, sourceTy) {
         const snap = t.getState();
         const hab = snap.buildings.find((b) => b.type === 'habitat');
         const canSpend = snap.isDay || snap.stored.power > 80;
         const low = snap.units.filter((u) => u.kind === 'hauler' && u.battery <= 25 && u.order !== 'charge');
         if (low.length && canSpend && hab) {
           t.selectUnits(low.map((u) => u.id));
-          t.issueOrder({ type: 'charge', buildingId: hab.id });
+          const c = worldTile(hab.tx + 1, hab.ty + 1);
+          t.issueContextual(c.x, c.y);
         }
         const ready = t.getState().units.filter((u) => {
           if (u.kind !== 'hauler') return false;
@@ -1169,47 +1173,55 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
         });
         if (ready.length) {
           t.selectUnits(ready.map((u) => u.id));
-          t.issueOrder({ type: 'haul', sourceTx, sourceTy, destBuildingId: destId });
+          const w = worldTile(sourceTx, sourceTy);
+          t.issueContextual(w.x, w.y);
         }
-      }
-      t.selectUnits(haulers().map((u) => u.id));
-      const homeHub = t.placeBuilding('tunnel-hub', 14, 21);
-      if (!homeHub) return { error: 'home hub place failed' };
-      if (!waitDone(homeHub.id)) return { error: 'home hub not complete' };
-      const farHub = t.placeBuilding('tunnel-hub', 28, 21);
-      if (!farHub) return { error: 'far hub place failed' };
-      if (!waitDone(farHub.id)) return { error: 'far hub not complete' };
-      const vault = t.placeBuilding('vault', 11, 21);
-      if (!vault) return { error: 'vault place failed' };
-      if (!waitDone(vault.id)) return { error: 'vault not complete' };
-      const tiles = t.startDigCorridor();
-      t.selectUnits(haulers().map((u) => u.id));
-      t.issueOrder({ type: 'dig' });
-      for (let i = 0; i < 400; i++) {
-        t.advance(1);
-        if (t.getState().tunnel.ready) break;
       }
       t.launchProgram(prog.sensors, prog.rules);
       t.confirmOnOre();
       t.advance(2.1);
       const deep = t.getState().deepIce;
       if (!deep.unlocked) return { error: 'no deep ice', time: t.getState().time };
-      const destId = farHub.id;
       t.selectUnits(haulers().map((u) => u.id));
-      t.issueOrder({
-        type: 'haul',
-        sourceTx: deep.tx,
-        sourceTy: deep.ty,
-        destBuildingId: destId,
-      });
-      for (let i = 0; i < 1200; i++) {
+      let farHub = null;
+      for (let ty = deep.ty - 3; ty <= deep.ty + 1 && !farHub; ty++) {
+        for (let tx = deep.tx - 3; tx <= deep.tx + 1 && !farHub; tx++) {
+          farHub = t.placeBuilding('tunnel-hub', tx, ty);
+        }
+      }
+      if (!farHub) return { error: 'far hub place failed', deep };
+      if (!waitDone(farHub.id)) return { error: 'far hub not complete' };
+      const hab = t.getState().buildings.find((b) => b.type === 'habitat');
+      let homeHub = null;
+      for (let tx = hab.tx - 8; tx <= hab.tx + 4 && !homeHub; tx++) {
+        homeHub = t.placeBuilding('tunnel-hub', tx, farHub.ty)
+          || t.placeBuilding('tunnel-hub', tx, farHub.ty - 1);
+      }
+      if (!homeHub) return { error: 'home hub place failed', far: farHub };
+      if (!waitDone(homeHub.id)) return { error: 'home hub not complete' };
+      const vault = t.placeBuilding('vault', homeHub.tx - 3, homeHub.ty)
+        || t.placeBuilding('vault', homeHub.tx + 2, homeHub.ty);
+      if (!vault) return { error: 'vault place failed' };
+      if (!waitDone(vault.id)) return { error: 'vault not complete' };
+      const tiles = t.startDigCorridor();
+      if (!tiles || !tiles.length) return { error: 'no corridor', home: homeHub, far: farHub };
+      t.selectUnits(haulers().slice(0, n).map((u) => u.id));
+      t.armOrder('dig');
+      t.issueContextual(worldTile(tiles[0].tx, tiles[0].ty).x, worldTile(tiles[0].tx, tiles[0].ty).y);
+      for (let i = 0; i < 500; i++) {
+        t.advance(1);
+        if (t.getState().tunnel.ready) break;
+      }
+      t.selectUnits(haulers().map((u) => u.id));
+      t.issueContextual(worldTile(deep.tx, deep.ty).x, worldTile(deep.tx, deep.ty).y);
+      for (let i = 0; i < 1400; i++) {
         t.advance(1);
         const snap = t.getState();
         if (snap.canLandCrew) {
           t.landCrew();
           break;
         }
-        tend(deep.tx, deep.ty, destId);
+        tend(deep.tx, deep.ty);
       }
       const end = t.getState();
       return {
@@ -1219,8 +1231,9 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
         usedTunnel: end.stats.usedTunnel,
         tunnelReady: end.tunnel.ready,
         tiles: tiles && tiles.length,
+        diggers: n,
       };
-    }, NOTIFY_PROGRAM);
+    }, { prog: NOTIFY_PROGRAM, diggers });
     expect(result.error).toBeUndefined();
     expect(result.tunnelReady).toBe(true);
     expect(result.usedTunnel).toBe(true);
@@ -1229,10 +1242,19 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     expect(result.stored.ice).toBeGreaterThanOrEqual(180);
     expect(result.stored.ice).toBeLessThanOrEqual(result.stored.iceCap);
     expect(result.win.time).toBeGreaterThanOrEqual(240);
-    console.log(`honest tunnel win: ${result.win.time.toFixed(1)}s (${result.stored.ice.toFixed(1)} ice / ${result.stored.iceCap} cap)`);
+    console.log(`honest ${diggers}-digger tunnel win: ${result.win.time.toFixed(1)}s (${result.stored.ice.toFixed(1)} ice / ${result.stored.iceCap} cap)`);
     await page.evaluate(() => window.__v08Test.syncHud());
     await expect(page.locator('#win-overlay')).toBeVisible();
     await expect(page.locator('#win-logistics')).toContainText('tunnel');
+    return result;
+  }
+
+  test('honest 1-digger tunnel route lands the crew', async ({ page }) => {
+    await honestTunnel(page, 1);
+  });
+
+  test('honest 2-digger tunnel route lands the crew', async ({ page }) => {
+    await honestTunnel(page, 2);
   });
 
   test('1x and 16x reach the crew goal within 1%', async ({ page }) => {
