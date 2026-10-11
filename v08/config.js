@@ -41,7 +41,7 @@ export const CONFIG = {
 
   // --- Hauler (M1) ---
   haulerSpeedTilesPerSecond: 1, // Proposed (Game Designer)
-  haulerCarry: 10, // Proposed (Game Designer)
+  haulerCarry: 15, // Proposed (Game Designer)
   haulerBattery: 100, // Proposed (Game Designer)
   haulerDrainPerTileLoaded: 1, // Proposed (Game Designer)
   haulerDrainPerTileEmpty: 0.5, // Proposed (Game Designer)
@@ -121,7 +121,7 @@ export const CONFIG = {
   tunnelHubCount: 2,
   hubIceCapacity: 20, // Proposed (Game Designer) — transit buffer at each hub
   hubRegolithCapacity: 20, // Proposed (Game Designer)
-  digSecondsPerTilePerRover: 6, // Proposed (Game Designer) — rovers stack
+  digSecondsPerTilePerRover: 24, // Proposed (Game Designer) — rovers stack
   digPowerPerTile: 3, // Proposed (Game Designer)
   digRegolithYieldPerTile: 2, // Proposed (Game Designer)
   tunnelCargoTilesPerSecond: 4, // Proposed (Game Designer) — hub-to-hub, no rover
@@ -164,7 +164,7 @@ export const CONFIG = {
   patchesPerSol: 1, // Proposed (Game Designer)
 
   // --- Goal (M4) ---
-  goalIceInStorage: 60, // Proposed (Game Designer)
+  goalIceInStorage: 180, // Proposed (Game Designer)
   goalPowerInStorage: 50, // Proposed (Game Designer)
   // Both at once → "Land crew" button.
   winScreenShowsTime: true,
