@@ -150,8 +150,10 @@ export async function init() {
   // Load art assets (2D kit + orbital board) before the first screen.
   await Promise.all([loadAssets(), warmupOrbitalArt()]);
   
-  // Load existing session or create new
-  if (!log.currentSession) {
+  // Load existing session or create new. Don't inherit a v0.8 hosted
+  // session on the root demo — that showed the wrong session ID and
+  // swallowed this tester's runs.
+  if (!log.currentSession || log.currentSession.label === 'v08-scout') {
     startNewSession();
   } else {
     sessionId = log.currentSession.id;
@@ -302,14 +304,16 @@ export function showBuildScreen() {
       
       <div class="build-footer glass-panel">
         <button id="launch-btn" class="primary-btn glow-btn" disabled>🚀 Launch</button>
+        <span id="launch-why" class="launch-why" hidden>Pick 3 sensors</span>
         <button id="view-log-btn" class="secondary-btn">View Log</button>
       </div>
     </div>
   `;
   
-  // Wire up sensor checkboxes
+  // Wire up sensor checkboxes (click + change so Dust updates Launch immediately)
   document.querySelectorAll('.sensor-item input[type="checkbox"]').forEach(cb => {
     cb.addEventListener('change', handleSensorChange);
+    cb.addEventListener('click', () => { updateLaunchButton(); });
   });
   
   // Wire up rule controls
@@ -366,7 +370,7 @@ function renderRuleSlots() {
             ${renderConditionOptions(rule?.condition)}
           </select>
           ${rule?.condition?.type === Sim.CONDITIONS.BATTERY_BELOW ? 
-            `<input type="number" class="battery-n" data-slot="${i}" min="1" max="20" value="${rule.condition.n || 8}">` : ''}
+            `<input type="number" class="battery-n" data-slot="${i}" min="1" max="20" value="${rule.condition.n || 8}"><span class="battery-max-hint">Battery max 20</span>` : ''}
           <span class="rule-arrow">→</span>
           <select class="action-select" data-slot="${i}">
             ${renderActionOptions(rule?.action)}
@@ -448,16 +452,19 @@ function handleSensorChange(e) {
       selectedSensors.push(sensor);
     } else {
       e.target.checked = false;
+      updateLaunchButton();
+      refreshBuildWarnings();
       return;
     }
   } else {
     selectedSensors = selectedSensors.filter(s => s !== sensor);
   }
-  
-  // Re-render rules to update legality
-  document.getElementById('rules-list').innerHTML = renderRuleSlots();
-  wireRuleControls();
+
   updateLaunchButton();
+  // Re-render rules to update legality
+  const list = document.getElementById('rules-list');
+  if (list) list.innerHTML = renderRuleSlots();
+  wireRuleControls();
   refreshBuildWarnings();
 }
 
@@ -584,6 +591,15 @@ function updateLaunchButton() {
   const allLegal = rules.every(r => Sim.isRuleLegal(r, selectedSensors));
   
   btn.disabled = !(sensorsOk && hasRule && allLegal);
+  if (!sensorsOk) btn.title = 'Pick 3 sensors';
+  else if (!hasRule) btn.title = 'Add a complete if-then rule';
+  else if (!allLegal) btn.title = 'A rule needs a missing sensor';
+  else btn.title = '';
+  const why = document.getElementById('launch-why');
+  if (why) {
+    why.textContent = btn.disabled ? (btn.title || '') : '';
+    why.hidden = !btn.disabled;
+  }
 }
 
 // === OPERATE VIEW ===
@@ -1658,6 +1674,44 @@ function abortRun() {
   }
 }
 
+function persistCurrentRun() {
+  if (!currentRun || currentRun._saved) return;
+  if (!log.currentSession) startNewSession(testerLabel || '');
+  previousRunEndTime = Date.now();
+  if (gameState) {
+    currentRun.endedAt = currentRun.endedAt || new Date().toISOString();
+    currentRun.durationSeconds = Math.round((previousRunEndTime - (runStartTime || previousRunEndTime)) / 1000);
+    currentRun.ticks = gameState.tick;
+    currentRun.outcome = gameState.outcome;
+    currentRun.endReason = gameState.endReason;
+    currentRun.tilesScanned = gameState.tilesScanned;
+    currentRun.cargo = gameState.cargo;
+    currentRun.batteryAtEnd = gameState.battery;
+    currentRun.autoPauses = autoPauseCount;
+    if (gameState.uplink?.used) {
+      currentRun.uplink = {
+        tick: gameState.uplink.tick,
+        slot: gameState.uplink.slot + 1,
+        before: formatRuleForLog(gameState.uplink.before),
+        after: formatRuleForLog(gameState.uplink.after)
+      };
+    }
+  }
+  currentRun._saved = true;
+  log.currentSession.runs.push(currentRun);
+  saveLog(log);
+  currentRun = null;
+}
+
+export function recordHostedRunIfNeeded(sim) {
+  if (sim) gameState = sim;
+  persistCurrentRun();
+}
+
+export function getCurrentSession() {
+  return log.currentSession;
+}
+
 function endRun() {
   stopTicking();
   if (typeof window !== 'undefined' && renderer?._motionLog?.length) {
@@ -1666,28 +1720,7 @@ function endRun() {
     window.__farRoverMotionLog = renderer._motionLog;
     console.log('MOTION_STATS', JSON.stringify(stats));
   }
-  previousRunEndTime = Date.now();
-  
-  // Save run to log
-  currentRun.endedAt = new Date().toISOString();
-  currentRun.durationSeconds = Math.round((previousRunEndTime - runStartTime) / 1000);
-  currentRun.ticks = gameState.tick;
-  currentRun.outcome = gameState.outcome;
-  currentRun.endReason = gameState.endReason;
-  currentRun.tilesScanned = gameState.tilesScanned;
-  currentRun.cargo = gameState.cargo;
-  currentRun.batteryAtEnd = gameState.battery;
-  currentRun.autoPauses = autoPauseCount;
-  
-  if (gameState.uplink.used) {
-    currentRun.uplink = {
-      tick: gameState.uplink.tick,
-      slot: gameState.uplink.slot + 1,
-      before: formatRuleForLog(gameState.uplink.before),
-      after: formatRuleForLog(gameState.uplink.after)
-    };
-  }
-  
+  persistCurrentRun();
   showEndScreen();
 }
 
@@ -1810,17 +1843,9 @@ function showFullTrace() {
 }
 
 function saveCurrentRun() {
-  if (!currentRun) return;
-  
-  // Update why note
   const whyInput = document.getElementById('why-note');
-  if (whyInput) {
-    currentRun.whyNote = whyInput.value;
-  }
-  
-  log.currentSession.runs.push(currentRun);
-  saveLog(log);
-  currentRun = null;
+  if (whyInput && currentRun) currentRun.whyNote = whyInput.value;
+  persistCurrentRun();
 }
 
 // === LOG SCREEN ===
@@ -1831,6 +1856,7 @@ function showLogScreen() {
   
   const session = log.currentSession;
   const runs = session?.runs || [];
+  const otherSessions = (log.sessions || []).filter((s) => s && s.id !== session?.id && (s.runs?.length || s.label));
   
   // Calculate voluntary reruns
   let voluntaryReruns = 0;
@@ -1849,6 +1875,7 @@ function showLogScreen() {
       <div class="log-header glass-panel">
         <h2>Run Log</h2>
         <span class="session-id">Session: ${session?.id || 'None'} ${session?.label ? `(${session.label})` : ''}</span>
+        ${otherSessions.length ? `<p class="stale-sessions">Older saved sessions (not this tester): ${otherSessions.map((s) => `${s.id}${s.label ? ` · ${s.label}` : ''}`).join('; ')}</p>` : ''}
       </div>
       
       <div class="log-summary glass-panel">
@@ -2143,7 +2170,7 @@ export async function prepareHostedScout() {
   if (!rules.some((r) => r && r.condition && r.action)) {
     applyHostedNotifyPreset();
   }
-  if (!log.currentSession) startNewSession('v08-scout');
+  startNewSession('v08-scout');
 }
 
 export { showOperateView, updateOperateView, pause as pauseOperate, setSpeed as setOperateSpeed, togglePause as toggleOperatePause };

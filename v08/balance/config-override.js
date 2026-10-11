@@ -34,18 +34,6 @@ const SWEEP_KEYS = [
 
 export function expandOverrides(overrides = {}) {
   const o = { ...overrides };
-  if (o.deepIceTilesFromStartStorage != null && o.commandRangeRadius == null) {
-    // The live sim places Deep Ice on the command-range ring, not the
-    // documented ~22-tile field. Map the designer-facing distance onto that ring
-    // so a value of 22 keeps today's placement (~14 tiles from the habitat).
-    o.commandRangeRadius = Math.max(
-      4,
-      Math.round(
-        o.deepIceTilesFromStartStorage
-        * (DEFAULTS.commandRangeRadius / DEFAULTS.deepIceTilesFromStartStorage),
-      ),
-    );
-  }
   if (o.solSecondsAt1x != null) {
     const sol = o.solSecondsAt1x;
     if (o.daySecondsAt1x == null) {

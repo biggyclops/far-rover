@@ -85,6 +85,7 @@ export function bindHud(root, game, hooks = {}) {
   $('#btn-recall')?.addEventListener('click', () => { hooks.onRecall?.(); });
   $('#btn-land-crew')?.addEventListener('click', () => { hooks.onLandCrew?.(); });
   $('#btn-play-again')?.addEventListener('click', () => { window.location.reload(); });
+  $('#exp-view-trace')?.addEventListener('click', () => { hooks.onViewTrace?.(); });
 
   function refreshButtons() {
     const speed = game.state.speed;
@@ -189,16 +190,36 @@ export function bindHud(root, game, hooks = {}) {
     if (toast) {
       const msg = game.state.toast?.text || '';
       const kind = game.state.toast?.kind || '';
-      toast.textContent = msg;
+      const key = `${kind}|${msg}`;
+      if (toast.dataset.key !== key) {
+        toast.dataset.key = key;
+        toast.replaceChildren();
+        if (msg) toast.append(document.createTextNode(msg));
+        if (kind === 'scout-result') {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = 'View trace';
+          btn.addEventListener('click', () => hooks.onViewTrace?.());
+          toast.append(btn);
+        }
+      }
       toast.classList.toggle('show', toastOn);
       toast.classList.toggle('ice-confirm', kind === 'ice-confirm');
       toast.classList.toggle('trace-ice', kind === 'trace-ice');
+      toast.classList.toggle('has-action', kind === 'scout-result');
     }
     const banner = $('#goal-banner');
     if (banner) {
       banner.textContent = game.goalBanner();
-      banner.hidden = toastOn;
+      banner.hidden = toastOn && game.state.toast?.kind !== 'scout-result';
     }
+    const deficit = $('#power-alert');
+    if (deficit) {
+      const on = game.powerDeficit();
+      deficit.hidden = !on;
+      deficit.textContent = 'Power deficit: build solar';
+    }
+    syncExpeditionPanel();
     syncAfford();
     const exp = game.state.expedition;
     const buildScout = $('#btn-build-scout');
@@ -294,6 +315,81 @@ export function bindHud(root, game, hooks = {}) {
       }
     }
     refreshButtons();
+  }
+
+  function statusLabel(status) {
+    if (status === 'lost') return 'Lost';
+    if (status === 'stuck') return 'Stuck';
+    if (status === 'returned') return 'Returned';
+    if (status === 'running') return 'Running';
+    return 'Scout';
+  }
+
+  function syncExpeditionPanel() {
+    const panel = $('#expedition-panel');
+    if (!panel) return;
+    const exp = game.state.expedition;
+    const show = !!(exp.launched);
+    panel.hidden = !show;
+    if (!show) return;
+    const status = $('#exp-status');
+    if (status) status.textContent = `Scout: ${statusLabel(exp.scoutStatus)}`;
+    const log = $('#exp-log');
+    if (log) {
+      const lines = (exp.log || []).slice(-10);
+      log.replaceChildren();
+      for (const row of lines) {
+        const li = document.createElement('li');
+        li.textContent = row.text;
+        if (row.kind) li.dataset.kind = row.kind;
+        log.append(li);
+      }
+    }
+    drawExpeditionMini(exp.paper);
+  }
+
+  function drawExpeditionMini(paper) {
+    const canvas = $('#exp-minimap');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.fillStyle = '#101216';
+    ctx.fillRect(0, 0, w, h);
+    const cols = 12;
+    const rows = 13;
+    const tw = w / cols;
+    const th = h / rows;
+    const revealed = new Set((paper?.revealed || []).map((p) => `${p.col},${p.row}`));
+    ctx.fillStyle = '#2a3038';
+    for (const key of revealed) {
+      const [c, r] = key.split(',').map(Number);
+      ctx.fillRect(c * tw, r * th, tw - 1, th - 1);
+    }
+    ctx.strokeStyle = C.playerAccent;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const path = paper?.path || [];
+    path.forEach((p, i) => {
+      const x = (p.col + 0.5) * tw;
+      const y = (p.row + 0.5) * th;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    if (path.length) ctx.stroke();
+    ctx.fillStyle = C.warningNotify;
+    for (const p of paper?.pings || []) {
+      ctx.beginPath();
+      ctx.arc((p.col + 0.5) * tw, (p.row + 0.5) * th, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (path.length) {
+      const last = path[path.length - 1];
+      ctx.fillStyle = '#E8F2F6';
+      ctx.beginPath();
+      ctx.arc((last.col + 0.5) * tw, (last.row + 0.5) * th, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   return { sync };

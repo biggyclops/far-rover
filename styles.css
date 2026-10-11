@@ -443,6 +443,16 @@ button:disabled {
   font-size: 1rem;
   padding: 12px 40px;
 }
+.launch-why {
+  align-self: center;
+  color: var(--warn, #3FD8FF);
+  font-size: 0.85rem;
+}
+.battery-max-hint {
+  margin-left: 6px;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #9aa);
+}
 
 /* === OPERATE VIEW === */
 .operate-view {
@@ -1811,6 +1821,12 @@ button:disabled {
 .session-id {
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+.stale-sessions {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
 }
 
 .log-summary {

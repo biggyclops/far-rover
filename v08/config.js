@@ -11,7 +11,7 @@ export const CONFIG = {
   maxZoom: 2,
   unitClickRadius: 36, // world px; ~36 CSS px at default zoom so a hauler is easy to click
   sourcePixelsPerTile: 128,
-  commandRangeRadius: 14, // Proposed (Game Designer) — Deep Ice sits on this ring toward the expedition
+  commandRangeRadius: 14, // Proposed (Game Designer) — command ring; Deep Ice sits ~8 tiles past it
   commandRangeCosmetic: false,
 
   // Habitat footprint is 2x2. Anchor is the north-west tile.
@@ -74,6 +74,7 @@ export const CONFIG = {
   solSecondsAt1x: 6 * 60, // Proposed (Game Designer) — 6 minutes at 1x
   daySecondsAt1x: 4 * 60, // Proposed (Game Designer)
   nightSecondsAt1x: 2 * 60, // Proposed (Game Designer)
+  startDaylightRemainingSec: 90, // Proposed (Game Designer) — Sol 1 starts in the afternoon; first night at 1:30
   speeds: [0, 1, 4, 16], // pause, 1x, 4x, 16x
   nightIsWholeBoardTint: true, // Proposed (Game Designer)
 
@@ -119,6 +120,7 @@ export const CONFIG = {
   tunnelHubCostRegolith: 20, // Proposed (Game Designer)
   tunnelHubBuildSeconds: 10, // Proposed (Game Designer)
   tunnelHubCount: 2,
+  tunnelHubMinSeparationTiles: 6, // Proposed (Game Designer) — no 1-tile corridors
   hubIceCapacity: 20, // Proposed (Game Designer) — transit buffer at each hub
   hubRegolithCapacity: 20, // Proposed (Game Designer)
   digSecondsPerTilePerRover: 24, // Proposed (Game Designer) — rovers stack
@@ -143,7 +145,7 @@ export const CONFIG = {
   // --- Deep Ice node (M3/M4) ---
   deepIceTilesFromStartStorage: 22, // Proposed (Game Designer) — ~22 from start storage
   deepIceAmount: 200, // Proposed (Game Designer)
-  // First ice confirm unlocks this node at the edge of command range toward the expedition site.
+  // First ice confirm unlocks this node ~22 tiles from the habitat (8 beyond the command ring).
   expeditionTileX: 37, // Proposed (Game Designer) — map-edge marker beyond the command ring
   expeditionTileY: 7,
 

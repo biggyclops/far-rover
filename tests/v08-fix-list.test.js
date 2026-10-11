@@ -175,14 +175,12 @@ function scriptedHaul(game) {
 {
   const g = createGame();
   g.selectUnits([g.state.units[0].id]);
-  const far = g.placeBuilding('storage', 2, 2);
-  assert.ok(far);
-  g.completeBuilding(far.id);
-  far.ice = 80;
-  assert.equal(g.buildingInCommandRange(far), false);
-  assert.ok(g.storedForGoal().ice < 80);
-  assert.equal(g.storedForGoal().ice, g.habitat().ice);
-  console.log('ok  goal ice ignores out-of-range storage');
+  assert.equal(g.canPlace('storage', 2, 2), false);
+  const near = g.placeBuilding('storage', 21, 18);
+  assert.ok(near);
+  g.completeBuilding(near.id);
+  assert.equal(g.buildingInCommandRange(near), true);
+  console.log('ok  storage-beside-ice exploit: out-of-range storage cannot be placed');
 }
 
 {
@@ -265,7 +263,7 @@ function scriptedHaul(game) {
   });
   advance(g, 2.1);
   const last = g.state.expedition.log[g.state.expedition.log.length - 1];
-  assert.equal(last.text, 'Trace ice at D11');
+  assert.match(last.text, /Trace ice only/);
   assert.equal(last.kind, 'trace-ice');
   assert.equal(last.label, 'Trace ice');
   assert.equal(g.state.deepIce.unlocked, false);
@@ -299,6 +297,9 @@ function scriptedHaul(game) {
   assert.equal(C.noRegolithMineRadiusTiles, 4);
   assert.equal(C.strandedCrawlTilesPerSecond, 0.25);
   assert.deepEqual(C.confirmDepositTiles, ['F2', 'I2']);
+  assert.equal(C.startDaylightRemainingSec, 90);
+  assert.equal(C.tunnelHubMinSeparationTiles, 6);
+  assert.equal(C.deepIceTilesFromStartStorage, 22);
   console.log('ok  new config keys keep economy defaults');
 }
 
@@ -346,7 +347,136 @@ function setupHomeTunnel(game) {
 }
 
 {
-  const r = runStrategy('tunnel-1-digger', {}, { maxSeconds: 15 * 60 });
+  const g = createGame();
+  assert.equal(g.isDay(), true);
+  advance(g, 89);
+  assert.equal(g.isDay(), true);
+  advance(g, 2);
+  assert.equal(g.isDay(), false);
+  console.log('ok  Sol 1 starts with 90s of daylight');
+}
+
+{
+  const g = createGame();
+  g.selectUnits([g.state.units[0].id]);
+  const first = g.placeBuilding('tunnel-hub', 14, 21);
+  assert.ok(first);
+  g.completeBuilding(first.id);
+  assert.equal(g.canPlace('tunnel-hub', 17, 21), false);
+  assert.equal(g.canPlace('tunnel-hub', 22, 21), true);
+  console.log('ok  hubs need 6 tiles of separation');
+}
+
+{
+  const g = createGame();
+  const hab = g.habitat();
+  hab.power = 0;
+  const u = g.state.units[0];
+  u.battery = 80;
+  const before = { x: u.x, y: u.y };
+  g.assignOrder([u], { type: 'go', x: u.x + C.tileSize * 3, y: u.y });
+  advance(g, 2);
+  const dist = Math.hypot(u.x - before.x, u.y - before.y);
+  assert.ok(dist > C.tileSize, `hauler still drives at 0 power, moved ${dist.toFixed(1)}`);
+  console.log('ok  0 power does not freeze haulers');
+}
+
+{
+  const g = createGame();
+  const shallow = g.tileAt(C.shallowIceTileX, C.shallowIceTileY);
+  shallow.type = TILE.ICE_MINED;
+  shallow.iceRemaining = 0;
+  assert.match(g.goalBanner(), /DEEP ice deposit/);
+  g.queueNotifyPing({ confirmed: false, kind: 'trace-ice', text: 'x' });
+  advance(g, 2.1);
+  const steps = g.objectiveProgress();
+  assert.equal(steps.buildScout, true);
+  assert.equal(g.state.deepIce.unlocked, false);
+  assert.match(g.goalBanner(), /DEEP ice deposit/);
+  console.log('ok  Notify step ticks on the first ping');
+}
+
+{
+  const g = createGame();
+  const u = g.state.units[0];
+  u._emptyAfterDrop = true;
+  g.assignOrder([u], {
+    type: 'haul',
+    sourceTx: C.shallowIceTileX,
+    sourceTy: C.shallowIceTileY,
+    destBuildingId: g.habitat().id,
+  });
+  assert.equal(!!u._emptyAfterDrop, false);
+  console.log('ok  assignOrder clears _emptyAfterDrop');
+}
+
+{
+  const g = createGame();
+  const ice = g.tileCenter(C.shallowIceTileX, C.shallowIceTileY);
+  g.selectUnits(g.state.units.filter((u) => u.kind === 'hauler').map((u) => u.id));
+  const ok = g.issueContextual(ice.x, ice.y);
+  assert.equal(ok, true);
+  const hauling = g.state.units.filter((u) => u.kind === 'hauler' && u.order?.type === 'haul');
+  assert.equal(hauling.length, 2);
+  console.log('ok  right-click orders every selected hauler');
+}
+
+{
+  const g = createGame();
+  const u = g.state.units[0];
+  g.selectUnits([u.id]);
+  const ice = g.tileCenter(C.shallowIceTileX, C.shallowIceTileY);
+  assert.equal(g.issueContextual(ice.x, ice.y), true);
+  assert.equal(u.order?.type, 'haul');
+  const solar = g.placeBuilding('solar', C.habitatTileX - 4, C.habitatTileY + 4, true);
+  assert.ok(solar, 'solar places for construction resume');
+  assert.equal(u.order?.type, 'build');
+  assert.equal(u.resumeOrder?.type, 'haul');
+  assert.notEqual(g.unitTask(u), 'idle');
+  g.completeBuilding(solar.id);
+  advance(g, 1);
+  assert.equal(u.order?.type, 'haul', 'hauler resumes the haul loop after the build');
+  assert.notEqual(g.unitCard(u).task, 'idle');
+  console.log('ok  hauler resumes haul after construction and card is not idle');
+}
+
+{
+  const g = createGame();
+  g.markExpeditionLaunched({ hasNotifyRule: true });
+  g.endExpedition({ line: 'Returned, trace ice only', status: 'returned' });
+  assert.equal(g.state.toast?.kind, 'scout-result');
+  assert.match(g.state.toast.text, /Returned/);
+  g.markExpeditionLaunched({ hasNotifyRule: true });
+  assert.equal(g.state.toast, null, 'new launch does not replay the stale result toast');
+  assert.equal(g.state.expedition.pendingPings.length, 0);
+  assert.equal(g.state.expedition.scoutStatus, 'running');
+  console.log('ok  new expedition clears the stale scout-result toast');
+}
+
+{
+  const state = Sim.createInitialState(
+    [Sim.SENSORS.SPECTRAL, Sim.SENSORS.DISTANCE],
+    [
+      { condition: { type: Sim.CONDITIONS.ORE_NEXT_TO }, action: { type: Sim.ACTIONS.GO_TO_ORE } },
+      { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
+      { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.WAIT } },
+    ],
+  );
+  state.col = 8;
+  state.row = 2;
+  state.facing = Sim.DIRECTIONS.NORTH;
+  const first = runHostedScoutTick(state);
+  assert.equal(first.tickRecord.actionResult?.drilled, true);
+  assert.equal(state.iceConfirmed, false);
+  assert.equal(state.drilled[1][8], false, 'I2 stays ore after the sample');
+  const second = runHostedScoutTick(state);
+  assert.equal(state.iceConfirmed, true);
+  assert.equal(second.tickRecord.actionResult?.confirmedIce, true);
+  console.log('ok  Go to ore drills I2 then Notify confirms on a later tick');
+}
+
+{
+  const r = runStrategy('tunnel-1-digger', {}, { maxSeconds: 20 * 60 });
   assert.equal(r.won, true, `1-digger should win, ice=${r.ice} t=${r.time}`);
   assert.ok(r.ice + 1e-6 >= 180, `1-digger ice ${r.ice}`);
   assert.equal(r.logistics, 'tunnel');

@@ -151,6 +151,62 @@ button:disabled {
 #toast.show {
   opacity: 1;
 }
+#toast.has-action {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#toast.has-action button {
+  pointer-events: auto;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+#power-alert {
+  position: fixed;
+  top: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 5px 12px;
+  border-radius: 4px;
+  background: rgba(8, 8, 10, 0.88);
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-size: 12px;
+}
+#power-alert[hidden] { display: none !important; }
+#expedition-panel {
+  position: fixed;
+  top: 64px;
+  right: 12px;
+  z-index: 4;
+  width: 188px;
+  padding: 8px;
+  background: rgba(8, 8, 10, 0.88);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--text);
+  font-size: 11px;
+}
+#expedition-panel[hidden] { display: none !important; }
+#expedition-panel .exp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+#expedition-panel canvas {
+  width: 168px;
+  height: 168px;
+  display: block;
+  background: #101216;
+}
+#exp-log {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  max-height: 120px;
+  overflow: auto;
+}
 #toast.ice-confirm {
   border-color: var(--accent);
   color: var(--accent);
