@@ -124,15 +124,19 @@ export function bindHud(root, game, hooks = {}) {
     const exp = game.state.expedition;
     const buildScout = $('#btn-build-scout');
     const hintOn = game.showIceHint();
+    const scoutHint = game.showScoutHint();
     if (buildScout) {
       buildScout.hidden = !!exp.launched;
-      buildScout.classList.toggle('hint-pulse', hintOn && !exp.launched);
+      buildScout.classList.toggle('hint-pulse', scoutHint && !exp.launched);
     }
     const iceHint = $('#ice-hint');
-    if (iceHint) iceHint.hidden = !hintOn;
+    if (iceHint) {
+      iceHint.hidden = !hintOn;
+      iceHint.textContent = game.iceHintText();
+    }
     const arrow = $('#scout-hint-arrow');
     if (arrow) {
-      arrow.hidden = !hintOn || !buildScout || buildScout.hidden;
+      arrow.hidden = !scoutHint || !buildScout || buildScout.hidden;
       if (!arrow.hidden && buildScout) {
         const frame = Math.floor((game.state.time * 7) % 4);
         const next = `../assets/v08/art/hint-arrow-${frame}.png`;

@@ -223,18 +223,59 @@ export function createRenderer(canvas, assets, game) {
 
   function drawUnitLabel(u, z) {
     const label = game.unitLabel(u);
-    if (!label) return;
     const s = worldToScreen(u.x, u.y);
+    if (label) {
+      ctx.save();
+      ctx.font = `600 ${Math.max(9, 10 * z)}px "IBM Plex Mono", ui-monospace, monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      const y = s.y - C.tileSize * z * 0.42;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(8, 8, 10, 0.75)';
+      ctx.strokeText(label, s.x, y);
+      ctx.fillStyle = u.status === 'blocked' ? C.warningNotify : '#f2f0ec';
+      ctx.fillText(label, s.x, y);
+      ctx.restore();
+    }
+    const low = u.kind === 'hauler' && u.battery <= C.haulerBattery * 0.2 + 1e-6;
+    if (low) {
+      const icon = img(u.battery <= 0 ? 'icon-power' : 'icon-power-orange') || img('icon-power');
+      const size = 16 * Math.max(1, z);
+      if (icon) ctx.drawImage(icon, s.x + C.tileSize * z * 0.16, s.y - C.tileSize * z * 0.52, size, size);
+    }
+  }
+
+  function drawHaulRoutes(z) {
     ctx.save();
-    ctx.font = `600 ${Math.max(9, 10 * z)}px "IBM Plex Mono", ui-monospace, monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    const y = s.y - C.tileSize * z * 0.42;
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(8, 8, 10, 0.75)';
-    ctx.strokeText(label, s.x, y);
-    ctx.fillStyle = u.status === 'blocked' ? C.warningNotify : '#f2f0ec';
-    ctx.fillText(label, s.x, y);
+    ctx.strokeStyle = C.playerAccent;
+    ctx.lineWidth = Math.max(1.5, 2 * z);
+    ctx.setLineDash([7 * z, 5 * z]);
+    ctx.globalAlpha = 0.88;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const u of game.state.units) {
+      if (u.kind !== 'hauler') continue;
+      const o = (u.order && u.order.type === 'haul')
+        ? u.order
+        : (u.resumeOrder && u.resumeOrder.type === 'haul')
+          ? u.resumeOrder
+          : (u.lastOrder && u.lastOrder.type === 'haul' && u.order?.type === 'charge')
+            ? u.lastOrder
+            : null;
+      if (!o || o.sourceTx == null) continue;
+      const from = worldToScreen(u.x, u.y);
+      const src = worldToScreen((o.sourceTx + 0.5) * C.tileSize, (o.sourceTy + 0.5) * C.tileSize);
+      const dest = o.destBuildingId ? game.buildingById(o.destBuildingId) : null;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(src.x, src.y);
+      if (dest) {
+        const n = dest.type === 'vault' ? 3 : 2;
+        const ds = worldToScreen((dest.tx + n / 2) * C.tileSize, (dest.ty + n / 2) * C.tileSize);
+        ctx.lineTo(ds.x, ds.y);
+      }
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -562,6 +603,7 @@ export function createRenderer(canvas, assets, game) {
       for (const u of game.state.units) {
         if (game.state.selectedIds.includes(u.id)) drawSelection(u, z);
       }
+      drawHaulRoutes(z);
       for (const u of game.state.units) drawUnitLabel(u, z);
       drawExpedition(z);
       drawIceMarkers();
