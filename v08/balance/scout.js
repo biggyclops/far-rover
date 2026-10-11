@@ -6,11 +6,13 @@
 import * as Sim from '../engine.js';
 import { runHostedScoutTick } from '../hosted-tick.js';
 
+// Paper-map search: N=20 loops at F12 (start/restore battery is 20).
+// N=5..8 confirm F2/I2; 8 is the highest. Confirms F2 on tick 17.
 export const ICE_NOTIFY_PROGRAM = {
   sensors: ['distance', 'spectral'],
   rules: [
     { condition: { type: 'crater_in_front' }, action: { type: 'sidestep' } },
-    { condition: { type: 'battery_below', n: 20 }, action: { type: 'return_charge' } },
+    { condition: { type: 'battery_below', n: 8 }, action: { type: 'return_charge' } },
     { condition: { type: 'on_ore' }, action: { type: 'notify' } },
     { condition: { type: 'always' }, action: { type: 'explore' } },
   ],
