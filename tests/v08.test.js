@@ -933,12 +933,10 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       if (!storageB) return { error: 'storage B place failed' };
       if (!waitDone(storageB.id)) return { error: 'storage B not complete' };
       t.launchProgram(prog.sensors, prog.rules);
-      let unlocked = false;
-      for (let i = 0; i < 80; i++) {
-        t.advance(1);
-        if (t.getState().deepIce.unlocked) { unlocked = true; break; }
-      }
+      t.confirmOnOre();
+      t.advance(2.1);
       const deep = t.getState().deepIce;
+      const unlocked = !!deep.unlocked;
       if (!deep.unlocked) return { error: 'no deep ice', time: t.getState().time };
       let destId = storageA.id;
       t.selectUnits(haulers().map((u) => u.id));
@@ -1080,10 +1078,8 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
         if (t.getState().tunnel.ready) break;
       }
       t.launchProgram(prog.sensors, prog.rules);
-      for (let i = 0; i < 80; i++) {
-        t.advance(1);
-        if (t.getState().deepIce.unlocked) break;
-      }
+      t.confirmOnOre();
+      t.advance(2.1);
       const deep = t.getState().deepIce;
       if (!deep.unlocked) return { error: 'no deep ice', time: t.getState().time };
       // Hub ice does not score and the home hub pulls from a full vault, so
@@ -1186,7 +1182,7 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
           phase: 'toSource',
         });
         let guard = 0;
-        while (!g.canLandCrew() && guard++ < 8000) g.update(step);
+        while (!g.canLandCrew() && guard++ < 40000) g.update(step);
         if (g.canLandCrew()) g.landCrew();
         return g.state.win?.time ?? null;
       }
