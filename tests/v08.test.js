@@ -1172,7 +1172,9 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       function run(step) {
         const g = createGame();
         const storage = g.placeBuilding('storage', 22, 21, false);
+        const storageB = g.placeBuilding('storage', 24, 18, false);
         g.completeBuilding(storage.id);
+        if (storageB) g.completeBuilding(storageB.id);
         g.unlockDeepIce();
         const deep = g.state.deepIce;
         const haulers = g.state.units.filter((u) => u.kind === 'hauler');
