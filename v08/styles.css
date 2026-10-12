@@ -260,10 +260,26 @@ button:disabled {
 
 body.scout-open .orbital-left {
   top: 52px;
-  max-height: calc(100% - 360px);
+  max-height: calc(100% - 372px);
+  overflow: auto;
 }
 body.scout-open .orbital-ops .rules-panel {
   order: -1;
+  padding: 8px;
+  overflow: visible;
+}
+body.scout-open .orbital-ops .rules-panel h3 {
+  margin-bottom: 6px;
+}
+body.scout-open .live-rule-reason {
+  font-size: 0.76rem;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  line-height: 1.25;
+}
+body.scout-open .rule-line {
+  padding: 5px 8px;
+  font-size: 0.75rem;
 }
 body.scout-open .orbital-left .sensor-layers-panel {
   display: none;
@@ -274,6 +290,13 @@ body.scout-open .live-sensors {
 }
 body.scout-open .orbital-ops .info-panel {
   overflow: visible;
+  width: 214px;
+}
+body.scout-open .rover-cam {
+  right: 242px;
+}
+body.scout-open .live-sensor span {
+  white-space: nowrap;
 }
 body.scout-open .orbital-ops .sensors-panel {
   overflow: visible;
@@ -302,12 +325,17 @@ body.scout-open #rover-cam-canvas {
 body.scout-open .tracking-strip {
   display: none;
 }
+body.scout-open #hosted-notify-ping {
+  margin-top: 6px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+}
 body.scout-open #tutorial-card {
   top: auto;
   left: 268px;
   right: auto;
   bottom: 16px;
-  width: min(420px, calc(100vw - 268px - 548px));
+  width: min(420px, calc(100vw - 268px - 560px));
 }
 
 #objectives {

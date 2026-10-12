@@ -236,6 +236,7 @@ test.describe('Far Rover v0.8 tutorial', () => {
 
   test('live panel highlights the firing rule, matches the starter trace, and narrates events', async ({ page }) => {
     test.setTimeout(60000);
+    await page.setViewportSize({ width: 1280, height: 800 });
     await ready(page, TUTORIAL);
     await page.evaluate(() => window.__v08Test.tutorial.jump(10));
     await page.click('#tutorial-show');
@@ -306,7 +307,7 @@ test.describe('Far Rover v0.8 tutorial', () => {
       await page.click('.speed-btn[data-speed="pause"]');
       await page.waitForFunction(() => window.__orbitalRenderer?.ready && window.__orbitalRenderer?.lunar, null, { timeout: 15000 });
       await page.evaluate(() => {
-        window.__v08Test.tickScout(1);
+        window.__v08Test.tickScout(9);
         window.__v08Test.syncHud();
       });
       await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
@@ -392,7 +393,7 @@ test.describe('Far Rover v0.8 tutorial', () => {
           ['tutorial vs rover-cam', card, cam],
         ];
         const overlaps = pairs.filter(([, a, b]) => overlap(a, b)).map(([name]) => name);
-        const clips = ['#tutorial-card', '#live-sensors', '#live-battery', '#live-front', '#live-ore', '#live-cam', '#minimap', '#minimap-canvas', '#live-rule-reason']
+        const clips = ['#tutorial-card', '#live-sensors', '#live-battery', '#live-front', '#live-ore', '#live-cam', '#minimap', '#minimap-canvas', '#live-rule-reason', '.rule-display .rule-line:last-child']
           .map(clipped)
           .filter(Boolean);
         const camCanvas = document.getElementById('rover-cam-canvas');
