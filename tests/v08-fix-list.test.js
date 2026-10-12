@@ -9,7 +9,8 @@ import {
 } from '../v08/hosted-tick.js';
 import { explainScoutResult } from '../v08/scout-explain.js';
 import { runStrategy } from '../v08/balance/harness.js';
-import { nearestLegalDrop } from '../v08/balance/placements.js';
+import { nearestLegalDrop, listTunnelPlans, listStorageLayouts } from '../v08/balance/placements.js';
+import { runProgram } from '../v08/balance/scout-run.js';
 
 function advance(game, seconds, step = 1 / 60) {
   let left = seconds;
@@ -301,7 +302,8 @@ function scriptedHaul(game) {
   assert.deepEqual(C.confirmDepositTiles, ['F2', 'I2']);
   assert.equal(C.startDaylightRemainingSec, 90);
   assert.equal(C.tunnelHubMinSeparationTiles, 6);
-  assert.equal(C.deepIceTilesFromStartStorage, 22);
+  assert.equal(C.deepIceTilesFromStartStorage, 21);
+  assert.equal(C.haulerOffRoadSpeedMult, 0.55);
   console.log('ok  new config keys keep economy defaults');
 }
 
@@ -596,6 +598,8 @@ function runUntilOutcome(sensors, rules, place) {
   const g = createGame();
   g.unlockDeepIce();
   const deep = g.state.deepIce;
+  assert.equal(deep.tx, 36);
+  assert.equal(deep.ty, 7);
   const hx = C.habitatTileX + 1;
   const hy = C.habitatTileY + 1;
   const euclid = Math.hypot(deep.tx - hx, deep.ty - hy);
@@ -620,6 +624,82 @@ function runUntilOutcome(sensors, rules, place) {
   assert.ok(Number.isFinite(drop.distance), 'expected a legal in-range storage or hub');
   assert.ok(drop.distance >= 10, `nearest legal drop is ${drop.distance.toFixed(2)} tiles from Deep Ice (need >= 10)`);
   console.log(`ok  nearest legal ${drop.type} at (${drop.at.tx},${drop.at.ty}) is ${drop.distance.toFixed(2)} tiles from Deep Ice`);
+}
+
+{
+  const g = createGame();
+  const moved = [
+    [9, 5, TILE.CRATER_S],
+    [33, 13, TILE.CRATER_S],
+    [4, 29, TILE.CRATER_S],
+    [31, 32, TILE.CRATER_S],
+    [13, 20, TILE.CRATER_S],
+    [28, 26, TILE.PIT],
+  ];
+  const vacated = [
+    [8, 8],
+    [32, 10],
+    [6, 28],
+    [30, 32],
+    [10, 22],
+    [28, 28],
+  ];
+  for (const [tx, ty, type] of moved) {
+    const t = g.tileAt(tx, ty);
+    assert.equal(t.type, type, `moved hazard at (${tx},${ty}) should be ${type}`);
+  }
+  for (const [tx, ty] of vacated) {
+    const t = g.tileAt(tx, ty);
+    assert.equal(t.type, TILE.GROUND, `old hazard at (${tx},${ty}) should be driveable ground`);
+  }
+
+  g.unlockDeepIce();
+  const storages = listStorageLayouts(g).filter((l) => l.id !== 'auto');
+  assert.ok(storages.length, 'at least one legal storage layout remains');
+  const nearest = storages.find((l) => l.id === 'nearest-ice');
+  assert.ok(nearest, 'nearest-ice storage layout still places');
+  for (const s of nearest.storages) {
+    assert.equal(g.canPlace('storage', s.tx, s.ty), true, `storage (${s.tx},${s.ty}) blocked`);
+  }
+
+  const plans = listTunnelPlans(g).filter((p) => p.far && p.home);
+  assert.ok(plans.length, 'at least one legal hub corridor remains');
+  const corr = plans.find((p) => String(p.id).startsWith('corr-')) || plans[0];
+  assert.ok(g.canPlace('tunnel-hub', corr.far.tx, corr.far.ty), `far hub (${corr.far.tx},${corr.far.ty}) blocked`);
+  assert.ok(g.canPlace('tunnel-hub', corr.home.tx, corr.home.ty), `home hub (${corr.home.tx},${corr.home.ty}) blocked`);
+  const homeHub = g.placeBuilding('tunnel-hub', corr.home.tx, corr.home.ty, false);
+  const farHub = g.placeBuilding('tunnel-hub', corr.far.tx, corr.far.ty, false);
+  assert.ok(homeHub && farHub, 'corridor hubs place');
+  g.completeBuilding(homeHub.id);
+  g.completeBuilding(farHub.id);
+  const tiles = g.startDigCorridor();
+  assert.ok(tiles?.length, 'hub corridor still connects');
+  for (const tile of tiles) {
+    const t = g.tileAt(tile.tx, tile.ty);
+    assert.ok(t.type !== TILE.CRATER_S && t.type !== TILE.PIT, `corridor tile (${tile.tx},${tile.ty}) hits a moved crater`);
+  }
+  console.log(`ok  moved craters leave nearest-ice and ${corr.id} corridor (${tiles.length} tiles) open`);
+}
+
+{
+  const sensors = [Sim.SENSORS.DISTANCE, Sim.SENSORS.SPECTRAL];
+  const fourRule = [
+    { condition: { type: Sim.CONDITIONS.CRATER_IN_FRONT }, action: { type: Sim.ACTIONS.SIDESTEP } },
+    { condition: { type: Sim.CONDITIONS.BATTERY_BELOW, n: 8 }, action: { type: Sim.ACTIONS.RETURN_CHARGE } },
+    { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } },
+  ];
+  const hostedStarter = [
+    { condition: { type: Sim.CONDITIONS.CRATER_IN_FRONT }, action: { type: Sim.ACTIONS.SIDESTEP } },
+    { condition: { type: Sim.CONDITIONS.BATTERY_BELOW, n: 12 }, action: { type: Sim.ACTIONS.RETURN_CHARGE } },
+    { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
+    { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } },
+  ];
+  const confirm = runProgram(sensors, fourRule, 200, { resumeHazards: true });
+  assert.equal(confirm.confirmed, true, `4-rule confirm path should still reach F2/I2 (cell=${confirm.cell} outcome=${confirm.outcome})`);
+  const starter = runProgram(sensors, hostedStarter, 200, { resumeHazards: true });
+  assert.equal(starter.confirmed, false, `starter program must still not unlock Deep Ice (cell=${starter.cell})`);
+  console.log(`ok  scout 4-rule confirms at ${confirm.cell} tick ${confirm.tick}; starter stays unconfirmed at ${starter.cell} tick ${starter.tick}`);
 }
 
 {
