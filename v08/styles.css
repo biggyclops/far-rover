@@ -396,7 +396,7 @@ body.scout-open #tutorial-card {
 #ice-hint {
   position: fixed;
   right: 18px;
-  bottom: 78px;
+  bottom: calc(var(--hud-bottom-h, 72px) + 8px);
   z-index: 5;
   max-width: 340px;
   padding: 8px 12px;
@@ -666,7 +666,7 @@ button.unaffordable:hover { border-color: rgba(255, 255, 255, 0.18); }
 #unit-card {
   position: fixed;
   left: 14px;
-  bottom: 100px;
+  bottom: calc(var(--hud-bottom-h, 72px) + 28px);
   z-index: 5;
   min-width: 220px;
   padding: 8px 12px;
@@ -910,7 +910,7 @@ body.scout-open .battery-n {
     padding: 4px 8px;
   }
   .orders, .builds {
-    flex: 1 1 100%;
+    flex: 1 0 100%;
     min-width: 0;
     max-width: 100%;
     width: 100%;

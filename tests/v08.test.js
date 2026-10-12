@@ -831,7 +831,7 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
       await ready(page);
       await page.evaluate(() => window.__v08Test.syncHud());
       const snap = await page.evaluate(() => {
-        const ids = ['order-go', 'build-storage', 'print-hauler', 'btn-build-scout'];
+        const ids = ['order-go', 'build-storage', 'build-vault', 'print-hauler', 'btn-build-scout'];
         const bar = document.getElementById('hud-bottom');
         const br = bar.getBoundingClientRect();
         const buttons = {};
@@ -868,6 +868,30 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
         fullPage: true,
       });
     }
+
+    await page.setViewportSize({ width: 800, height: 800 });
+    await page.goto('http://localhost:8080/v08/?debug&tutorial=1');
+    await page.waitForFunction(() => window.__v08Test && window.__v08Test.ready);
+    await page.evaluate(() => {
+      window.__v08Test.tutorial.jump(5);
+      window.__v08Test.syncHud();
+    });
+    const armed = await page.evaluate(() => {
+      const ids = ['build-vault', 'print-hauler', 'btn-build-scout'];
+      const bar = document.getElementById('hud-bottom').getBoundingClientRect();
+      return ids.map((id) => {
+        const r = document.getElementById(id).getBoundingClientRect();
+        return {
+          id,
+          r: Math.round(r.right),
+          b: Math.round(r.bottom),
+          clipped: r.right > bar.right + 1.5 || r.right > innerWidth + 1.5
+            || r.bottom > bar.bottom + 1.5 || r.left < -1.5,
+        };
+      });
+    });
+    expect(armed.filter((b) => b.clipped), `800 storage-armed clip ${JSON.stringify(armed)}`).toEqual([]);
+    await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/toolbar-800-storage-armed.png', fullPage: true });
   });
 
   test('print-hauler and Dig tooltips explain regolith, idle cargo is labeled', async ({ page }) => {

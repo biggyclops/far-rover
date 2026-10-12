@@ -259,7 +259,7 @@ function ensureLunarGround(renderer) {
     x.save();
     x.globalAlpha = 0.42;
     x.filter = 'grayscale(1) contrast(1.08)';
-    x.drawImage(src, 0, sh * 0.62, sw, sh * 0.38, 0, 0, w, h);
+    x.drawImage(src, 0, sh * 0.70, sw, sh * 0.30, 0, 0, w, h);
     x.restore();
   }
   renderer._lunarGround = c;
@@ -277,7 +277,7 @@ function drawLunarSky(ctx, renderer, w, horizon) {
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(sky, 0, 0, sw, sh * 0.62, 0, 0, w, horizon);
+  ctx.drawImage(sky, 0, 0, sw, sh * 0.48, 0, 0, w, Math.max(8, horizon * 0.72));
   ctx.restore();
 }
 
