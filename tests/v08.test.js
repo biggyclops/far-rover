@@ -815,6 +815,56 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/toolbar-fixed.png', fullPage: true });
   });
 
+  test('bottom toolbar fits or wraps so Build Scout is visible from 800 to 1440', async ({ page }) => {
+    for (const size of [
+      { w: 800, h: 800 },
+      { w: 1024, h: 800 },
+      { w: 1280, h: 800 },
+      { w: 1440, h: 900 },
+    ]) {
+      await page.setViewportSize({ width: size.w, height: size.h });
+      await ready(page);
+      await page.evaluate(() => window.__v08Test.syncHud());
+      const snap = await page.evaluate(() => {
+        const ids = ['order-go', 'build-storage', 'print-hauler', 'btn-build-scout'];
+        const bar = document.getElementById('hud-bottom');
+        const br = bar.getBoundingClientRect();
+        const buttons = {};
+        let clipped = false;
+        for (const id of ids) {
+          const el = document.getElementById(id);
+          const r = el.getBoundingClientRect();
+          const hit = r.right > br.right + 1.5 || r.left < br.left - 1.5
+            || r.bottom > br.bottom + 1.5 || r.top < br.top - 1.5
+            || r.right > innerWidth + 1.5 || r.left < -1.5;
+          buttons[id] = {
+            x: Math.round(r.x),
+            y: Math.round(r.y),
+            r: Math.round(r.right),
+            b: Math.round(r.bottom),
+            w: Math.round(r.width),
+            h: Math.round(r.height),
+            clipped: hit,
+          };
+          if (hit) clipped = true;
+        }
+        return {
+          barH: Math.round(br.height),
+          barW: Math.round(br.width),
+          clipped,
+          buttons,
+        };
+      });
+      expect(snap.clipped, `${size.w}x${size.h} toolbar clip ${JSON.stringify(snap.buttons)}`).toBe(false);
+      expect(snap.buttons['btn-build-scout'].w, `${size.w} Build Scout width`).toBeGreaterThan(40);
+      if (size.w >= 1280) expect(snap.barH, `${size.w} bar height`).toBe(72);
+      await page.screenshot({
+        path: `/opt/cursor/artifacts/screenshots/toolbar-fit-${size.w}.png`,
+        fullPage: true,
+      });
+    }
+  });
+
   test('print-hauler and Dig tooltips explain regolith, idle cargo is labeled', async ({ page }) => {
     await ready(page);
     await page.evaluate(() => window.__v08Test.syncHud());
