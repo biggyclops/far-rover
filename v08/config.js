@@ -41,7 +41,7 @@ export const CONFIG = {
 
   // --- Hauler (M1) ---
   haulerSpeedTilesPerSecond: 1, // Proposed (Game Designer)
-  haulerOffRoadSpeedMult: 0.5, // Proposed (Game Designer) — rough ground outside the command ring; sweep 0.5–0.75, ship 0.5 with ring 10
+  haulerOffRoadSpeedMult: 0.5, // Proposed (Game Designer) — 0.55 failed criteria 1 and 2 on the v2 plate (print-1 7:03 > two starters 6:59; 2-digger lead 19.6%); keep 0.5
   haulerCarry: 10, // Proposed (Game Designer)
   haulerBattery: 100, // Proposed (Game Designer)
   haulerDrainPerTileLoaded: 1, // Proposed (Game Designer)
@@ -145,9 +145,9 @@ export const CONFIG = {
   notifyLinkDelaySeconds: 2, // Proposed (Game Designer) — ping on the base map after the link delay
 
   // --- Deep Ice node (M3/M4) ---
-  deepIceTilesFromStartStorage: 22, // Proposed (Game Designer) — ~22 from start storage
+  deepIceTilesFromStartStorage: 21, // Proposed (Game Designer) — ~21 from start storage, resolves to (36,7)
   deepIceAmount: 200, // Proposed (Game Designer)
-  // First ice confirm unlocks this node ~22 tiles from the habitat (8 beyond the command ring).
+  // First ice confirm unlocks this node ~21 tiles from the habitat (11 beyond the command ring).
   expeditionTileX: 37, // Proposed (Game Designer) — map-edge marker beyond the command ring
   expeditionTileY: 7,
 

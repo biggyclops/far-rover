@@ -2,6 +2,73 @@
 
 Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
 
+## Shipped set (2026-10-12, v2 NASA ground): Deep Ice 21 at (36,7), off-road 0.5
+
+Gameplay craters and the south pit move onto Pixel’s v2 plate. Deep Ice sits 21 tiles from start storage and resolves to **(36,7)**. Off-road 0.55 was tried and dropped (criteria 1 and 2 fail). Off-road stays **0.5**. Dig stays 16 s/tile. Tunnel cargo stays 4 tiles/s (4×). Radius stays 10.
+
+Hazards: small craters `(9,5)`, `(33,13)`, `(4,29)`, `(31,32)`, `(22,8)`, `(13,20)`; pits `(12,30)`, `(28,26)`. None of the moves block nearest-ice storage, the corr-10 hub corridor, or the scout’s 4-rule confirm path.
+
+### Off-road 0.55 on this map (dropped)
+
+| Strategy | Layout | Win | Night | Power min |
+|---|---|---:|:---:|---:|
+| Haulers only (2) | nearest-ice | 6:59 | yes | 0 |
+| Haulers + print 1 | nearest-ice | 7:03 | yes | 0 |
+| Haulers + print 2 | nearest-ice | 5:56 | yes | 0 |
+| Tunnel 1 digger | corr-10 | 6:17 | yes | 27 |
+| Tunnel 2 diggers | corr-10 | 4:46 | yes | 18 |
+| Mixed | corr-10 | 6:48 | yes | 0 |
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Print-1 beats two starters | **Fail.** 7:03 vs 6:59 |
+| 2 | 2-digger 20–35% faster than best hauler route | **Fail.** 19.6% (4:46 vs 5:56) |
+| 3 | Every winner hits night | Pass |
+| 4 | Tunnel powerMin < 50 | Pass. 18 |
+| 5 | No win under 4:00 | Pass. 4:46 |
+
+### 1x best-placement table at shipped 0.5 (dt = 1/60)
+
+| Strategy | Best layout | Win | Night | Power min | Ice |
+|---|---|---:|:---:|---:|---:|
+| Haulers only (2 start) | nearest-ice | 7:26 | yes | 0 | 180 |
+| Haulers + print 1 | nearest-ice | 6:53 | yes | 0 | 188.8 |
+| Haulers + print 2 | nearest-ice | 6:07 | yes | 0 | 198.9 |
+| Tunnel, 1 digger | corr-10 | 6:23 | yes | 30 | 180 |
+| Tunnel, 2 diggers | corr-10 | 4:52 | yes | 18 | 180 |
+| Mixed (1 hauls, 1 digs) | corr-10 | 6:53 | yes | 39 | 180 |
+
+Best haulers-only: **Haulers + print 2** at 6:07.
+Best tunnel: **Tunnel, 2 diggers** at 4:52 (**20.5% faster**).
+
+### Five criteria (best placement)
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Haulers + print 1 beats haulers only | **Pass.** 6:53 vs 7:26. |
+| 2 | Tunnel with 2 diggers is 20–35% faster than the best haulers-only route including prints | **Pass.** 20.5% (4:52 vs print-2 6:07). |
+| 3 | Every winning route crosses at least one night | **Pass.** First night is at 1:30. |
+| 4 | Power drops below 50 on at least one tunnel route | **Pass.** 2-digger `powerMin` 18. |
+| 5 | No route wins under 4:00 | **Pass.** Earliest win is 4:52. |
+
+Hard check: nearest legal in-range storage is **10.77 tiles** from Deep Ice at `(25,11)` (chebyshev 10). Floor: ≥10.
+
+Honest Playwright (1x, `canPlace` only): haulers **11:57**, 1-digger **6:54**, 2-digger (longer legal corridor) **5:02**, ring-edge 2-digger **4:36** (home 22,9 / far 34,8). No honest win under 4:00. The honest hauler script is two starters with no prints.
+
+### Scout (unchanged by the base-map crater moves)
+
+- Hosted starter (sidestep / battery 12 return / on-ore notify / explore) does **not** unlock Deep Ice. Ends Lander, tick 46 (resume) / 48 (live).
+- 4-rule that confirms: sidestep / battery 8 return / on-ore notify / explore. Tick 21.
+- 1-rule: **0 / 49**. 2-rule: **0 / 2401**.
+
+Shipped knobs: `commandRangeRadius` 10, `haulerOffRoadSpeedMult` 0.5, `deepIceTilesFromStartStorage` 21, `digSecondsPerTilePerRover` 16. Root demo still 5/46/45.
+
+---
+
+# Far Rover v0.8 balance report
+
+Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
+
 ## Shipped set (2026-10-12, criterion 2 off-road): ring 10 + off-road 0.5
 
 Rough ground outside the command ring. `haulerOffRoadSpeedMult` applies to every hauler, loaded or empty, using the same `inCommandRange` tile test as placement. Dig stays 16 s/tile. Tunnel cargo stays 4 tiles/s (4×). Radius was 9; 9 never opened a 12% tunnel lead, so the approved 9–11 band moved to 10.

@@ -2382,14 +2382,14 @@ export function createGame() {
 
   function bootstrap() {
     makeTiles();
-    stampTerrain(8, 8, TILE.CRATER_S);
-    stampTerrain(32, 10, TILE.CRATER_S);
-    stampTerrain(6, 28, TILE.CRATER_S);
-    stampTerrain(30, 32, TILE.CRATER_S);
+    stampTerrain(9, 5, TILE.CRATER_S);
+    stampTerrain(33, 13, TILE.CRATER_S);
+    stampTerrain(4, 29, TILE.CRATER_S);
+    stampTerrain(31, 32, TILE.CRATER_S);
     stampTerrain(12, 30, TILE.PIT);
     stampTerrain(22, 8, TILE.CRATER_S);
-    stampTerrain(10, 22, TILE.CRATER_S);
-    stampTerrain(28, 28, TILE.PIT);
+    stampTerrain(13, 20, TILE.CRATER_S);
+    stampTerrain(28, 26, TILE.PIT);
     // crater-m is a feathered 2x2 overlay on ground, not a replacement tile.
     for (let y = 0; y < 2; y++) {
       for (let x = 0; x < 2; x++) {
