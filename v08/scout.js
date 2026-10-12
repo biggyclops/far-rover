@@ -41,6 +41,7 @@ export function bindScout(root, game, hooks = {}) {
   let ready = false;
   let scoutAcc = 0;
   let lastSim = null;
+  let savedBaseSpeed = null;
 
   async function ensureReady() {
     if (ready) return;
@@ -55,18 +56,32 @@ export function bindScout(root, game, hooks = {}) {
     ready = true;
   }
 
+  function pauseBase() {
+    if (savedBaseSpeed == null) savedBaseSpeed = game.state.speed;
+    game.state.speed = 0;
+  }
+
+  function resumeBase() {
+    if (savedBaseSpeed != null) {
+      game.state.speed = savedBaseSpeed;
+      savedBaseSpeed = null;
+    }
+  }
+
   function hideOverlay() {
     stopOperateTicking();
     if (overlay) overlay.hidden = true;
     if (traceRoot) traceRoot.hidden = true;
     document.body.classList.remove('scout-open');
     removeDemoCss();
+    resumeBase();
   }
 
   function showOverlay() {
     ensureDemoCss();
     if (overlay) overlay.hidden = false;
     document.body.classList.add('scout-open');
+    pauseBase();
   }
 
   function showHosted() {
@@ -81,7 +96,12 @@ export function bindScout(root, game, hooks = {}) {
     const rows = items.length
       ? items.map((t) => `<li class="trace-item"><span class="trace-tick">Tick ${t.tick}</span><span class="trace-pos">${t.cell}${t.facing ? ` facing ${t.facing}` : ''}</span><span class="trace-battery">Battery: ${t.battery ?? ''}</span><span class="trace-reason">${t.reason}</span></li>`).join('')
       : '<li class="trace-item">No ticks recorded.</li>';
-    traceRoot.innerHTML = `<div class="scout-trace-card"><h2>${line}</h2><ol class="trace-list" data-expanded="true">${rows}</ol></div>`;
+    traceRoot.innerHTML = `<div class="scout-trace-card"><h2>${line}</h2><ol class="trace-list" data-expanded="true">${rows}</ol><button type="button" id="relaunch-scout" class="relaunch-scout">Relaunch scout</button></div>`;
+    traceRoot.querySelector('#relaunch-scout')?.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openBuild();
+    });
     traceRoot.hidden = false;
     if (hostRoot) hostRoot.hidden = true;
   }
@@ -206,7 +226,7 @@ export function bindScout(root, game, hooks = {}) {
     if (lastSim.outcome) {
       finishIfNeeded();
       const operateOpen = overlay && !overlay.hidden;
-      if (operateOpen) updateOperateView();
+      if (operateOpen) openTrace();
       return;
     }
     const operateOpen = overlay && !overlay.hidden;

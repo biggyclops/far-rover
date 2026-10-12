@@ -710,11 +710,23 @@ export function createGame() {
     return solTime() < C.daySecondsAt1x;
   }
 
-  function powerDeficit() {
-    const gen = solarOutputPerSecond();
-    const upkeep = (C.haulerUpkeepPowerPerSec || 0)
+  function powerDrawPerSecond() {
+    return (C.haulerUpkeepPowerPerSec || 0)
       * state.units.filter((u) => u.kind === 'hauler').length;
-    return upkeep > gen + 1e-9;
+  }
+
+  function secondsUntilDawn() {
+    if (isDay()) return (C.daySecondsAt1x - solTime()) + (C.nightSecondsAt1x || 0);
+    return C.solSecondsAt1x - solTime();
+  }
+
+  function powerDeficit() {
+    const stored = totals().power;
+    if (stored <= 1e-6) return true;
+    const net = solarOutputPerSecond() - powerDrawPerSecond();
+    if (net >= -1e-9) return false;
+    const timeToZero = stored / -net;
+    return timeToZero <= secondsUntilDawn() + 1e-6;
   }
 
   function solarOutputPerSecond() {
@@ -915,7 +927,7 @@ export function createGame() {
       printer: { reg: C.printerCostRegolith, power: 0, time: C.printerBuildSeconds },
       'tunnel-hub': { reg: C.tunnelHubCostRegolith, power: 0, time: C.tunnelHubBuildSeconds },
       vault: { reg: C.vaultCostRegolith, power: 0, time: C.vaultBuildSeconds },
-      hauler: { reg: C.printerHaulerCostRegolith, power: C.printerHaulerCostPower, time: C.printerHaulerSeconds },
+      hauler: { reg: nextPrintCostRegolith(), power: C.printerHaulerCostPower, time: C.printerHaulerSeconds },
     };
     return costs[type] || null;
   }
@@ -2281,6 +2293,11 @@ export function createGame() {
     return b;
   }
 
+  function nextPrintCostRegolith() {
+    const printed = Math.max(0, state.units.filter((u) => u.kind === 'hauler').length - (C.startHaulers || 0));
+    return (C.printerHaulerCostRegolith || 0) + printed * (C.printerHaulerCostRegolithStep || 0);
+  }
+
   function startPrint() {
     const p = state.buildings.find((b) => b.type === 'printer' && b.complete && !b.printing);
     if (!p) {
@@ -2288,15 +2305,16 @@ export function createGame() {
       return false;
     }
     const tot = totals();
-    if (tot.regolith < C.printerHaulerCostRegolith) {
-      toast(`Need ${C.printerHaulerCostRegolith} regolith`);
+    const regCost = nextPrintCostRegolith();
+    if (tot.regolith < regCost) {
+      toast(`Need ${regCost} regolith`);
       return false;
     }
     if (tot.power < C.printerHaulerCostPower) {
       toast(`Need ${C.printerHaulerCostPower} power`);
       return false;
     }
-    spendRegolith(C.printerHaulerCostRegolith);
+    spendRegolith(regCost);
     spendPower(C.printerHaulerCostPower);
     p.printing = true;
     p.printTime = 0;
@@ -2535,6 +2553,9 @@ export function createGame() {
     tunnelPayoffText,
     hubPayoffText,
     transitIce,
+    nextPrintCostRegolith,
+    powerDrawPerSecond,
+    secondsUntilDawn,
     inCommandRange,
     buildingInCommandRange,
     buildingAtWorld,

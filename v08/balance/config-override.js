@@ -18,6 +18,7 @@ const SWEEP_KEYS = [
   'tunnelHubCostRegolith',
   'vaultCostRegolith',
   'printerHaulerCostRegolith',
+  'printerHaulerCostRegolithStep',
   'printerHaulerCostPower',
   'printerHaulerSeconds',
   'haulerUpkeepPowerPerSec',

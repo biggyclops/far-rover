@@ -118,7 +118,7 @@ export function explainScoutResult(sim) {
   }
 
   if (sim.outcome === Sim.OUTCOMES.SUCCESS_SCAN || sim.outcome === Sim.OUTCOMES.SUCCESS_ORE) {
-    return sim.iceConfirmed ? 'Returned' : 'Returned, trace ice only';
+    return sim.iceConfirmed ? 'Deep Ice confirmed' : 'trace only';
   }
 
   return `Returned at ${cell}, turn ${sim.tick}`;

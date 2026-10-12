@@ -9,6 +9,7 @@ import {
 } from '../v08/hosted-tick.js';
 import { explainScoutResult } from '../v08/scout-explain.js';
 import { runStrategy } from '../v08/balance/harness.js';
+import { nearestLegalDrop } from '../v08/balance/placements.js';
 
 function advance(game, seconds, step = 1 / 60) {
   let left = seconds;
@@ -202,8 +203,8 @@ function scriptedHaul(game) {
   const sensors = [Sim.SENSORS.DISTANCE, Sim.SENSORS.SPECTRAL, Sim.SENSORS.CAMERA];
   const hostedStarter = [
     { condition: { type: Sim.CONDITIONS.CRATER_IN_FRONT }, action: { type: Sim.ACTIONS.SIDESTEP } },
+    { condition: { type: Sim.CONDITIONS.BATTERY_BELOW, n: 12 }, action: { type: Sim.ACTIONS.RETURN_CHARGE } },
     { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
-    { condition: { type: Sim.CONDITIONS.ORE_NEXT_TO }, action: { type: Sim.ACTIONS.GO_TO_ORE } },
     { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } },
   ];
   const moved = hostedNotifyMovementEqualsStripped(sensors, hostedStarter, 40);
@@ -447,9 +448,9 @@ function setupHomeTunnel(game) {
 {
   const g = createGame();
   g.markExpeditionLaunched({ hasNotifyRule: true });
-  g.endExpedition({ line: 'Returned, trace ice only', status: 'returned' });
+  g.endExpedition({ line: 'trace only', status: 'returned' });
   assert.equal(g.state.toast?.kind, 'scout-result');
-  assert.match(g.state.toast.text, /Returned/);
+  assert.match(g.state.toast.text, /trace only/);
   g.markExpeditionLaunched({ hasNotifyRule: true });
   assert.equal(g.state.toast, null, 'new launch does not replay the stale result toast');
   assert.equal(g.state.expedition.pendingPings.length, 0);
@@ -607,11 +608,53 @@ function runUntilOutcome(sensors, rules, place) {
 }
 
 {
-  const r = runStrategy('tunnel-1-digger', {}, { maxSeconds: 20 * 60 });
+  const r = runStrategy('tunnel-1-digger', {}, { maxSeconds: 20 * 60, searchPlacements: false });
   assert.equal(r.won, true, `1-digger should win, ice=${r.ice} t=${r.time}`);
   assert.ok(r.ice + 1e-6 >= 180, `1-digger ice ${r.ice}`);
   assert.equal(r.logistics, 'tunnel');
   console.log(`ok  1-digger tunnel wins at ${r.winTimeLabel} (${r.ice} ice)`);
+}
+
+{
+  const drop = nearestLegalDrop();
+  assert.ok(Number.isFinite(drop.distance), 'expected a legal in-range storage or hub');
+  assert.ok(drop.distance >= 10, `nearest legal drop is ${drop.distance.toFixed(2)} tiles from Deep Ice (need >= 10)`);
+  console.log(`ok  nearest legal ${drop.type} at (${drop.at.tx},${drop.at.ty}) is ${drop.distance.toFixed(2)} tiles from Deep Ice`);
+}
+
+{
+  const g = createGame();
+  assert.equal(g.powerDeficit(), false, 'day start should not flag a deficit');
+  g.state.time = C.startDaylightRemainingSec + 1;
+  assert.equal(g.isDay(), false);
+  assert.equal(g.powerDeficit(), false, 'a full night stock must not alert');
+  for (const b of g.state.buildings) {
+    if (b.powerCap > 0) b.power = 4;
+  }
+  assert.equal(g.powerDeficit(), true, 'falling stock that hits 0 before dawn should alert');
+  for (const b of g.state.buildings) {
+    if (b.powerCap > 0) b.power = 0;
+  }
+  assert.equal(g.powerDeficit(), true, 'zero stored power should alert');
+  console.log('ok  power deficit only when falling-to-zero-before-dawn or at 0');
+}
+
+{
+  const g = createGame();
+  g.unlockDeepIce();
+  const far = g.placeBuilding('tunnel-hub', C.expeditionTileX - 2, C.expeditionTileY, false)
+    || g.placeBuilding('tunnel-hub', 35, 8, false);
+  assert.ok(far, 'far hub places beside Deep Ice');
+  g.completeBuilding(far.id);
+  far.ice = 12;
+  assert.equal(g.storedForGoal().ice, C.startIce, 'hub ice is not goal ice');
+  assert.equal(g.transitIce().ice, 12);
+  assert.ok(g.totals().ice >= C.startIce + 12);
+  const success = { outcome: 'success-scan', iceConfirmed: true, col: 5, row: 1, tick: 20, rules: [], trace: [] };
+  const trace = { outcome: 'success-scan', iceConfirmed: false, col: 5, row: 12, tick: 46, rules: [], trace: [] };
+  assert.equal(explainScoutResult(success), 'Deep Ice confirmed');
+  assert.equal(explainScoutResult(trace), 'trace only');
+  console.log('ok  HUD ice matches the goal counter; hub ice is in transit');
 }
 
 console.log('v08 fix-list node tests passed');

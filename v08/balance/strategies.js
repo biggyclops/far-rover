@@ -1,6 +1,8 @@
 // Scripted players. Every action is a UI-reachable order: place, print, Dig,
 // or a right-click via issueContextual. No assignOrder dest shortcuts.
 
+import { listTunnelPlans } from './placements.js';
+
 export const STRATEGY_IDS = [
   'haulers-2',
   'haulers-plus-1',
@@ -224,17 +226,40 @@ function ensurePlaced(game, mem, units, key, type, preferTx, preferTy, exact = n
 
 function ensureStorages(game, mem, units, count) {
   const hab = game.habitat();
+  const planned = mem.layout?.storages || [];
   for (let i = 0; i < count; i++) {
     const key = `storage${i}`;
-    const st = ensurePlaced(game, mem, units, key, 'storage', hab.tx + 4 + i * 3, hab.ty + 3);
+    const exact = planned[i] || null;
+    const st = ensurePlaced(
+      game,
+      mem,
+      units,
+      key,
+      'storage',
+      exact ? exact.tx : hab.tx + 4 + i * 3,
+      exact ? exact.ty : hab.ty + 3,
+      exact,
+    );
     if (st !== 'ready') return st;
   }
   return 'ready';
 }
 
-function placeFarHub(game, units) {
+function resolveTunnelLayout(game, layout) {
+  if (layout?.far && layout?.home) return layout;
+  const plan = listTunnelPlans(game).find((p) => p.far && p.home);
+  if (!plan) return layout || {};
+  return { ...layout, ...plan };
+}
+
+function placeFarHub(game, units, layout) {
   const deep = game.state.deepIce;
   if (!deep.unlocked) return null;
+  const plan = resolveTunnelLayout(game, layout);
+  if (plan?.far) {
+    const exact = placeAt(game, units, 'tunnel-hub', plan.far.tx, plan.far.ty);
+    if (exact) return exact;
+  }
   for (let ty = deep.ty - 3; ty <= deep.ty + 1; ty++) {
     for (let tx = deep.tx - 3; tx <= deep.tx + 1; tx++) {
       const b = placeAt(game, units, 'tunnel-hub', tx, ty);
@@ -244,23 +269,33 @@ function placeFarHub(game, units) {
   return tryPlace(game, units, 'tunnel-hub', deep.tx - 2, deep.ty - 1);
 }
 
-function placeHomeHub(game, units, farHub) {
-  const hab = game.habitat();
-  const C = game.C;
+function placeHomeHub(game, units, farHub, layout) {
+  const plan = resolveTunnelLayout(game, layout);
+  if (plan?.home) {
+    const exact = placeAt(game, units, 'tunnel-hub', plan.home.tx, plan.home.ty);
+    if (exact) return exact;
+  }
   const candidates = [];
-  for (let tx = 0; tx < C.mapWidth - 1; tx++) candidates.push({ tx, ty: farHub.ty });
-  for (let ty = 0; ty < C.mapHeight - 1; ty++) candidates.push({ tx: farHub.tx, ty });
+  for (let tx = 0; tx < game.C.mapWidth - 1; tx++) candidates.push({ tx, ty: farHub.ty });
+  for (let ty = 0; ty < game.C.mapHeight - 1; ty++) candidates.push({ tx: farHub.tx, ty });
+  // Only axis-aligned homes keep a straight corridor. Prefer the ring edge
+  // (closest to the far hub) so the harness sees Player 2's short haul.
   candidates.sort((a, b) => (
-    Math.hypot(a.tx - hab.tx, a.ty - hab.ty) - Math.hypot(b.tx - hab.tx, b.ty - hab.ty)
+    Math.hypot(a.tx - farHub.tx, a.ty - farHub.ty) - Math.hypot(b.tx - farHub.tx, b.ty - farHub.ty)
   ));
   for (const p of candidates) {
     const b = placeAt(game, units, 'tunnel-hub', p.tx, p.ty);
     if (b) return b;
   }
-  return tryPlace(game, units, 'tunnel-hub', hab.tx - 4, farHub.ty);
+  return null;
 }
 
-function placeVault(game, units, homeHub) {
+function placeVault(game, units, homeHub, layout) {
+  const plan = resolveTunnelLayout(game, layout);
+  if (plan?.vault) {
+    const exact = placeAt(game, units, 'vault', plan.vault.tx, plan.vault.ty);
+    if (exact) return exact;
+  }
   const tries = [
     { tx: homeHub.tx - 3, ty: homeHub.ty },
     { tx: homeHub.tx + 2, ty: homeHub.ty },
@@ -295,10 +330,10 @@ function tendDig(game, units, diggers) {
   game.state.armedOrder = null;
 }
 
-export function createBrain(strategyId) {
+export function createBrain(strategyId, opts = {}) {
   const meta = STRATEGY_META[strategyId];
   if (!meta) throw new Error(`unknown strategy ${strategyId}`);
-  const mem = { launched: false, printed: 0, digging: false };
+  const mem = { launched: false, printed: 0, digging: false, layout: opts.layout || {} };
 
   return function think(game, scout) {
     if (!mem.launched) {
@@ -343,7 +378,10 @@ function thinkHaulers(game, mem, units, meta) {
       return;
     }
     if (mem.printed < meta.extraHaulers && !p.printing) {
-      if (game.totals().regolith + 1e-6 < game.C.printerHaulerCostRegolith) {
+      const printCost = typeof game.nextPrintCostRegolith === 'function'
+        ? game.nextPrintCostRegolith()
+        : game.C.printerHaulerCostRegolith;
+      if (game.totals().regolith + 1e-6 < printCost) {
         mineRegolith(game, miners.slice(0, 1));
       } else if (game.totals().power + 1e-6 >= game.C.printerHaulerCostPower) {
         if (game.startPrint()) mem.printed += 1;
@@ -368,9 +406,10 @@ function thinkHaulers(game, mem, units, meta) {
 function thinkTunnel(game, mem, units, meta) {
   const crew = buildersOf(units);
   if (!game.state.deepIce.unlocked) return;
+  if (!mem.layout?.far) mem.layout = resolveTunnelLayout(game, mem.layout);
 
   if (!mem.farHub) {
-    const far = placeFarHub(game, crew);
+    const far = placeFarHub(game, crew, mem.layout);
     if (far) mem.farHub = far.id;
     else if (!afford(game, 'tunnel-hub')) mineRegolith(game, crew);
     return;
@@ -379,7 +418,7 @@ function thinkTunnel(game, mem, units, meta) {
   if (keepBuilding(game, units, farHub) !== 'ready') return;
 
   if (!mem.homeHub) {
-    const home = placeHomeHub(game, crew, farHub);
+    const home = placeHomeHub(game, crew, farHub, mem.layout);
     if (home) mem.homeHub = home.id;
     else if (!afford(game, 'tunnel-hub')) mineRegolith(game, crew);
     return;
@@ -388,7 +427,7 @@ function thinkTunnel(game, mem, units, meta) {
   if (keepBuilding(game, units, homeHub) !== 'ready') return;
 
   if (!mem.vault) {
-    const vault = placeVault(game, crew, homeHub);
+    const vault = placeVault(game, crew, homeHub, mem.layout);
     if (vault) mem.vault = vault.id;
     else if (!afford(game, 'vault')) mineRegolith(game, crew);
     return;
@@ -419,18 +458,19 @@ function thinkMixed(game, mem, units, meta) {
   }
 
   if (game.state.deepIce.unlocked && haulerB.length) {
+    if (!mem.layout?.far) mem.layout = resolveTunnelLayout(game, mem.layout);
     if (!mem.farHub) {
-      const far = placeFarHub(game, haulerB);
+      const far = placeFarHub(game, haulerB, mem.layout);
       if (far) mem.farHub = far.id;
     } else if (keepBuilding(game, haulerB, game.buildingById(mem.farHub)) === 'ready') {
       if (!mem.homeHub) {
-        const home = placeHomeHub(game, haulerB, game.buildingById(mem.farHub));
+        const home = placeHomeHub(game, haulerB, game.buildingById(mem.farHub), mem.layout);
         if (home) mem.homeHub = home.id;
       } else if (keepBuilding(game, haulerB, game.buildingById(mem.homeHub)) === 'ready') {
         if (!mem.vault) {
           if (!afford(game, 'vault')) mineRegolith(game, haulerB);
           else {
-            const vault = placeVault(game, haulerB, game.buildingById(mem.homeHub));
+            const vault = placeVault(game, haulerB, game.buildingById(mem.homeHub), mem.layout);
             if (vault) mem.vault = vault.id;
           }
         } else if (keepBuilding(game, haulerB, game.buildingById(mem.vault)) === 'ready') {
