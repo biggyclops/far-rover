@@ -141,6 +141,8 @@ export function createGame() {
     win: null,
     simAcc: 0,
     storageTipShown: false,
+    powerAlert: { shown: false, acted: false, nightKey: null },
+    tunnelCompleteAnnounced: false,
   };
 
   function id() {
@@ -781,13 +783,44 @@ export function createGame() {
     return C.solSecondsAt1x - solTime();
   }
 
-  function powerDeficit() {
+  function nightKey() {
+    return `${Math.floor(state.time / C.solSecondsAt1x)}-${isDay() ? 'day' : 'night'}`;
+  }
+
+  function powerDeficitInfo() {
     const stored = totals().power;
-    if (stored <= 1e-6) return true;
     const net = solarOutputPerSecond() - powerDrawPerSecond();
-    if (net >= -1e-9) return false;
+    const untilDawn = secondsUntilDawn();
+    if (stored <= 1e-6) {
+      const need = net >= -1e-9 ? 1 : Math.max(1, Math.ceil((-net) * untilDawn));
+      return { on: true, shortfall: need };
+    }
+    if (net >= -1e-9) return { on: false, shortfall: 0 };
     const timeToZero = stored / -net;
-    return timeToZero <= secondsUntilDawn() + 1e-6;
+    if (timeToZero > untilDawn + 1e-6) return { on: false, shortfall: 0 };
+    const need = Math.max(1, Math.ceil((-net) * untilDawn - stored));
+    return { on: true, shortfall: need };
+  }
+
+  function powerDeficit() {
+    return powerDeficitInfo().on;
+  }
+
+  function powerDeficitMessage() {
+    const key = nightKey();
+    const alert = state.powerAlert || { shown: false, acted: false, nightKey: null };
+    if (alert.nightKey !== key) {
+      state.powerAlert = { shown: false, acted: false, nightKey: key };
+    }
+    const info = powerDeficitInfo();
+    if (!info.on) return null;
+    if (state.powerAlert.acted) return null;
+    state.powerAlert.shown = true;
+    return `Power deficit: need about ${info.shortfall} more solar or storage`;
+  }
+
+  function notePowerAction() {
+    if (state.powerAlert?.shown) state.powerAlert.acted = true;
   }
 
   function solarOutputPerSecond() {
@@ -1187,6 +1220,22 @@ export function createGame() {
     toast(reason);
     emit('order-reject', { reason });
     return false;
+  }
+
+  let lastPickBuildingAt = -1e9;
+  function toastPickBuilding() {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - lastPickBuildingAt < 2200) return;
+    lastPickBuildingAt = now;
+    toast('Pick a building first');
+  }
+
+  function haulerCount() {
+    return state.units.filter((u) => u.kind === 'hauler').length;
+  }
+
+  function hubsAligned() {
+    return hubs().length >= 2 && corridorBetweenHubs() != null;
   }
 
   function lowBattery(unit) {
@@ -2063,6 +2112,16 @@ export function createGame() {
       }
       tile.diggers = 0;
     }
+    const tiles = state.tunnel.tiles;
+    if (tiles.length && tiles.every((t) => t.done)) {
+      if (!state.tunnelCompleteAnnounced) {
+        state.tunnelCompleteAnnounced = true;
+        toast('Tunnel complete');
+        emit('tunnel-complete');
+      }
+    } else if (!tiles.length || tiles.some((t) => !t.done)) {
+      state.tunnelCompleteAnnounced = false;
+    }
   }
 
   function hubTouchesTunnel(hub) {
@@ -2280,6 +2339,7 @@ export function createGame() {
           b.printTime = 0;
           const n = buildingFootprint(b.type);
           addHauler((b.tx + n) * C.tileSize + 8, (b.ty + n * 0.5) * C.tileSize, b.rallyOrder || defaultHaulOrder());
+          toast('Hauler printed');
           emit('build-complete', { kind: 'hauler' });
         }
       }
@@ -2553,7 +2613,12 @@ export function createGame() {
       state.storageTipShown = true;
       toast('Tip: build storage at the edge of command range, toward the ice.', 8, { kind: 'storage-tip' });
     }
-    state.buildGhost = null;
+    if (type === 'solar' || type === 'storage') notePowerAction();
+    if (state.buildGhost?.type === type) {
+      state.buildGhost = { type, tx, ty };
+    } else {
+      state.buildGhost = null;
+    }
     emit('place', { type, tx, ty, id: b.id });
     return b;
   }
@@ -2684,8 +2749,8 @@ export function createGame() {
     addBuilding('solar', C.startSolarTileX, C.startSolarTileY, { complete: true });
 
     const h = habitat();
-    const south = tileCenter(h.tx, h.ty + 3);
-    const south2 = tileCenter(h.tx + 2, h.ty + 3);
+    const south = tileCenter(h.tx - 1, h.ty + 4);
+    const south2 = tileCenter(h.tx + 3, h.ty + 4);
     addHauler(south.x, south.y);
     addHauler(south2.x, south2.y);
   }
@@ -2828,6 +2893,13 @@ export function createGame() {
     endExpedition,
     updateScoutPaper,
     powerDeficit,
+    powerDeficitInfo,
+    powerDeficitMessage,
+    notePowerAction,
+    toastPickBuilding,
+    haulerCount,
+    hubsAligned,
+    tickExpedition: updateExpedition,
     isValidDropTarget,
     nearestDrop,
     canLandCrew,

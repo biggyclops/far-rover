@@ -78,15 +78,13 @@ function confirmedDepositCell(sim) {
 function confirmedThenLost(sim) {
   if (!sim?.iceConfirmed) return null;
   const deposit = confirmedDepositCell(sim);
-  const prefix = `Ice deposit confirmed at ${deposit}!`;
-  if (sim.outcome === Sim.OUTCOMES.LOST_BATTERY) {
-    const n = tilesFromLander(sim.col, sim.row);
-    const where = n === 1 ? '1 tile from the lander' : `${n} tiles from the lander`;
-    return `${prefix} The scout then ran out of battery ${where}. Its job is done.`;
-  }
-  if (sim.outcome === Sim.OUTCOMES.LOST_CRATER) {
-    return `${prefix} The scout then drove into a crater at ${cellLabel(sim)}. Its job is done.`;
-  }
+    const prefix = `Ice deposit confirmed at ${deposit}!`;
+    if (sim.outcome === Sim.OUTCOMES.LOST_BATTERY) {
+      return `${prefix} The scout found Deep Ice but won't make it back. Its job is done.`;
+    }
+    if (sim.outcome === Sim.OUTCOMES.LOST_CRATER) {
+      return `${prefix} The scout found Deep Ice but won't make it back. Its job is done.`;
+    }
   return null;
 }
 
@@ -148,7 +146,7 @@ export function explainScoutResult(sim) {
   if (sim.outcome === Sim.OUTCOMES.SUCCESS_SCAN || sim.outcome === Sim.OUTCOMES.SUCCESS_ORE) {
     return sim.iceConfirmed
       ? 'Deep Ice confirmed'
-      : 'Returned with trace ice only. The big deposits are farther out (top rows). Try a higher Return threshold or a crater rule so it gets farther.';
+      : 'Trace ice only. The big deposits are farther out (top rows). Try a lower Return threshold or a crater rule so it gets farther.';
   }
 
   return `Returned at ${cell}, turn ${sim.tick}`;

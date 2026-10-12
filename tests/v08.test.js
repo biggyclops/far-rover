@@ -855,7 +855,7 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
   test('confirmed-then-lost scout result is a success line', async ({ page }) => {
     await ready(page);
     const result = await page.evaluate(() => window.__v08Test.playConfirmedThenLost());
-    expect(result.line).toBe('Ice deposit confirmed at F2! The scout then ran out of battery 9 tiles from the lander. Its job is done.');
+    expect(result.line).toBe("Ice deposit confirmed at F2! The scout found Deep Ice but won't make it back. Its job is done.");
     expect(result.status).toBe('returned');
     expect(result.line).not.toMatch(/threshold/);
     await expect(page.locator('#scout-trace h2')).toHaveText(/Ice deposit confirmed at F2/);
@@ -1107,8 +1107,8 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
       };
     });
     expect(before.toastKind).toBe('scout-result');
-    expect(before.line).toMatch(/Returned with trace ice only/);
-    await expect(page.locator('#toast')).toContainText('Returned with trace ice only');
+    expect(before.line).toMatch(/Trace ice only/);
+    await expect(page.locator('#toast')).toContainText('Trace ice only');
     const toastBtns = page.locator('#toast button');
     const toastCount = await toastBtns.count();
     expect(toastCount).toBeGreaterThan(0);
@@ -1117,7 +1117,7 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     }
     await expect(page.locator('#scout-trace')).toBeVisible();
     await expect(page.locator('#scout-overlay-title')).toHaveText('Scout expedition: trace');
-    await expect(page.locator('#scout-trace h2')).toContainText('Returned with trace ice only');
+    await expect(page.locator('#scout-trace h2')).toContainText('Trace ice only');
     await expect(page.locator('#scout-trace h2')).toContainText('farther out (top rows)');
     await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/trace-only-line.png', fullPage: true });
     await expect(page.locator('#scout-trace .trace-list')).toHaveAttribute('data-expanded', 'true');

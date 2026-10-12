@@ -88,6 +88,8 @@ function frame(now) {
   if (dt > 0) {
     game.update(dt);
     renderer.recordTracks?.(dt);
+  } else if (scout.isOpen()) {
+    game.tickExpedition(raw);
   }
   const scoutDt = scout.isOpen() ? raw : dt;
   if (scoutDt > 0) scout.pump(scoutDt);
@@ -118,6 +120,8 @@ function serialize() {
     selectedBuildingId: game.state.selectedBuildingId,
     muted: game.state.muted,
     unitCount: game.state.units.length,
+    haulerCount: game.haulerCount(),
+    buildGhost: game.state.buildGhost ? { ...game.state.buildGhost } : null,
     units: game.state.units.map((u) => ({
       id: u.id,
       kind: u.kind,
@@ -157,6 +161,8 @@ function serialize() {
     camX: game.state.camera.x,
     camY: game.state.camera.y,
     toast: game.state.toast ? game.state.toast.text : null,
+    powerDeficit: game.powerDeficit(),
+    powerDeficitMessage: game.powerDeficitMessage(),
     digging: game.isDigging(),
     stats: { ...game.state.stats },
     tunnel: {
@@ -206,6 +212,7 @@ function serialize() {
     orderPrompt: game.state.orderPrompt || null,
     canLandCrew: game.canLandCrew(),
     iceHint: game.showIceHint(),
+    hubsAligned: game.hubsAligned(),
     iceHintText: game.iceHintText(),
     scoutHint: game.showScoutHint(),
     objectives: game.objectiveProgress(),

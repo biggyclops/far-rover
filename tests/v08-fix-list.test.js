@@ -765,7 +765,7 @@ function runUntilOutcome(sensors, rules, place) {
   const success = { outcome: 'success-scan', iceConfirmed: true, col: 5, row: 1, tick: 20, rules: [], trace: [] };
   const trace = { outcome: 'success-scan', iceConfirmed: false, col: 5, row: 12, tick: 46, rules: [], trace: [] };
   assert.equal(explainScoutResult(success), 'Deep Ice confirmed');
-  assert.match(explainScoutResult(trace), /Returned with trace ice only/);
+  assert.match(explainScoutResult(trace), /Trace ice only/);
   assert.match(explainScoutResult(trace), /farther out \(top rows\)/);
   console.log('ok  HUD ice matches the goal counter; unfinished hub ice is not in transit');
 }
@@ -1010,7 +1010,7 @@ function runUntilOutcome(sensors, rules, place) {
   });
   assert.equal(
     line,
-    'Returned with trace ice only. The big deposits are farther out (top rows). Try a higher Return threshold or a crater rule so it gets farther.',
+    'Trace ice only. The big deposits are farther out (top rows). Try a lower Return threshold or a crater rule so it gets farther.',
   );
   console.log('ok  r4.9 helpful trace-only result line');
 }
@@ -1086,7 +1086,7 @@ function runUntilOutcome(sensors, rules, place) {
   const line = explainScoutResult(lost);
   assert.equal(
     line,
-    'Ice deposit confirmed at F2! The scout then ran out of battery 9 tiles from the lander. Its job is done.',
+    "Ice deposit confirmed at F2! The scout found Deep Ice but won't make it back. Its job is done.",
   );
   assert.doesNotMatch(line, /threshold/);
   const plain = explainScoutResult({

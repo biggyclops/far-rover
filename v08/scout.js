@@ -261,6 +261,12 @@ export function bindScout(root, game, hooks = {}) {
           kind: t.actionResult?.kind || null,
         };
       });
+    const nextCell = next
+      ? (Sim.isOnLander(next.col, next.row) ? 'lander' : Sim.formatCell(next.col, next.row))
+      : '';
+    const dist = Sim.isOnLander(sim.col, sim.row)
+      ? 0
+      : Math.abs((sim.col ?? 5) - 5) + Math.abs((sim.row === 12 ? 12 : sim.row) - 12);
     return {
       path,
       revealed,
@@ -270,7 +276,11 @@ export function bindScout(root, game, hooks = {}) {
       facing: sim.facing,
       col: sim.col,
       row: sim.row,
+      battery: sim.battery,
+      charging: !!sim.charging,
       next: next ? { col: next.col, row: next.row } : null,
+      nextCell,
+      wontMakeItHome: !sim.charging && !Sim.isOnLander(sim.col, sim.row) && dist > (sim.battery || 0),
     };
   }
 

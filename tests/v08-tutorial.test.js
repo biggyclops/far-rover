@@ -8,7 +8,7 @@ const STEP_TEXT = {
   1: "You're commanding a new base at the Moon's south pole",
   2: 'Drag a box around your two haulers',
   3: 'Right-click the ice',
-  4: 'Press 4x to speed things up',
+  4: 'Scroll the mouse wheel to zoom',
   5: 'Click Storage, then click near the habitat',
   6: 'Select a hauler and right-click the frame',
   7: 'Buildings cost regolith',
@@ -19,7 +19,7 @@ const STEP_TEXT = {
   12: "Change 'Battery below 12' to 'Battery below 6'",
   13: 'Deep Ice found!',
   14: 'Place a Tunnel hub at the edge of your range',
-  15: 'Select both haulers, click Dig',
+  15: 'If the hubs line up, one click on a hub starts the corridor',
   16: 'send haulers to mine Deep Ice',
   17: "You've got it, commander",
 };
@@ -51,6 +51,13 @@ test.describe('Far Rover v0.8 tutorial', () => {
     await expect(page.locator('#tutorial-card')).toBeVisible();
     await expect(page.locator('#tutorial-text')).toContainText(STEP_TEXT[1]);
     await expect(page.locator('#tutorial-skip')).toHaveText('Skip tutorial');
+    const noOverlap = await page.evaluate(() => {
+      const a = document.querySelector('#tutorial-card').getBoundingClientRect();
+      const b = document.querySelector('#objectives').getBoundingClientRect();
+      return a.right <= b.left + 1 || b.right <= a.left + 1
+        || a.bottom <= b.top + 1 || b.bottom <= a.top + 1;
+    });
+    expect(noOverlap).toBe(true);
     const stored = await page.evaluate(() => localStorage.getItem('far-rover-v08-intro'));
     expect(stored).toBe('tutorial');
   });
@@ -150,6 +157,38 @@ test.describe('Far Rover v0.8 tutorial', () => {
     }
   });
 
+  test('Next and Show me keep separate slots, step 5 arms Storage, and the speech bubble misses First Goal', async ({ page }) => {
+    await ready(page, TUTORIAL);
+    const layout = async () => page.evaluate(() => {
+      const next = document.querySelector('#tutorial-next').getBoundingClientRect();
+      const show = document.querySelector('#tutorial-show').getBoundingClientRect();
+      const card = document.querySelector('#tutorial-card').getBoundingClientRect();
+      const obj = document.querySelector('#objectives').getBoundingClientRect();
+      const overlap = !(card.right <= obj.left + 1 || obj.right <= card.left + 1
+        || card.bottom <= obj.top + 1 || obj.bottom <= card.top + 1);
+      return {
+        nextX: Math.round(next.left),
+        showX: Math.round(show.left),
+        overlap,
+        nextW: next.width,
+        showW: show.width,
+      };
+    });
+    const paused = await layout();
+    expect(paused.overlap).toBe(false);
+    expect(paused.nextW).toBeGreaterThan(40);
+    expect(paused.showW).toBeGreaterThan(40);
+    expect(paused.showX).toBeGreaterThan(paused.nextX);
+    await page.evaluate(() => window.__v08Test.tutorial.jump(5));
+    const action = await layout();
+    expect(action.nextX).toBe(paused.nextX);
+    expect(action.showX).toBe(paused.showX);
+    const ghost = await page.evaluate(() => window.__v08Test.getState().buildGhost);
+    expect(ghost?.type).toBe('storage');
+    await page.evaluate(() => window.__v08Test.tutorial.jump(4));
+    await expect(page.locator('#tutorial-text')).toContainText('Scroll the mouse wheel to zoom');
+  });
+
   test('full tutorial path through the real UI reaches hand-off', async ({ page }) => {
     test.setTimeout(120000);
     await ready(page, TUTORIAL);
@@ -190,6 +229,7 @@ test.describe('Far Rover v0.8 tutorial', () => {
       }
       window.__v08Test.advance(2.2);
     });
+    await page.click('#tutorial-next');
     await waitStep(page, 11);
     await expect(page.locator('#tutorial-text')).toContainText(STEP_TEXT[11]);
     await expect(page.locator('.trace-item.tutorial-trace-on')).toBeVisible();

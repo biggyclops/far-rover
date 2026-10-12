@@ -40,6 +40,11 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
       dragging = false;
       box = false;
       start = null;
+      if (game.state.buildGhost) {
+        game.state.buildGhost = null;
+        game.state.armedOrder = null;
+        return;
+      }
       const w = worldPos(ev);
       game.issueContextual(w.x, w.y);
       hooks.onOrder?.();
@@ -140,6 +145,9 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
         else if (!additive) {
           game.selectUnits([]);
           game.selectBuilding(null);
+          if (!game.state.buildGhost && !game.state.armedOrder) {
+            game.toastPickBuilding();
+          }
         }
       }
     }

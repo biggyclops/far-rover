@@ -868,15 +868,8 @@ function latestNotifyPing() {
     lastHostedPing = ar;
     return ar;
   }
-  const trace = gameState?.trace || [];
-  for (let i = trace.length - 1; i >= 0; i--) {
-    const a = trace[i]?.actionResult;
-    if (a?.ping && a.label) {
-      lastHostedPing = a;
-      return a;
-    }
-  }
-  return lastHostedPing;
+  lastHostedPing = null;
+  return null;
 }
 
 function renderHostedNotifyPing() {
@@ -932,7 +925,9 @@ function renderRuleDisplay() {
   display.innerHTML = html || '<div class="no-rules">No rules defined</div>';
   const reasonEl = document.getElementById('live-rule-reason');
   if (reasonEl) {
-    reasonEl.textContent = live.reason || 'Waiting for the first turn.';
+    const nextReason = live.reason || 'Waiting for the first turn.';
+    if (reasonEl.textContent !== nextReason) reasonEl.textContent = nextReason;
+    reasonEl.dataset.rule = String(live.fired || 0);
   }
   renderLiveSensors(live.sensors);
   renderHostedNotifyPing();
@@ -944,12 +939,20 @@ function renderLiveSensors(sensors = {}) {
   const battery = sensors.battery == null ? '—' : String(sensors.battery);
   const front = sensors.inFront || '—';
   const ore = sensors.oreNearby === 'yes' ? 'yes' : 'no';
+  const facing = sensors.facing || '';
+  const next = sensors.next || '';
+  const heading = [facing, next ? `next ${next}` : ''].filter(Boolean).join(' · ') || '—';
+  const charge = sensors.charging ? `Charging (${sensors.charging})` : '';
   const rows = [
-    ['live-battery', 'Battery', battery],
+    ['live-battery', 'Battery', charge || battery],
     ['live-front', 'In front', front],
     ['live-ore', 'Ore nearby', ore],
+    ['live-heading', 'Facing / next', heading],
     ['live-cam', 'Rover cam', 'forward view'],
   ];
+  if (sensors.wontMakeItHome) {
+    rows.splice(1, 0, ['live-home-warn', 'Warning', "Won't make it home"]);
+  }
   el.replaceChildren();
   for (const [id, label, value] of rows) {
     const row = document.createElement('div');
