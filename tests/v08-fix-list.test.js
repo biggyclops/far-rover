@@ -307,8 +307,8 @@ function scriptedHaul(game) {
   assert.equal(C.haulerOffRoadSpeedMult, 0.5);
   assert.equal(C.digSecondsPerTilePerRover, 15);
   assert.equal(C.printerHaulerSeconds, 30);
-  assert.equal(C.printerHaulerSecondsSecond, 45);
-  assert.equal(C.printerHaulerSecondsAfter, 60);
+  assert.equal(C.printerHaulerSecondsSecond, 60);
+  assert.equal(C.printerHaulerSecondsAfter, 90);
   console.log('ok  new config keys keep economy defaults');
 }
 
@@ -1264,11 +1264,11 @@ function runUntilOutcome(sensors, rules, place) {
   assert.equal(g.nextPrintSeconds(), 30);
   const hab = g.habitat();
   g.addHauler((hab.tx + 3.5) * C.tileSize, (hab.ty + 3.5) * C.tileSize);
-  assert.equal(g.nextPrintSeconds(), 45);
+  assert.equal(g.nextPrintSeconds(), 60);
   g.addHauler((hab.tx + 4.5) * C.tileSize, (hab.ty + 3.5) * C.tileSize);
-  assert.equal(g.nextPrintSeconds(), 60);
+  assert.equal(g.nextPrintSeconds(), 90);
   g.addHauler((hab.tx + 5.5) * C.tileSize, (hab.ty + 3.5) * C.tileSize);
-  assert.equal(g.nextPrintSeconds(), 60);
+  assert.equal(g.nextPrintSeconds(), 90);
   g.selectUnits([g.state.units[0].id]);
   const printer = g.placeBuilding('printer', 16, 21, false);
   assert.ok(printer);
@@ -1277,12 +1277,31 @@ function runUntilOutcome(sensors, rules, place) {
   hab.power = 120;
   const before = g.state.units.filter((u) => u.kind === 'hauler').length;
   assert.equal(g.startPrint(), true);
-  assert.equal(printer.printNeeded, 60);
-  advance(g, 59);
+  assert.equal(printer.printNeeded, 90);
+  advance(g, 89);
   assert.equal(g.state.units.filter((u) => u.kind === 'hauler').length, before);
   advance(g, 2);
   assert.equal(g.state.units.filter((u) => u.kind === 'hauler').length, before + 1);
-  console.log('ok  print time escalates 30 / 45 / 60');
+  console.log('ok  print time escalates 30 / 60 / 90');
+}
+
+{
+  // thinkEvery = delay starved print-3 of re-clicks and made nearest-ice
+  // *faster* at 5/7/8/10 s (1.6–2.5% and 0% leads). Delay is a hold after
+  // events; APM stays 0.5 s. Same layout must not win sooner at delay 10.
+  const layout = layoutsFor('haulers-plus-3').find((l) => l.id === 'nearest-ice');
+  assert.ok(layout, 'print-3 nearest-ice layout');
+  const d0 = runStrategy('haulers-plus-3', {}, { layout, delays: [0], maxSeconds: 12 * 60 });
+  const d10 = runStrategy('haulers-plus-3', {}, { layout, delays: [10], maxSeconds: 12 * 60 });
+  assert.equal(d0.won, true, `print-3 delay 0 should win, ice=${d0.ice}`);
+  assert.equal(d10.won, true, `print-3 delay 10 should win, ice=${d10.ice}`);
+  assert.equal(d0.layoutId, 'nearest-ice');
+  assert.equal(d10.layoutId, 'nearest-ice');
+  assert.ok(
+    d10.winTime + 0.05 >= d0.winTime,
+    `delay 10 print-3 ${d10.winTimeLabel} must not beat delay 0 ${d0.winTimeLabel} (APM starvation artifact)`,
+  );
+  console.log(`ok  print-3 nearest-ice delay 10 ${d10.winTimeLabel} is not faster than delay 0 ${d0.winTimeLabel}`);
 }
 
 console.log('v08 fix-list node tests passed');

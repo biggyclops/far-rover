@@ -69,8 +69,8 @@ export const CONFIG = {
   printerHaulerCostRegolithStep: 0, // tried +10; dropped — print-1 already beats two starters at ring 9, and +10 does not put the tunnel in the 20–35% band
   printerHaulerCostPower: 10, // Proposed (Game Designer)
   printerHaulerSeconds: 30, // Proposed (Game Designer) — first printed hauler
-  printerHaulerSecondsSecond: 45, // Proposed (Game Designer) — second printed hauler
-  printerHaulerSecondsAfter: 60, // Proposed (Game Designer) — each printed hauler after the second
+  printerHaulerSecondsSecond: 60, // Proposed (Game Designer) — second printed hauler
+  printerHaulerSecondsAfter: 90, // Proposed (Game Designer) — each printed hauler after the second
 
   showBuildSpriteWhileConstructing: true, // Proposed (Game Designer)
 

@@ -2,6 +2,79 @@
 
 Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
 
+## Stop report (2026-10-12, r5-tune on #52): print 30/60/90, delay hold, criterion 2 still short
+
+#52 is on `main` (`eb69a09`). No Pages/CI deploy job; merge to main is the ship path. This tune sits on top of that. Off-road and `haulerCarry` were not touched. Root demo still 5/46/45. Tests green. **Not merging** — all five criteria do not pass at every delay 0–10.
+
+**Step 2:** print 30 s / 60 s / 90 s (then 90 s each after). Dig kept at **15 s/tile**.
+
+**Delay artifacts (same routes, not new layouts):**
+
+| Delay | Old lead (thinkEvery = delay) | Route vs layout | What it was |
+|---|---:|---|---|
+| 5 s | 1.6% | print-3 `nearest-ice` 5:06 vs 2-digger `corr-10` 5:01 | Harness APM artifact. `thinkEvery = delay` starved re-clicks; same 5-hauler printer+2-storage line ran *faster*. Control: delay 10 with thinkEvery 0.5 matched delay 0 (5:43 vs 4:46). |
+| 7 s | 2.3% | print-3 `nearest-ice` 5:08 vs `corr-10` 5:01 | Same artifact, same layouts. |
+| 8 s | 2.5% | print-3 `nearest-ice` 5:20 vs `corr-10` 5:12 | Same artifact, same layouts. |
+| 10 s | 0.0% | print-3 `nearest-ice` 5:10 vs `corr-10` 5:10 | Same artifact, same layouts. |
+
+Fix: think every 0.5 s; apply delay only after a situation change (scout confirm, building done, print done). Second-pad `keepBuilding` now sees the whole roster so each think does not yank another ice hauler onto the pad (that had been hiding ~10 s of print-2). Neither fix loosens a layout search.
+
+After those fixes the old 0% / 1.6–2.5% rows are gone, but criterion 2 still fails at every delay. Print-2/3 `nearest-ice` is the haulers winner throughout. At delay 2–7 it even beats delay-0 print-2 (5:24–5:35 vs 5:51) because a 2 s hold after the second storage completes lets auto-resume walk while delay 0 re-clicks immediately — same layout, not a new route. Not hidden.
+
+**Step 3 (not applied):** print-3/2 is still inside 20% at delay 0 (18.4%). A dig cut toward 4:34 (band 4:30–4:55, 30 s margin under 4:00) would put delay 0 at ~22% vs print-2 5:51. Delay 2 print-2 is **5:24**; 20% there needs a 2-digger at **4:19**, which is under 4:30. Tunnel already slows ~6 s per delay-second (4:46 → 4:57 at 2 s) while print gets faster, so the band cannot cover delays 2–10. Dig stays 15.
+
+### 1x best-placement table (dt = 1/60, delay 0)
+
+| Strategy | Best layout | Win | Night | Power min | Ice |
+|---|---|---:|:---:|---:|---:|
+| Haulers only (2 start) | nearest-ice | 7:26 | yes | 48 | 180 |
+| Haulers + print 1 | nearest-ice | 6:35 | yes | 0 | 180 |
+| Haulers + print 2 | nearest-ice | 5:51 | yes | 0 | 180 |
+| Haulers + print 3 | nearest-ice | 5:51 | yes | 0 | 180 |
+| Haulers + print 4 | nearest-ice | 5:51 | yes | 0 | 180 |
+| Tunnel, 1 digger | corr-10 | 6:14 | yes | 27 | 180 |
+| Tunnel, 2 diggers | corr-10 | 4:46 | yes | 18 | 180 |
+| Tunnel, 3 diggers | corr-10 | 5:07 | yes | 0 | 180 |
+| Tunnel, 4 diggers | corr-10 | 5:06 | yes | 0 | 180 |
+| Tunnel + surface haulers | corr-10 | 5:16 | yes | 0 | 180 |
+| Mixed (1 hauls, 1 digs) | corr-10 | 6:53 | yes | 39 | 180 |
+
+Best haulers-only: **Haulers + print 2** at 5:51 (print-3/4 tie). Best tunnel: **Tunnel, 2 diggers** at 4:46 (**18.4% faster**).
+
+### Tunnel lead across reaction delays 0–10 s
+
+Pinned delay-0 layouts: 2-digger `corr-10` vs best haulers at that delay (print-2 or print-3 `nearest-ice`).
+
+| Delay | 2-digger | Best haulers | Lead | GD |
+|---|---:|---|---:|---:|
+| 0 s | 4:46 | 5:51 print-2 nearest-ice | 18.4% | 4/5 |
+| 1 s | 4:51 | 5:53 print-2 nearest-ice | 17.5% | 4/5 |
+| 2 s | 4:57 | 5:24 print-2 nearest-ice | 8.0% | 4/5 |
+| 3 s | 5:03 | 5:28 print-3 nearest-ice | 7.5% | 4/5 |
+| 4 s | 5:09 | 5:31 print-3 nearest-ice | 6.6% | 4/5 |
+| 5 s | 5:15 | 5:29 print-3 nearest-ice | 4.0% | 4/5 |
+| 6 s | 5:21 | 5:32 print-3 nearest-ice | 3.1% | 4/5 |
+| 7 s | 5:27 | 5:35 print-3 nearest-ice | 2.1% | 4/5 |
+| 8 s | 5:33 | 5:47 print-2 nearest-ice | 4.0% | 4/5 |
+| 9 s | 5:39 | 5:50 print-2 nearest-ice | 3.0% | 4/5 |
+| 10 s | 5:45 | 5:52 print-2 nearest-ice | 2.0% | 4/5 |
+
+Earliest win at delay 0 is 4:46 (30 s inside the no-win-under-4:00 rule). At delay 9–10 the earliest is tunnel-3 `corr-10` at 5:38 / 5:40.
+
+### Five criteria (every delay 0–10)
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Haulers + print 1 beats haulers only | **Pass** at every delay. Delay 0: 6:35 vs 7:26. |
+| 2 | Tunnel with 2 diggers is 20–35% faster than the best haulers-only route including prints | **FAIL** at every delay. Peak 18.4% at delay 0 vs print-2 5:51. Floor 2.0% at delay 10. |
+| 3 | Every winning route crosses at least one night | **Pass.** First night is at 1:30. |
+| 4 | Power drops below 50 on at least one tunnel route | **Pass.** 2-digger `powerMin` 18. |
+| 5 | No route wins under 4:00 (30 s margin) | **Pass.** Earliest legal win is 4:46. |
+
+### Why stop
+
+Steps 2 and 3 together cannot put every delay in 20–35% without a win under 4:30. Off-road, range, ice, and carry were left alone.
+
 ## Shipped set (2026-10-12, r5): tunnel delivery + resume-after-build, then print 30/45/60
 
 Harness numbers below were taken **after** both Player 1 bugfixes and the resume-after-build fix, with tests. Root demo still 5/46/45. No renderer / tutorial / UI files touched.

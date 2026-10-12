@@ -197,10 +197,13 @@ function mineRegolith(game, units) {
 
 function keepBuilding(game, units, building) {
   if (!building || building.complete) return 'ready';
-  const onIt = units.filter((u) => orderType(u) === 'build' && u.order?.buildingId === building.id);
+  // Count builders on the whole roster. thinkHaulers passes a 1-hauler
+  // subset for the second pad; if we only look at that subset, every think
+  // yanks another ice hauler onto the build and delay-0 print-2 loses ~40 s.
+  const onIt = haulersOf(game).filter((u) => orderType(u) === 'build' && u.order?.buildingId === building.id);
   if (!onIt.length) {
     const free = buildersOf(units);
-    if (free.length) clickTile(game, free, building.tx, building.ty);
+    if (free.length) clickTile(game, free.slice(0, 1), building.tx, building.ty);
   }
   return 'building';
 }

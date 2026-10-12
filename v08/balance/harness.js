@@ -53,10 +53,23 @@ function betterResult(next, best) {
   return next.ice > best.ice;
 }
 
+function situationKey(game) {
+  return [
+    game.state.deepIce.unlocked ? 1 : 0,
+    game.tunnelReady() ? 1 : 0,
+    game.canLandCrew() ? 1 : 0,
+    game.state.units.filter((u) => u.kind === 'hauler').length,
+    game.state.buildings.map((b) => `${b.type}:${b.complete ? 1 : 0}:${b.printing ? 1 : 0}`).join(','),
+  ].join('|');
+}
+
 function runOnce(strategyId, opts, layout, applied) {
   const dt = opts.dt ?? 1 / 60;
   const delay = opts.reactionDelay ?? 0;
-  const thinkEvery = opts.thinkEvery ?? (delay > 0 ? delay : 0.5);
+  // Reaction delay is a hold after a new situation (scout confirm, building
+  // done, print done). It is not the think interval: using delay as thinkEvery
+  // starved print-3 of re-clicks and made it *faster* at 5/7/8/10 s.
+  const thinkEvery = opts.thinkEvery ?? 0.5;
   const maxSeconds = opts.maxSeconds ?? 30 * 60;
   const game = createGame();
   syncStartHaulers(game);
@@ -65,7 +78,10 @@ function runOnce(strategyId, opts, layout, applied) {
   let minPower = Infinity;
   let hitNight = false;
   let thinkAcc = 0;
+  let nextThinkAt = 0;
+  let lastKey = '';
   think(game, scout);
+  lastKey = situationKey(game);
 
   while (game.state.time < maxSeconds && !game.state.won) {
     game.update(dt);
@@ -74,8 +90,13 @@ function runOnce(strategyId, opts, layout, applied) {
     const stored = game.storedForGoal();
     if (stored.power < minPower) minPower = stored.power;
     if (!game.isDay()) hitNight = true;
+    const key = situationKey(game);
+    if (key !== lastKey) {
+      lastKey = key;
+      nextThinkAt = Math.max(nextThinkAt, game.state.time + delay);
+    }
     thinkAcc += dt;
-    if (thinkAcc >= thinkEvery) {
+    if (thinkAcc >= thinkEvery && game.state.time + 1e-9 >= nextThinkAt) {
       thinkAcc = 0;
       think(game, scout);
     }
@@ -216,28 +237,25 @@ export function summarize(results, overrides = {}) {
 
 export function sweepReactionDelays(overrides = {}, opts = {}) {
   const delays = opts.delays || REACTION_DELAYS;
-  const t2 = runStrategy('tunnel-2-diggers', overrides, { ...opts, delays: [0] });
-  const haulerIds = STRATEGY_IDS.filter((id) => STRATEGY_META[id]?.family === 'haulers');
-  const haulers = haulerIds.map((id) => runStrategy(id, overrides, { ...opts, delays: [0] }));
-  const bestH = haulers.filter((r) => r.won).sort((a, b) => a.winTime - b.winTime)[0] || haulers[0];
+  const pinned = {};
+  for (const id of STRATEGY_IDS) {
+    pinned[id] = runStrategy(id, overrides, { ...opts, delays: [0] });
+  }
   const rows = [];
   for (const delay of delays) {
-    const tunnel = delay === 0
-      ? t2
-      : runStrategy('tunnel-2-diggers', overrides, {
-        ...opts,
-        layout: t2.layout || { id: t2.layoutId },
-        delays: [delay],
-        reactionDelay: delay,
-      });
-    const hauler = delay === 0
-      ? bestH
-      : runStrategy(bestH.strategy, overrides, {
-        ...opts,
-        layout: bestH.layout || { id: bestH.layoutId },
-        delays: [delay],
-        reactionDelay: delay,
-      });
+    const results = STRATEGY_IDS.map((id) => (
+      delay === 0
+        ? pinned[id]
+        : runStrategy(id, overrides, {
+          ...opts,
+          layout: pinned[id].layout || { id: pinned[id].layoutId },
+          delays: [delay],
+          reactionDelay: delay,
+        })
+    ));
+    const summary = summarize(results, overrides);
+    const tunnel = results.find((r) => r.strategy === 'tunnel-2-diggers');
+    const hauler = summary.bestHaulers;
     const lead = (tunnel?.won && hauler?.won)
       ? (hauler.winTime - tunnel.winTime) / hauler.winTime
       : null;
@@ -251,9 +269,20 @@ export function sweepReactionDelays(overrides = {}, opts = {}) {
       haulersStrategy: hauler?.strategy,
       haulersLayout: hauler?.layoutId,
       lead,
+      gd: summary.gd,
+      earliest: summary.bestAny?.winTime ?? null,
+      earliestLabel: summary.bestAny?.winTimeLabel ?? 'timeout',
+      earliestStrategy: summary.bestAny?.strategy,
     });
   }
-  return { tunnelLayout: t2.layoutId, haulersStrategy: bestH?.strategy, haulersLayout: bestH?.layoutId, rows };
+  const t2 = pinned['tunnel-2-diggers'];
+  const bestH0 = summarize(Object.values(pinned), overrides).bestHaulers;
+  return {
+    tunnelLayout: t2?.layoutId,
+    haulersStrategy: bestH0?.strategy,
+    haulersLayout: bestH0?.layoutId,
+    rows,
+  };
 }
 
 export function criteriaScore(summary) {
