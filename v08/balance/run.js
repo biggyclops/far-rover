@@ -48,10 +48,10 @@ function printSummary(summary, title = 'Set') {
     lines.push('No number changes (current Proposed set).');
   }
   lines.push('');
-  lines.push('| Strategy | Win | Night | Power min | Ice | Logistics |');
-  lines.push('|---|---:|:---:|---:|---:|---|');
+  lines.push('| Strategy | Best layout | Win | Night | Power min | Ice | Logistics |');
+  lines.push('|---|---|---:|:---:|---:|---:|---|');
   for (const r of summary.results) {
-    lines.push(`| ${r.label} | ${r.winTimeLabel} | ${r.hitNight ? 'yes' : 'no'} | ${r.powerMin ?? '—'} | ${r.ice} | ${r.logistics} |`);
+    lines.push(`| ${r.label} | ${r.layoutId || 'auto'} | ${r.winTimeLabel} | ${r.hitNight ? 'yes' : 'no'} | ${r.powerMin ?? '—'} | ${r.ice} | ${r.logistics} |`);
   }
   lines.push('');
   if (summary.bestHaulers && summary.bestTunnel) {

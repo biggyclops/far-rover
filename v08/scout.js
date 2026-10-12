@@ -77,6 +77,19 @@ export function bindScout(root, game, hooks = {}) {
     resumeBase();
   }
 
+  function setOverlayTitle(text) {
+    const el = overlay?.querySelector('#scout-overlay-title');
+    if (el) el.textContent = text;
+  }
+
+  function retitleProgramPanel() {
+    setOverlayTitle('Scout program');
+    const h2 = hostRoot?.querySelector('.build-header h2');
+    if (h2) h2.replaceChildren(document.createTextNode('Scout program'));
+    const run = hostRoot?.querySelector('.run-indicator');
+    if (run) run.hidden = true;
+  }
+
   function showOverlay() {
     ensureDemoCss();
     if (overlay) overlay.hidden = false;
@@ -94,9 +107,15 @@ export function bindScout(root, game, hooks = {}) {
     const line = explainScoutResult(sim) || resultLineFor(sim) || game.state.expedition.resultLine || 'Scout';
     const items = renderTraceItems(sim);
     const rows = items.length
-      ? items.map((t) => `<li class="trace-item"><span class="trace-tick">Tick ${t.tick}</span><span class="trace-pos">${t.cell}${t.facing ? ` facing ${t.facing}` : ''}</span><span class="trace-battery">Battery: ${t.battery ?? ''}</span><span class="trace-reason">${t.reason}</span></li>`).join('')
+      ? items.map((t) => `<li class="trace-item"><span class="trace-tick">Tick ${t.tick}</span><span class="trace-pos">${t.cell}${t.facing ? ` facing ${t.facing}` : ''}</span><span class="trace-battery">Battery: ${t.battery ?? ''}</span><span class="trace-reason"></span></li>`).join('')
       : '<li class="trace-item">No ticks recorded.</li>';
-    traceRoot.innerHTML = `<div class="scout-trace-card"><h2>${line}</h2><ol class="trace-list" data-expanded="true">${rows}</ol><button type="button" id="relaunch-scout" class="relaunch-scout">Relaunch scout</button></div>`;
+    traceRoot.innerHTML = `<div class="scout-trace-card"><h2></h2><ol class="trace-list" data-expanded="true">${rows}</ol><button type="button" id="relaunch-scout" class="relaunch-scout">Relaunch scout</button></div>`;
+    const h2 = traceRoot.querySelector('h2');
+    if (h2) h2.textContent = line;
+    const reasons = traceRoot.querySelectorAll('.trace-reason');
+    items.forEach((t, i) => {
+      if (reasons[i]) reasons[i].textContent = t.reason || '';
+    });
     traceRoot.querySelector('#relaunch-scout')?.addEventListener('click', (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -111,6 +130,7 @@ export function bindScout(root, game, hooks = {}) {
     // new session ID and can look like a full base reset).
     if (!lastSim && getGameState()) lastSim = getGameState();
     showOverlay();
+    setOverlayTitle('Scout expedition: trace');
     paintTrace(lastSim);
     stopOperateTicking();
     return true;
@@ -128,6 +148,7 @@ export function bindScout(root, game, hooks = {}) {
     showOverlay();
     showHosted();
     showBuildScreen();
+    retitleProgramPanel();
   }
 
   async function openOperate() {
@@ -138,6 +159,7 @@ export function bindScout(root, game, hooks = {}) {
       return openTrace();
     }
     showOverlay();
+    setOverlayTitle('Scout expedition: trace');
     showHosted();
     showOperateView();
     stopOperateTicking();

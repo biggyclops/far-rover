@@ -224,6 +224,17 @@ function ensurePlaced(game, mem, units, key, type, preferTx, preferTy, exact = n
   return 'blocked';
 }
 
+function ensureDrops(game, mem, units) {
+  const drops = mem.layout?.drops;
+  if (!drops?.length) return ensureStorages(game, mem, units, 2);
+  for (let i = 0; i < drops.length; i++) {
+    const d = drops[i];
+    const st = ensurePlaced(game, mem, units, `drop${i}`, d.type, d.tx, d.ty, d);
+    if (st !== 'ready') return st;
+  }
+  return 'ready';
+}
+
 function ensureStorages(game, mem, units, count) {
   const hab = game.habitat();
   const planned = mem.layout?.storages || [];
@@ -389,7 +400,10 @@ function thinkHaulers(game, mem, units, meta) {
     }
   }
 
-  if (pads < 2 && !iceCapReady(game)) {
+  if (mem.layout?.drops) {
+    const st = ensureDrops(game, mem, units);
+    if (st !== 'ready') return;
+  } else if (pads < 2 && !iceCapReady(game)) {
     const crew = pads === 0 ? units : miners.slice(0, 1);
     const st = ensureStorages(game, mem, crew.length ? crew : units, 2);
     if (st !== 'ready' && pads === 0) return;

@@ -261,25 +261,34 @@ test.describe('Far Rover v0.8 M1', () => {
     const snap = await page.evaluate(() => {
       const t = window.__v08Test;
       t.unlockDeepIce();
-      const deep = t.getState().deepIce;
-      let hub = null;
-      for (let ty = deep.ty - 3; ty <= deep.ty + 1 && !hub; ty++) {
-        for (let tx = deep.tx - 3; tx <= deep.tx + 1 && !hub; tx++) {
-          hub = t.placeBuilding('tunnel-hub', tx, ty);
-        }
-      }
-      if (!hub) return { error: 'no hub' };
-      t.completeBuilding(hub.id);
-      t.depositToBuilding(hub.id, { ice: 12 });
+      const home = t.placeBuilding('tunnel-hub', 14, 21);
+      if (!home) return { error: 'no home hub' };
+      t.completeBuilding(home.id);
+      t.depositToBuilding(home.id, { ice: 12 });
+      t.syncHud();
+      const unfinished = {
+        stored: t.getState().stored.ice,
+        transit: t.getState().transit.ice,
+        totalsIce: t.getState().ice,
+      };
+      const far = t.placeBuilding('tunnel-hub', 22, 21);
+      if (!far) return { error: 'no far hub', unfinished };
+      t.completeBuilding(far.id);
+      const tiles = t.startDigCorridor();
+      if (!tiles?.length) return { error: 'no corridor', unfinished };
+      t.markTunnelDone();
       t.syncHud();
       const s = t.getState();
       return {
+        unfinished,
         stored: s.stored.ice,
         transit: s.transit.ice,
         totalsIce: s.ice,
       };
     });
     expect(snap.error).toBeUndefined();
+    expect(snap.unfinished.stored).toBe(20);
+    expect(snap.unfinished.transit).toBe(0);
     expect(snap.stored).toBe(20);
     expect(snap.transit).toBe(12);
     expect(snap.totalsIce).toBeGreaterThanOrEqual(32);
@@ -521,44 +530,51 @@ test.describe('Far Rover v0.8 M2', () => {
         x: (tx + 0.5) * C.tileSize,
         y: (ty + 0.5) * C.tileSize,
       });
-      const spot = center(10, 10);
 
-      window.__v08Test.startDigLine(10, 10, 10, 10);
-      window.__v08Test.setUnitPos(s0.units[0].id, spot.x, spot.y);
+      window.__v08Test.selectUnits([s0.units[0].id]);
+      const home = window.__v08Test.placeBuilding('tunnel-hub', 14, 21);
+      const far = window.__v08Test.placeBuilding('tunnel-hub', 22, 21);
+      if (!home || !far) return { error: 'hubs' };
+      window.__v08Test.completeBuilding(home.id);
+      window.__v08Test.completeBuilding(far.id);
+      const tiles = window.__v08Test.startDigCorridor();
+      if (!tiles?.length) return { error: 'corridor' };
+      const a = tiles[0];
+      const spotA = center(a.tx, a.ty);
+
+      window.__v08Test.setUnitPos(s0.units[0].id, spotA.x, spotA.y);
       window.__v08Test.selectUnits([s0.units[0].id]);
       window.__v08Test.issueOrder({ type: 'dig' });
       window.__v08Test.advance(one * 0.92);
-      const oneEarly = window.__v08Test.getState().tunnel.tiles[0];
+      const oneEarly = window.__v08Test.getState().tunnel.tiles.find((x) => x.tx === a.tx && x.ty === a.ty);
       window.__v08Test.advance(one * 0.15);
-      const oneDone = window.__v08Test.getState().tunnel.tiles[0];
+      const oneDone = window.__v08Test.getState().tunnel.tiles.find((x) => x.tx === a.tx && x.ty === a.ty);
 
-      window.__v08Test.startDigLine(11, 10, 11, 10);
-      const spot2 = center(11, 10);
-      window.__v08Test.setUnitPos(s0.units[0].id, spot2.x, spot2.y);
-      window.__v08Test.setUnitPos(s0.units[1].id, spot2.x, spot2.y);
+      const next = window.__v08Test.getState().tunnel.tiles.find((x) => !x.done) || tiles[tiles.length - 1];
+      const p0 = next.progress;
+      const spotB = center(next.tx, next.ty);
+      window.__v08Test.setUnitPos(s0.units[0].id, spotB.x, spotB.y);
+      window.__v08Test.setUnitPos(s0.units[1].id, spotB.x, spotB.y);
       window.__v08Test.selectUnits([s0.units[0].id, s0.units[1].id]);
       window.__v08Test.issueOrder({ type: 'dig' });
-      window.__v08Test.advance((one / 2) * 0.92);
-      const twoEarly = window.__v08Test.getState().tunnel.tiles[0];
-      window.__v08Test.advance((one / 2) * 0.2);
-      const twoDone = window.__v08Test.getState().tunnel.tiles[0];
+      window.__v08Test.advance((one / 2) * 0.5);
+      const twoMid = window.__v08Test.getState().tunnel.tiles.find((x) => x.tx === next.tx && x.ty === next.ty);
+      const twoDelta = twoMid.progress - p0;
 
       return {
         oneEarly: oneEarly.done,
         oneEarlyProgress: oneEarly.progress,
         oneDone: oneDone.done,
-        twoEarly: twoEarly.done,
-        twoEarlyProgress: twoEarly.progress,
-        twoDone: twoDone.done,
+        twoDelta,
         oneSeconds: one,
       };
     });
+    expect(result.error).toBeUndefined();
     expect(result.oneEarly).toBe(false);
     expect(result.oneEarlyProgress).toBeGreaterThan(0.8);
     expect(result.oneDone).toBe(true);
-    expect(result.twoEarly).toBe(false);
-    expect(result.twoEarlyProgress).toBeGreaterThan(0.8);
-    expect(result.twoDone).toBe(true);
+    expect(result.twoDelta).toBeGreaterThan(0.4);
+    expect(result.twoDelta).toBeLessThan(0.65);
   });
 
   test('cargo travels hub to hub at 4 tiles/s', async ({ page }) => {
@@ -700,18 +716,62 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     await expect(page.locator('.action-select').nth(2)).toHaveValue('notify');
     await expect(page.locator('.condition-select').nth(3)).toHaveValue('always');
     await expect(page.locator('.action-select').nth(3)).toHaveValue('explore');
-    await expect(page.locator('#scout-overlay-title')).toHaveText('Scout expedition: trace');
+    await expect(page.locator('#scout-overlay-title')).toHaveText('Scout program');
+    await expect(page.locator('.build-header h2')).toHaveText('Scout program');
+    await expect(page.locator('#scout-overlay')).not.toContainText('Build Your Rover');
     const notify = page.locator('.action-select').first().locator('option[value="notify"]');
     await expect(notify).toHaveCount(1);
     await expect(page.locator('.condition-select').nth(1).locator('option[value="on_ore"]'))
       .toContainText('On ore tile (ice)');
     await expect(page.locator('.condition-select').nth(2).locator('option[value="ore_next_to"]'))
       .toContainText('Ore (ice) next to rover');
+    await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/scout-program.png', fullPage: true });
     await expect(page.locator('.sensor-desc').filter({ hasText: /ice nearby/i })).toHaveCount(1);
     await expect(page.locator('.reference-col li').filter({ hasText: /Notify/ }))
       .toContainText('side effect, not a turn');
     await expect(page.locator('.reference-col li').filter({ hasText: /Notify/ }))
       .not.toContainText('hold still');
+  });
+
+  test('scout keeps ticking while the overlay is open and the base is paused', async ({ page }) => {
+    await ready(page);
+    await page.evaluate(async () => {
+      const t = window.__v08Test;
+      t.launchProgram(['distance', 'spectral'], [
+        { condition: { type: 'always' }, action: { type: 'explore' } },
+      ]);
+      await t.openOperate();
+    });
+    await expect(page.locator('#scout-overlay')).toBeVisible();
+    const before = await page.evaluate(() => {
+      const s = window.__v08Test.getState();
+      return { tick: s.scoutTick, time: s.time, speed: s.speed };
+    });
+    expect(before.speed).toBe(0);
+    await page.waitForTimeout(2500);
+    const after = await page.evaluate(() => {
+      const s = window.__v08Test.getState();
+      return { tick: s.scoutTick, time: s.time, speed: s.speed };
+    });
+    expect(after.speed).toBe(0);
+    expect(after.time).toBe(before.time);
+    expect(after.tick).toBeGreaterThan(before.tick);
+  });
+
+  test('first storage after Deep Ice shows the ring-edge tip', async ({ page }) => {
+    await ready(page);
+    const snap = await page.evaluate(() => {
+      const t = window.__v08Test;
+      t.unlockDeepIce();
+      const b = t.placeBuilding('storage', 21, 18);
+      t.syncHud();
+      return { placed: !!b, toast: t.getState().toast, kind: t.getState().toastKind };
+    });
+    expect(snap.placed).toBe(true);
+    expect(snap.kind).toBe('storage-tip');
+    await expect(page.locator('#toast')).toContainText('Tip: build storage at the edge of command range, toward the ice.');
+    await page.locator('#toast').screenshot({ path: '/opt/cursor/artifacts/screenshots/storage-tip.png' });
+    await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/storage-tip-board.png', fullPage: true });
   });
 
   test('unit: setResources cannot put ice above the habitat cap', async ({ page }) => {
@@ -893,8 +953,8 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
       };
     });
     expect(before.toastKind).toBe('scout-result');
-    expect(before.line).toMatch(/trace only/);
-    await expect(page.locator('#toast')).toContainText('trace only');
+    expect(before.line).toMatch(/Returned with trace ice only/);
+    await expect(page.locator('#toast')).toContainText('Returned with trace ice only');
     const toastBtns = page.locator('#toast button');
     const toastCount = await toastBtns.count();
     expect(toastCount).toBeGreaterThan(0);
@@ -903,7 +963,9 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     }
     await expect(page.locator('#scout-trace')).toBeVisible();
     await expect(page.locator('#scout-overlay-title')).toHaveText('Scout expedition: trace');
-    await expect(page.locator('#scout-trace h2')).toContainText('trace only');
+    await expect(page.locator('#scout-trace h2')).toContainText('Returned with trace ice only');
+    await expect(page.locator('#scout-trace h2')).toContainText('farther out (top rows)');
+    await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/trace-only-line.png', fullPage: true });
     await expect(page.locator('#scout-trace .trace-list')).toHaveAttribute('data-expanded', 'true');
     await expect(page.locator('#relaunch-scout')).toHaveText('Relaunch scout');
     await expect(page.locator('#scout-overlay')).not.toContainText('New Tester');
@@ -919,6 +981,10 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     await page.click('#relaunch-scout');
     await expect(page.locator('#scout-overlay')).toBeVisible();
     await expect(page.locator('.build-screen')).toBeVisible();
+    await expect(page.locator('#scout-overlay-title')).toHaveText('Scout program');
+    await expect(page.locator('.build-header h2')).toHaveText('Scout program');
+    await expect(page.locator('#scout-overlay')).not.toContainText('Build Your Rover');
+    await expect(page.locator('#scout-overlay')).not.toContainText('Run 2');
     await page.click('#scout-back');
     await expect(page.locator('#scout-overlay')).toBeHidden();
     const after = await page.evaluate(() => {
@@ -1669,6 +1735,97 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     await expect(page.locator('#win-logistics')).toContainText('haulers only');
     await expect(page.locator('#win-ice')).toContainText('/');
     await expect(page.locator('#win-patches')).toContainText('Patches used:');
+  });
+
+  test('honest naive starter following the storage tip lands the crew', async ({ page }) => {
+    test.setTimeout(180000);
+    await ready(page);
+    const result = await page.evaluate(async (prog) => {
+      const t = window.__v08Test;
+      const { listStorageLayouts } = await import('/v08/balance/placements.js');
+      function haulers() {
+        return t.getState().units.filter((u) => u.kind === 'hauler');
+      }
+      function waitDone(id) {
+        for (let i = 0; i < 80; i++) {
+          t.advance(1);
+          if (t.getState().buildings.find((b) => b.id === id)?.complete) return true;
+        }
+        return false;
+      }
+      function worldTile(tx, ty) {
+        return { x: (tx + 0.5) * t.config.tileSize, y: (ty + 0.5) * t.config.tileSize };
+      }
+      function tend(sourceTx, sourceTy) {
+        const snap = t.getState();
+        const hab = snap.buildings.find((b) => b.type === 'habitat');
+        const canSpend = snap.isDay || snap.stored.power > 80;
+        const low = snap.units.filter((u) => u.kind === 'hauler' && u.battery <= 25 && u.order !== 'charge');
+        if (low.length && canSpend && hab) {
+          t.selectUnits(low.map((u) => u.id));
+          const c = worldTile(hab.tx + 1, hab.ty + 1);
+          t.issueContextual(c.x, c.y);
+        }
+        const ready = t.getState().units.filter((u) => {
+          if (u.kind !== 'hauler') return false;
+          if (u.order === 'build' || u.order === 'dig') return false;
+          if (u.order === 'charge') return u.battery >= 90;
+          if (u.order === 'haul') return u.status === 'blocked';
+          return true;
+        });
+        if (ready.length) {
+          t.selectUnits(ready.map((u) => u.id));
+          const w = worldTile(sourceTx, sourceTy);
+          t.issueContextual(w.x, w.y);
+        }
+      }
+      t.launchProgram(prog.sensors, prog.rules);
+      t.confirmOnOre();
+      t.advance(2.1);
+      const deep = t.getState().deepIce;
+      if (!deep.unlocked) return { error: 'no deep ice', time: t.getState().time };
+      const tip = listStorageLayouts().find((l) => l.id === 'nearest-ice');
+      if (!tip?.storages?.[0]) return { error: 'no ring-edge storage' };
+      t.selectUnits(haulers().map((u) => u.id));
+      const storageA = t.placeBuilding('storage', tip.storages[0].tx, tip.storages[0].ty);
+      if (!storageA) return { error: 'storage A place failed', spot: tip.storages[0] };
+      const toast = t.getState().toastKind;
+      if (!waitDone(storageA.id)) return { error: 'storage A not complete' };
+      const bSpot = tip.storages[1] || tip.storages[0];
+      t.selectUnits(haulers().map((u) => u.id));
+      const storageB = t.placeBuilding('storage', bSpot.tx, bSpot.ty);
+      if (!storageB) return { error: 'storage B place failed', spot: bSpot };
+      if (!waitDone(storageB.id)) return { error: 'storage B not complete' };
+      t.selectUnits(haulers().map((u) => u.id));
+      t.issueContextual(worldTile(deep.tx, deep.ty).x, worldTile(deep.tx, deep.ty).y);
+      for (let i = 0; i < 1200; i++) {
+        t.advance(1);
+        const snap = t.getState();
+        if (snap.canLandCrew) {
+          t.landCrew();
+          break;
+        }
+        tend(deep.tx, deep.ty);
+      }
+      const end = t.getState();
+      return {
+        win: end.win,
+        stored: end.stored,
+        time: end.time,
+        usedTunnel: end.stats.usedTunnel,
+        toast,
+        storage: tip.storages[0],
+      };
+    }, NOTIFY_PROGRAM);
+    expect(result.error).toBeUndefined();
+    expect(result.toast).toBe('storage-tip');
+    expect(result.win).toBeTruthy();
+    expect(result.win.logistics).toBe('haulers only');
+    expect(result.stored.ice).toBeGreaterThanOrEqual(180);
+    expect(result.usedTunnel).toBe(false);
+    console.log(`honest naive+tip win: ${result.win.time.toFixed(1)}s storage (${result.storage.tx},${result.storage.ty})`);
+    await page.evaluate(() => window.__v08Test.syncHud());
+    await expect(page.locator('#win-overlay')).toBeVisible();
   });
 
   async function honestTunnel(page, diggers, { ringEdge = false } = {}) {

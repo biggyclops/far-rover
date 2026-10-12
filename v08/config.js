@@ -125,7 +125,7 @@ export const CONFIG = {
   tunnelHubMinSeparationTiles: 6, // Proposed (Game Designer) — no 1-tile corridors
   hubIceCapacity: 20, // Proposed (Game Designer) — transit buffer at each hub
   hubRegolithCapacity: 20, // Proposed (Game Designer)
-  digSecondsPerTilePerRover: 16, // Proposed (Game Designer) — rovers stack; tuned 16–20 against the 5 criteria
+  digSecondsPerTilePerRover: 15, // Proposed (Game Designer) — r4; aligned 2-digger then holds ~19–23% across reaction delays
   digPowerPerTile: 3, // Proposed (Game Designer)
   digRegolithYieldPerTile: 2, // Proposed (Game Designer)
   tunnelCargoTilesPerSecond: 4, // Proposed (Game Designer) — hub-to-hub, no rover

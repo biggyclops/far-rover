@@ -1,5 +1,6 @@
 // Headless coverage for the M1 fix-list + Player 2 v2 bugs.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createGame, TILE } from '../v08/game.js';
 import { CONFIG as C } from '../v08/config.js';
 import * as Sim from '../v08/engine.js';
@@ -8,8 +9,8 @@ import {
   hostedNotifyMovementEqualsStripped,
 } from '../v08/hosted-tick.js';
 import { explainScoutResult } from '../v08/scout-explain.js';
-import { runStrategy } from '../v08/balance/harness.js';
-import { nearestLegalDrop, listTunnelPlans, listStorageLayouts } from '../v08/balance/placements.js';
+import { runStrategy, REACTION_DELAYS } from '../v08/balance/harness.js';
+import { nearestLegalDrop, listTunnelPlans, listStorageLayouts, P2_DIAGONAL_334, listAllTunnelPlans, layoutsFor, lineOpts } from '../v08/balance/placements.js';
 import { runProgram } from '../v08/balance/scout-run.js';
 
 function advance(game, seconds, step = 1 / 60) {
@@ -196,7 +197,7 @@ function scriptedHaul(game) {
   const goal = g.storedForGoal();
   const transit = g.transitIce();
   assert.ok(tot.ice > goal.ice);
-  assert.ok(transit.ice >= 12 - 1e-6);
+  assert.equal(transit.ice, 0, 'hub ice is not in transit until the tunnel is finished');
   console.log('ok  HUD goal ice excludes hub transit');
 }
 
@@ -304,6 +305,7 @@ function scriptedHaul(game) {
   assert.equal(C.tunnelHubMinSeparationTiles, 6);
   assert.equal(C.deepIceTilesFromStartStorage, 21);
   assert.equal(C.haulerOffRoadSpeedMult, 0.5);
+  assert.equal(C.digSecondsPerTilePerRover, 15);
   console.log('ok  new config keys keep economy defaults');
 }
 
@@ -728,13 +730,14 @@ function runUntilOutcome(sensors, rules, place) {
   g.completeBuilding(far.id);
   far.ice = 12;
   assert.equal(g.storedForGoal().ice, C.startIce, 'hub ice is not goal ice');
-  assert.equal(g.transitIce().ice, 12);
+  assert.equal(g.transitIce().ice, 0, 'unfinished hub ice is not in transit');
   assert.ok(g.totals().ice >= C.startIce + 12);
   const success = { outcome: 'success-scan', iceConfirmed: true, col: 5, row: 1, tick: 20, rules: [], trace: [] };
   const trace = { outcome: 'success-scan', iceConfirmed: false, col: 5, row: 12, tick: 46, rules: [], trace: [] };
   assert.equal(explainScoutResult(success), 'Deep Ice confirmed');
-  assert.equal(explainScoutResult(trace), 'trace only');
-  console.log('ok  HUD ice matches the goal counter; hub ice is in transit');
+  assert.match(explainScoutResult(trace), /Returned with trace ice only/);
+  assert.match(explainScoutResult(trace), /farther out \(top rows\)/);
+  console.log('ok  HUD ice matches the goal counter; unfinished hub ice is not in transit');
 }
 
 {
@@ -766,6 +769,227 @@ function runUntilOutcome(sensors, rules, place) {
   assert.ok(Math.abs(ratio - C.haulerOffRoadSpeedMult) < 0.08, `off-road ratio ${ratio.toFixed(3)} vs ${C.haulerOffRoadSpeedMult}`);
   assert.match(outside.iceHoverText(35, 8), /Rough ground: haulers drive at \d+% speed/);
   console.log(`ok  off-road hauler speed ${ratio.toFixed(2)}x outside the ring`);
+}
+
+{
+  const { far, home, line } = P2_DIAGONAL_334;
+  const g = createGame();
+  g.unlockDeepIce();
+  const farHub = g.placeBuilding('tunnel-hub', far.tx, far.ty, false);
+  assert.ok(farHub, 'P2 far hub still places beside Deep Ice');
+  g.completeBuilding(farHub.id);
+  const homeOk = g.canPlace('tunnel-hub', home.tx, home.ty);
+  if (homeOk) {
+    const homeHub = g.placeBuilding('tunnel-hub', home.tx, home.ty, false);
+    g.completeBuilding(homeHub.id);
+    assert.equal(g.startDigLine(line.p0.tx, line.p0.ty, line.p1.tx, line.p1.ty), null);
+    assert.match(g.state.toast?.text || '', /straight line that touches both hubs/);
+  }
+  assert.equal(line.aligned, false);
+  const homeB = { type: 'tunnel-hub', tx: home.tx, ty: home.ty };
+  const farB = { type: 'tunnel-hub', tx: far.tx, ty: far.ty };
+  assert.equal(g.orthogonalTouchesBuilding(line.p0.tx, line.p0.ty, homeB), false);
+  assert.equal(g.orthogonalTouchesBuilding(line.p1.tx, line.p1.ty, farB), false);
+  const opts = lineOpts(home, far);
+  const diag = opts.find((o) => o.p0.tx === line.p0.tx && o.p0.ty === line.p0.ty && o.p1.tx === line.p1.tx && o.p1.ty === line.p1.ty);
+  assert.ok(diag, 'P2 3:34 line is in the layout search');
+  assert.equal(diag.aligned, false);
+  const all = listAllTunnelPlans();
+  assert.ok(all.some((p) => p.legal === false), 'search includes diagonal attempts');
+  assert.ok(all.some((p) => p.legal === true), 'search includes legal aligned corridors');
+  const match = all.find((p) => (
+    p.far.tx === far.tx && p.far.ty === far.ty
+    && p.home.tx === home.tx && p.home.ty === home.ty
+    && p.line.p0.tx === line.p0.tx && p.line.p0.ty === line.p0.ty
+  ));
+  if (match) assert.equal(match.legal, false, 'P2 3:34 plan is marked illegal');
+  for (const layout of layoutsFor('tunnel-2-diggers')) {
+    if (layout.id === 'auto') continue;
+    assert.notEqual(layout.legal, false, `strategy layout ${layout.id} must be legal`);
+  }
+  const aligned = createGame();
+  const pair = setupHomeTunnel(aligned);
+  assert.ok(aligned.startDigCorridor()?.length, 'aligned hub corridor still connects');
+  assert.equal(aligned.startDigLine(pair.home.tx - 2, pair.home.ty - 2, pair.far.tx + 2, pair.far.ty + 2), null);
+  console.log('ok  r4.1 tunnel is a straight orthogonal hub-to-hub line; P2 3:34 diagonal is illegal');
+}
+
+{
+  const g = createGame();
+  g.selectUnits([g.state.units[0].id]);
+  const home = g.placeBuilding('tunnel-hub', 14, 21, false);
+  const far = g.placeBuilding('tunnel-hub', 22, 21, false);
+  g.completeBuilding(home.id);
+  g.completeBuilding(far.id);
+  const tiles = g.startDigCorridor();
+  assert.ok(tiles?.length);
+  const spot = g.tileCenter(tiles[0].tx, tiles[0].ty);
+  const u = g.state.units[0];
+  u.x = spot.x;
+  u.y = spot.y;
+  g.assignOrder([u], { type: 'dig' }, spot);
+  advance(g, C.digSecondsPerTilePerRover * 0.92);
+  assert.equal(g.state.tunnel.tiles[0].done, false);
+  advance(g, C.digSecondsPerTilePerRover * 0.15);
+  assert.equal(g.state.tunnel.tiles[0].done, true);
+  console.log('ok  r4.2 one rover digs a tile in 15 s');
+}
+
+{
+  const g = createGame();
+  g.unlockDeepIce();
+  g.selectUnits([g.state.units[0].id]);
+  let poked = null;
+  const hubs = [];
+  for (let ty = 0; ty < C.mapHeight - 1 && hubs.length < 12; ty++) {
+    for (let tx = 0; tx < C.mapWidth - 1 && hubs.length < 12; tx++) {
+      if (g.canPlace('tunnel-hub', tx, ty)) hubs.push({ tx, ty });
+    }
+  }
+  for (const hub of hubs) {
+    const placed = g.placeBuilding('tunnel-hub', hub.tx, hub.ty, false);
+    if (!placed) continue;
+    g.completeBuilding(placed.id);
+    for (let vy = hub.ty - 4; vy <= hub.ty + 3 && !poked; vy++) {
+      for (let vx = hub.tx - 4; vx <= hub.tx + 3 && !poked; vx++) {
+        const centerIn = g.inCommandRange(vx + 1, vy + 1);
+        let allIn = true;
+        for (let y = 0; y < 3; y++) {
+          for (let x = 0; x < 3; x++) {
+            if (!g.inCommandRange(vx + x, vy + y)) allIn = false;
+          }
+        }
+        if (centerIn && !allIn) {
+          assert.equal(g.canPlace('vault', vx, vy), false, `vault (${vx},${vy}) poked past the ring`);
+          poked = { vx, vy, hub };
+        }
+      }
+    }
+    if (poked) break;
+    g.state.buildings = g.state.buildings.filter((b) => b.id !== placed.id);
+    for (let y = 0; y < 2; y++) {
+      for (let x = 0; x < 2; x++) {
+        const t = g.tileAt(hub.tx + x, hub.ty + y);
+        if (t) t.buildingId = null;
+      }
+    }
+  }
+  const drop = nearestLegalDrop();
+  assert.ok(drop.distance >= 10, `nearest legal ${drop.type} is ${drop.distance.toFixed(2)} tiles from Deep Ice`);
+  console.log(`ok  r4.3 vault uses footprint range; nearest drop ${drop.distance.toFixed(2)} (${drop.type}${poked ? `; poked ${poked.vx},${poked.vy} rejected` : ''})`);
+}
+
+{
+  const g = createGame();
+  g.selectUnits([g.state.units[0].id]);
+  const home = g.placeBuilding('tunnel-hub', 14, 21, false);
+  const far = g.placeBuilding('tunnel-hub', 22, 21, false);
+  g.completeBuilding(home.id);
+  g.completeBuilding(far.id);
+  const tiles = g.startDigCorridor();
+  assert.ok(tiles?.length);
+  const [h1, h2] = g.state.units.filter((u) => u.kind === 'hauler');
+  const spot = g.tileCenter(tiles[0].tx, tiles[0].ty);
+  h1.x = spot.x;
+  h1.y = spot.y;
+  g.selectUnits([h1.id]);
+  g.state.armedOrder = 'dig';
+  assert.equal(g.issueContextual(spot.x, spot.y), true);
+  advance(g, 5);
+  const progress = g.state.tunnel.tiles.map((t) => t.progress);
+  const started = g.state.tunnel.tiles.filter((t) => t.started).length;
+  const powerBefore = g.totals().power;
+  assert.ok(progress.some((p) => p > 0), 'first digger made progress');
+  g.selectUnits([h2.id]);
+  g.state.armedOrder = 'dig';
+  assert.equal(g.issueContextual(spot.x, spot.y), true);
+  const progressAfter = g.state.tunnel.tiles.map((t) => t.progress);
+  assert.deepEqual(progressAfter, progress, 're-arming Dig keeps tile progress');
+  assert.equal(g.state.tunnel.tiles.filter((t) => t.started).length, started);
+  assert.equal(g.totals().power, powerBefore, 're-arm does not recharge already-dug tiles');
+  assert.equal(h1.order?.type, 'dig');
+  assert.equal(h2.order?.type, 'dig');
+  const later = g.state.tunnel.tiles.find((t) => !t.done) || g.state.tunnel.tiles[0];
+  const laterSpot = g.tileCenter(later.tx, later.ty);
+  g.selectUnits([h2.id]);
+  g.state.armedOrder = null;
+  h2.order = { type: 'go', x: h2.x, y: h2.y };
+  assert.equal(g.issueContextual(laterSpot.x, laterSpot.y), true, 'unarmed right-click on an unfinished tunnel tile');
+  assert.equal(h2.order?.type, 'dig');
+  console.log('ok  r4.4 re-arming Dig keeps progress and unarmed right-click adds a digger');
+}
+
+{
+  const main = readFileSync(new URL('../v08/main.js', import.meta.url), 'utf8');
+  assert.match(main, /const scoutDt = scout\.isOpen\(\) \? raw : dt/);
+  assert.match(main, /if \(scoutDt > 0\) scout\.pump\(scoutDt\)/);
+  console.log('ok  r4.5 scout pumps wall-clock dt while the overlay is open');
+}
+
+{
+  const scout = readFileSync(new URL('../v08/scout.js', import.meta.url), 'utf8');
+  assert.match(scout, /setOverlayTitle\('Scout program'\)/);
+  assert.match(scout, /createTextNode\('Scout program'\)/);
+  assert.match(scout, /if \(run\) run\.hidden = true/);
+  console.log('ok  r4.6 relaunch panel is titled Scout program');
+}
+
+{
+  const g = createGame();
+  const { far } = setupHomeTunnel(g);
+  g.depositToBuilding(far.id, { ice: 12 });
+  assert.equal(g.transitIce().ice, 12);
+  const unfinished = createGame();
+  unfinished.selectUnits([unfinished.state.units[0].id]);
+  const hub = unfinished.placeBuilding('tunnel-hub', 14, 21, false);
+  unfinished.completeBuilding(hub.id);
+  unfinished.depositToBuilding(hub.id, { ice: 12 });
+  assert.equal(unfinished.transitIce().ice, 0);
+  console.log('ok  r4.7 in transit counts only ice in hubs on a finished tunnel');
+}
+
+{
+  const before = createGame();
+  before.selectUnits([before.state.units[0].id]);
+  const early = before.placeBuilding('storage', 21, 18, false);
+  assert.ok(early);
+  assert.notEqual(before.state.toast?.kind, 'storage-tip');
+  const g = createGame();
+  g.unlockDeepIce();
+  g.selectUnits([g.state.units[0].id]);
+  const b = g.placeBuilding('storage', 21, 18, false);
+  assert.ok(b);
+  assert.equal(g.state.toast?.kind, 'storage-tip');
+  assert.match(g.state.toast.text, /Tip: build storage at the edge of command range, toward the ice/);
+  const again = g.placeBuilding('storage', 24, 18, false);
+  assert.ok(again);
+  assert.equal(g.state.storageTipShown, true);
+  console.log('ok  r4.8 first storage after Deep Ice shows the ring-edge tip');
+}
+
+{
+  const line = explainScoutResult({
+    outcome: 'success-scan',
+    iceConfirmed: false,
+    col: 5,
+    row: 12,
+    tick: 46,
+    rules: [],
+    trace: [],
+  });
+  assert.equal(
+    line,
+    'Returned with trace ice only. The big deposits are farther out (top rows). Try a higher Return threshold or a crater rule so it gets farther.',
+  );
+  console.log('ok  r4.9 helpful trace-only result line');
+}
+
+{
+  assert.deepEqual(REACTION_DELAYS, [0, 2, 3, 4, 6, 10]);
+  const haulerLayouts = layoutsFor('haulers-plus-2');
+  assert.ok(haulerLayouts.some((l) => l.id === 'hub-vault' || l.drops), 'hauler search includes vault drops');
+  assert.ok(haulerLayouts.some((l) => l.id === 'nearest-ice'));
+  console.log(`ok  r4 harness ports P2 layout search and delay sweep ${REACTION_DELAYS.join('/')}`);
 }
 
 console.log('v08 fix-list node tests passed');

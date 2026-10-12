@@ -81,9 +81,10 @@ function frame(now) {
   const dt = raw * game.state.speed;
   if (dt > 0) {
     game.update(dt);
-    scout.pump(dt);
     renderer.recordTracks?.(dt);
   }
+  const scoutDt = scout.isOpen() ? raw : dt;
+  if (scoutDt > 0) scout.pump(scoutDt);
   audio.setDigLoop(game.isDigging());
   handleEvents(game.flushEvents());
   renderer.draw();
