@@ -6,22 +6,24 @@
 //   node v08/balance/run.js --overrides '{"goalIceInStorage":180}'
 //   node v08/balance/run.js --strategy haulers-2
 //   node v08/balance/run.js --sweep
+//   node v08/balance/run.js --delays
 
 import { writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { changedFromDefaults } from './config-override.js';
-import { formatTime, runAllStrategies, runStrategy, criteriaScore, STRATEGY_IDS } from './harness.js';
+import { formatTime, runAllStrategies, runStrategy, criteriaScore, sweepReactionDelays, STRATEGY_IDS } from './harness.js';
 import { CANDIDATES, SWEEP_GRID } from './candidates.js';
 import { writeChartPng } from './chart.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 function parseArgs(argv) {
-  const out = { overrides: {}, strategy: null, sweep: false, report: false, json: false, maxSeconds: 30 * 60 };
+  const out = { overrides: {}, strategy: null, sweep: false, delays: false, report: false, json: false, maxSeconds: 30 * 60 };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--sweep') out.sweep = true;
+    else if (a === '--delays') out.delays = true;
     else if (a === '--report') out.report = true;
     else if (a === '--json') out.json = true;
     else if (a === '--strategy') out.strategy = argv[++i];
@@ -116,6 +118,22 @@ function main() {
 
   if (args.report) {
     writeReport(opts);
+    return;
+  }
+
+  if (args.delays) {
+    const sweep = sweepReactionDelays(args.overrides, opts);
+    if (args.json) console.log(JSON.stringify(sweep, null, 2));
+    else {
+      console.log(`Pinned delay-0: 2-digger ${sweep.tunnelLayout} vs ${sweep.haulersStrategy} ${sweep.haulersLayout}`);
+      console.log('| Delay | 2-digger | Best haulers | Lead | GD | Earliest |');
+      console.log('|---|---:|---:|---:|---:|---|');
+      for (const row of sweep.rows) {
+        const lead = row.lead == null ? '—' : `${(row.lead * 100).toFixed(1)}%`;
+        const gd = row.gd ? `${row.gd.passCount}/5` : '—';
+        console.log(`| ${row.delay} s | ${row.tunnelLabel} (${row.tunnelLayout}) | ${row.haulersLabel} (${row.haulersStrategy} ${row.haulersLayout}) | ${lead} | ${gd} | ${row.earliestLabel} ${row.earliestStrategy} |`);
+      }
+    }
     return;
   }
 

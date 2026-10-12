@@ -2570,8 +2570,8 @@ export function createGame() {
   function nextPrintSeconds() {
     const n = printedHaulerCount();
     if (n <= 0) return C.printerHaulerSeconds;
-    if (n === 1) return C.printerHaulerSecondsSecond ?? 45;
-    return C.printerHaulerSecondsAfter ?? 60;
+    if (n === 1) return C.printerHaulerSecondsSecond ?? 60;
+    return C.printerHaulerSecondsAfter ?? 90;
   }
 
   function startPrint() {
