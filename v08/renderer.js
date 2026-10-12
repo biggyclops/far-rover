@@ -374,6 +374,22 @@ export function createRenderer(canvas, assets, game) {
     }
   }
 
+  function drawOffRoadTint(z) {
+    const hab = game.habitat();
+    if (!hab) return;
+    const { w, h } = viewSize();
+    const c = worldToScreen((hab.tx + 1) * C.tileSize, (hab.ty + 1) * C.tileSize);
+    const r = C.commandRangeRadius * C.tileSize * z;
+    ctx.save();
+    ctx.fillStyle = 'rgba(18, 10, 6, 0.20)';
+    ctx.beginPath();
+    ctx.rect(0, 0, w, h);
+    ctx.moveTo(c.x + r, c.y);
+    ctx.arc(c.x, c.y, r, 0, Math.PI * 2, true);
+    ctx.fill('evenodd');
+    ctx.restore();
+  }
+
   function drawCommandRange(z) {
     const hab = game.habitat();
     if (!hab) return;
@@ -766,6 +782,7 @@ export function createRenderer(canvas, assets, game) {
     const view = game.state.view === 'underground' ? 'underground' : 'surface';
     if (view === 'underground') drawUndergroundTiles(z);
     else drawSurfaceTiles(z);
+    if (view === 'surface') drawOffRoadTint(z);
     drawTunnelProgress(z);
     drawBoreFx(z);
     if (view === 'underground') drawPackets(z);

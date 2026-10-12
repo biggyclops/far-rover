@@ -11,6 +11,7 @@ const SWEEP_KEYS = [
   'deepIceTilesFromStartStorage',
   'commandRangeRadius',
   'haulerSpeedTilesPerSecond',
+  'haulerOffRoadSpeedMult',
   'haulerCarry',
   'startHaulers',
   'digSecondsPerTilePerRover',

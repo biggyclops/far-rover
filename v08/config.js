@@ -41,6 +41,7 @@ export const CONFIG = {
 
   // --- Hauler (M1) ---
   haulerSpeedTilesPerSecond: 1, // Proposed (Game Designer)
+  haulerOffRoadSpeedMult: 0.65, // Proposed (Game Designer) — rough ground outside the command ring; tune 0.5–0.75
   haulerCarry: 10, // Proposed (Game Designer)
   haulerBattery: 100, // Proposed (Game Designer)
   haulerDrainPerTileLoaded: 1, // Proposed (Game Designer)

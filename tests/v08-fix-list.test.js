@@ -657,4 +657,35 @@ function runUntilOutcome(sensors, rules, place) {
   console.log('ok  HUD ice matches the goal counter; hub ice is in transit');
 }
 
+{
+  const inside = createGame();
+  const hab = inside.habitat();
+  const uIn = inside.state.units[0];
+  const startIn = inside.tileCenter(hab.tx + 1, hab.ty + 4);
+  const destIn = inside.tileCenter(hab.tx + 1, hab.ty + 6);
+  uIn.x = startIn.x;
+  uIn.y = startIn.y;
+  assert.equal(inside.inCommandRange(hab.tx + 1, hab.ty + 4), true);
+  inside.assignOrder([uIn], { type: 'go', x: destIn.x, y: destIn.y });
+  const in0 = { x: uIn.x, y: uIn.y };
+  advance(inside, 0.5);
+  const inDist = Math.hypot(uIn.x - in0.x, uIn.y - in0.y);
+
+  const outside = createGame();
+  const uOut = outside.state.units[0];
+  assert.equal(outside.inCommandRange(35, 8), false);
+  const startOut = outside.tileCenter(35, 8);
+  const destOut = outside.tileCenter(37, 8);
+  uOut.x = startOut.x;
+  uOut.y = startOut.y;
+  outside.assignOrder([uOut], { type: 'go', x: destOut.x, y: destOut.y });
+  const out0 = { x: uOut.x, y: uOut.y };
+  advance(outside, 0.5);
+  const outDist = Math.hypot(uOut.x - out0.x, uOut.y - out0.y);
+  const ratio = outDist / inDist;
+  assert.ok(Math.abs(ratio - C.haulerOffRoadSpeedMult) < 0.08, `off-road ratio ${ratio.toFixed(3)} vs ${C.haulerOffRoadSpeedMult}`);
+  assert.match(outside.iceHoverText(35, 8), /Rough ground: haulers drive at \d+% speed/);
+  console.log(`ok  off-road hauler speed ${ratio.toFixed(2)}x outside the ring`);
+}
+
 console.log('v08 fix-list node tests passed');
