@@ -11,7 +11,7 @@ export const CONFIG = {
   maxZoom: 2,
   unitClickRadius: 36, // world px; ~36 CSS px at default zoom so a hauler is easy to click
   sourcePixelsPerTile: 128,
-  commandRangeRadius: 9, // Proposed (Game Designer) — ring 9–11; Deep Ice stays ~22 so the nearest drop is ≥10
+  commandRangeRadius: 10, // Proposed (Game Designer) — ring 9 did not give a 20% tunnel lead once haulers sit on the nearest pad; 10 + off-road 0.5 does, and the nearest drop is still ≥10
   commandRangeCosmetic: false,
 
   // Habitat footprint is 2x2. Anchor is the north-west tile.
@@ -41,7 +41,7 @@ export const CONFIG = {
 
   // --- Hauler (M1) ---
   haulerSpeedTilesPerSecond: 1, // Proposed (Game Designer)
-  haulerOffRoadSpeedMult: 0.65, // Proposed (Game Designer) — rough ground outside the command ring; tune 0.5–0.75
+  haulerOffRoadSpeedMult: 0.5, // Proposed (Game Designer) — rough ground outside the command ring; sweep 0.5–0.75, ship 0.5 with ring 10
   haulerCarry: 10, // Proposed (Game Designer)
   haulerBattery: 100, // Proposed (Game Designer)
   haulerDrainPerTileLoaded: 1, // Proposed (Game Designer)
