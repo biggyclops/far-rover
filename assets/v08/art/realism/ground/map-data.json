@@ -1,107 +1,3888 @@
 {
-  "metersPerPixel": 1.0,
-  "plateSize": 2560,
-  "chunk": 512,
-  "placedFor": {
-    "commandRangeRadius": 10,
-    "defaultZoom": 0.75,
-    "deepIceTile": [
-      37,
-      7
-    ],
-    "note": "Gameplay Deep Ice still resolves from config (21 tiles \u2192 (36,7) after #42). Visual plate is framed for the v2 brief."
-  },
-  "credit": "NASA/GSFC/Arizona State University, LROC NAC NAC_POLE_SOUTH_CM_345_P892S1350",
-  "gameplayOverlays": [
-    {
-      "type": "crater-s",
-      "tx": 9,
-      "ty": 5,
-      "mean": 105.09,
-      "darkFrac": 0.03,
-      "overlap": false,
-      "overlayAlpha": 0.55
-    },
-    {
-      "type": "crater-s",
-      "tx": 33,
-      "ty": 13,
-      "mean": 89.87,
-      "darkFrac": 0.037,
-      "overlap": false,
-      "overlayAlpha": 0.55
-    },
-    {
-      "type": "crater-s",
-      "tx": 4,
-      "ty": 29,
-      "mean": 46.65,
-      "darkFrac": 0.093,
-      "overlap": true,
-      "overlayAlpha": 0.28
-    },
-    {
-      "type": "crater-s",
-      "tx": 31,
-      "ty": 32,
-      "mean": 89.66,
-      "darkFrac": 0.038,
-      "overlap": false,
-      "overlayAlpha": 0.55
-    },
-    {
-      "type": "crater-s",
-      "tx": 22,
-      "ty": 8,
-      "mean": 158.38,
-      "darkFrac": 0.041,
-      "overlap": false,
-      "overlayAlpha": 0.55
-    },
-    {
-      "type": "crater-s",
-      "tx": 13,
-      "ty": 20,
-      "mean": 146.62,
-      "darkFrac": 0.005,
-      "overlap": false,
-      "overlayAlpha": 0.55
-    },
-    {
-      "type": "pit",
-      "tx": 12,
-      "ty": 30,
-      "mean": 105.03,
-      "darkFrac": 0.124,
-      "overlap": false,
-      "overlayAlpha": 0.55
-    },
-    {
-      "type": "pit",
-      "tx": 28,
-      "ty": 26,
-      "mean": 100.36,
-      "darkFrac": 0.035,
-      "overlap": false,
-      "overlayAlpha": 0.55
-    },
-    {
-      "type": "crater-m",
-      "tx": 33,
-      "ty": 24,
-      "mean": 110.42,
-      "darkFrac": 0.15,
-      "overlap": false,
-      "overlayAlpha": 0.55
-    },
-    {
-      "type": "ice",
-      "tx": 25,
-      "ty": 16,
-      "mean": 64.68,
-      "darkFrac": 0.041,
-      "overlap": false,
-      "overlayAlpha": 0.4
-    }
+ "version": 1,
+ "map_tiles": [
+  40,
+  40
+ ],
+ "tile_px": 64,
+ "world_px": [
+  2560,
+  2560
+ ],
+ "meters_per_px": 1.0,
+ "meters_per_tile": 64,
+ "source": "LROC NAC south-pole mosaic, see README.md",
+ "sun": "low, from upper-left (shadows fall to lower-right)",
+ "classes": {
+  "open": "flat-ish sunlit regolith",
+  "crater_rim": "raised rim / wall band of a real crater (r>=0.5 tile)",
+  "crater_floor": "inside a real crater, not black",
+  "psr": ">50% of the tile in permanent/black shadow",
+  "steep": "rough relief (top 8% local slope proxy) or partly shadowed slopes"
+ },
+ "grid_legend": {
+  ".": "open",
+  "r": "crater_rim",
+  "f": "crater_floor",
+  "P": "psr",
+  "s": "steep"
+ },
+ "grid_rows": [
+  "Pr....s........s...sPPPPPPPPs..ssrPPrr..",
+  "rr.s..........s.....PPPPPPPr....srrfrrsf",
+  "..fr.............ss.rrrPPPrr....s.rrr...",
+  "..rr.................rrrrrr....s.f......",
+  ".........rr...........rrr......srr.f..rP",
+  ".........fr...................ssPPss..fP",
+  ".......................s....r.f..s..rPrr",
+  "....s......rrr........f.s...fr.....sPfr.",
+  "..........rPPP.......rPr...fff......rrrr",
+  "..........rPPP....s...rsf....f.....f..rf",
+  ".....s....rrrr.s........................",
+  "....s.........s.....................rr..",
+  "..srPr.......ss.....................fr.s",
+  "..ssr....s.....ss..f............fPr...s.",
+  "................................rfr.srPr",
+  "..............................s.rr...rrr",
+  ".......................rrPP.............",
+  ".......................rrrr.............",
+  "......rfss..s......s.......s...fr..Pf...",
+  "s.....rr...s.r.........rPr.....r.....s..",
+  "............rPs........PPr.........s.s..",
+  "....f.......ss.........rrrs........ss...",
+  "...........s...s..........s.............",
+  ".............................s..rr...s..",
+  "....................f...........rfrr....",
+  "..........s.................s....rPr....",
+  ".......s.s......s.....f.....f...f...s...",
+  ".....f.........s..ss...s....s...........",
+  "..........s....s..s...s...........s.rr..",
+  "sfr.f...........s.....f.......s....rPr..",
+  "rrPrss...s..f...........s.....s.....rrs.",
+  "rffrr............r.......f..........s...",
+  "rrfrr............fr.......rrf...rr.f.s..",
+  ".rrrs.............s...s..rffrrrrPrr..s..",
+  "...ss.s....r...ss........srrrfrrPfr.s...",
+  "...s..s.rrsfs................r.frr......",
+  ".......srr.....rr...s...s.ss...f........",
+  "...........f..rPPr..rr.....sf.rrr.....rr",
+  "........s.rr..PPfr..rfrr.rrrrrPPPr....Pf",
+  ".....rr..srf.srPrr..rrfrrfPPPPPPPr....rr"
+ ],
+ "grid": [
+  [
+   "psr",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "steep",
+   "open",
+   "open",
+   "steep",
+   "steep",
+   "crater_rim",
+   "psr",
+   "psr",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open"
+  ],
+  [
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "crater_rim",
+   "crater_rim",
+   "crater_floor",
+   "crater_rim",
+   "crater_rim",
+   "steep",
+   "crater_floor"
+  ],
+  [
+   "open",
+   "open",
+   "crater_floor",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "steep",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "psr",
+   "psr",
+   "psr",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "crater_rim",
+   "psr"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "steep",
+   "psr",
+   "psr",
+   "steep",
+   "steep",
+   "open",
+   "open",
+   "crater_floor",
+   "psr"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "crater_rim",
+   "psr",
+   "crater_rim",
+   "crater_rim"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "psr",
+   "crater_floor",
+   "crater_rim",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "psr",
+   "psr",
+   "psr",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "psr",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "crater_floor",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "psr",
+   "psr",
+   "psr",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "steep",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_floor"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "steep",
+   "crater_rim",
+   "psr",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "crater_rim",
+   "open",
+   "steep"
+  ],
+  [
+   "open",
+   "open",
+   "steep",
+   "steep",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "steep",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "psr",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_floor",
+   "crater_rim",
+   "open",
+   "steep",
+   "crater_rim",
+   "psr",
+   "crater_rim"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "psr",
+   "psr",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_floor",
+   "steep",
+   "steep",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "crater_rim",
+   "open",
+   "open",
+   "psr",
+   "crater_floor",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "psr",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "psr",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "psr",
+   "psr",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "steep",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "steep",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_floor",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "psr",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "steep",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open"
+  ],
+  [
+   "steep",
+   "crater_floor",
+   "crater_rim",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "psr",
+   "crater_rim",
+   "open",
+   "open"
+  ],
+  [
+   "crater_rim",
+   "crater_rim",
+   "psr",
+   "crater_rim",
+   "steep",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "steep",
+   "open"
+  ],
+  [
+   "crater_rim",
+   "crater_floor",
+   "crater_floor",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "crater_rim",
+   "crater_rim",
+   "crater_floor",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "crater_floor",
+   "open",
+   "steep",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_floor",
+   "crater_floor",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "psr",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "steep",
+   "steep",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "crater_floor",
+   "crater_rim",
+   "crater_rim",
+   "psr",
+   "crater_floor",
+   "crater_rim",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "steep",
+   "crater_floor",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "open",
+   "crater_floor",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "steep",
+   "steep",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_floor",
+   "open",
+   "open",
+   "crater_rim",
+   "psr",
+   "psr",
+   "crater_rim",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "crater_floor",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "steep",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "psr",
+   "psr",
+   "crater_floor",
+   "crater_rim",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_floor",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "crater_rim",
+   "psr",
+   "psr",
+   "psr",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "psr",
+   "crater_floor"
+  ],
+  [
+   "open",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "steep",
+   "crater_rim",
+   "crater_floor",
+   "open",
+   "steep",
+   "crater_rim",
+   "psr",
+   "crater_rim",
+   "crater_rim",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim",
+   "crater_floor",
+   "crater_rim",
+   "crater_rim",
+   "crater_floor",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "psr",
+   "crater_rim",
+   "open",
+   "open",
+   "open",
+   "open",
+   "crater_rim",
+   "crater_rim"
   ]
+ ],
+ "class_counts": {
+  "open": 1178,
+  "crater_rim": 185,
+  "crater_floor": 58,
+  "psr": 65,
+  "steep": 114
+ },
+ "craters": [
+  {
+   "center_tile": [
+    23.34,
+    0.16
+   ],
+   "center_px": [
+    1525.5,
+    42.5
+   ],
+   "radius_tiles": 3.15,
+   "radius_px": 201.5,
+   "shadow_frac": 0.59,
+   "psr_floor": true,
+   "touches_map_edge": true,
+   "id": "C01"
+  },
+  {
+   "center_tile": [
+    1.8,
+    31.31
+   ],
+   "center_px": [
+    147.5,
+    2036.0
+   ],
+   "radius_tiles": 1.72,
+   "radius_px": 110.0,
+   "shadow_frac": 0.24,
+   "psr_floor": false,
+   "touches_map_edge": true,
+   "id": "C02"
+  },
+  {
+   "center_tile": [
+    30.88,
+    38.63
+   ],
+   "center_px": [
+    2008.0,
+    2504.5
+   ],
+   "radius_tiles": 1.67,
+   "radius_px": 107.1,
+   "shadow_frac": 0.79,
+   "psr_floor": true,
+   "touches_map_edge": true,
+   "id": "C03"
+  },
+  {
+   "center_tile": [
+    15.45,
+    38.04
+   ],
+   "center_px": [
+    1021.0,
+    2466.5
+   ],
+   "radius_tiles": 1.62,
+   "radius_px": 103.6,
+   "shadow_frac": 0.61,
+   "psr_floor": true,
+   "touches_map_edge": true,
+   "id": "C04"
+  },
+  {
+   "center_tile": [
+    11.66,
+    8.66
+   ],
+   "center_px": [
+    778.2,
+    586.0
+   ],
+   "radius_tiles": 1.54,
+   "radius_px": 98.4,
+   "shadow_frac": 1.02,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C05"
+  },
+  {
+   "center_tile": [
+    34.97,
+    0.44
+   ],
+   "center_px": [
+    2270.0,
+    60.0
+   ],
+   "radius_tiles": 1.51,
+   "radius_px": 96.9,
+   "shadow_frac": 0.24,
+   "psr_floor": false,
+   "touches_map_edge": true,
+   "id": "C06"
+  },
+  {
+   "center_tile": [
+    27.4,
+    39.23
+   ],
+   "center_px": [
+    1785.5,
+    2543.0
+   ],
+   "radius_tiles": 1.36,
+   "radius_px": 87.3,
+   "shadow_frac": 0.59,
+   "psr_floor": true,
+   "touches_map_edge": true,
+   "id": "C07"
+  },
+  {
+   "center_tile": [
+    23.92,
+    20.02
+   ],
+   "center_px": [
+    1563.0,
+    1313.5
+   ],
+   "radius_tiles": 1.31,
+   "radius_px": 83.8,
+   "shadow_frac": 0.76,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C08"
+  },
+  {
+   "center_tile": [
+    26.74,
+    33.02
+   ],
+   "center_px": [
+    1743.6,
+    2145.1
+   ],
+   "radius_tiles": 1.31,
+   "radius_px": 83.8,
+   "shadow_frac": 0.16,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C09"
+  },
+  {
+   "center_tile": [
+    32.41,
+    33.76
+   ],
+   "center_px": [
+    2106.0,
+    2192.5
+   ],
+   "radius_tiles": 1.3,
+   "radius_px": 83.1,
+   "shadow_frac": 0.31,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C10"
+  },
+  {
+   "center_tile": [
+    36.92,
+    6.95
+   ],
+   "center_px": [
+    2395.0,
+    477.0
+   ],
+   "radius_tiles": 1.09,
+   "radius_px": 70.0,
+   "shadow_frac": 0.56,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C11"
+  },
+  {
+   "center_tile": [
+    39.34,
+    4.61
+   ],
+   "center_px": [
+    2550.0,
+    326.9
+   ],
+   "radius_tiles": 1.06,
+   "radius_px": 67.8,
+   "shadow_frac": 0.45,
+   "psr_floor": true,
+   "touches_map_edge": true,
+   "id": "C12"
+  },
+  {
+   "center_tile": [
+    32.9,
+    13.83
+   ],
+   "center_px": [
+    2137.5,
+    917.0
+   ],
+   "radius_tiles": 1.02,
+   "radius_px": 65.4,
+   "shadow_frac": 0.58,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C13"
+  },
+  {
+   "center_tile": [
+    25.14,
+    39.37
+   ],
+   "center_px": [
+    1640.9,
+    2551.4
+   ],
+   "radius_tiles": 0.98,
+   "radius_px": 62.6,
+   "shadow_frac": 0.23,
+   "psr_floor": false,
+   "touches_map_edge": true,
+   "id": "C14"
+  },
+  {
+   "center_tile": [
+    36.28,
+    28.95
+   ],
+   "center_px": [
+    2354.0,
+    1884.5
+   ],
+   "radius_tiles": 0.92,
+   "radius_px": 59.0,
+   "shadow_frac": 0.67,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C15"
+  },
+  {
+   "center_tile": [
+    38.73,
+    37.81
+   ],
+   "center_px": [
+    2510.5,
+    2452.0
+   ],
+   "radius_tiles": 0.92,
+   "radius_px": 59.0,
+   "shadow_frac": 0.6,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C16"
+  },
+  {
+   "center_tile": [
+    28.75,
+    33.64
+   ],
+   "center_px": [
+    1872.0,
+    2185.0
+   ],
+   "radius_tiles": 0.88,
+   "radius_px": 56.6,
+   "shadow_frac": 0.23,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C17"
+  },
+  {
+   "center_tile": [
+    21.92,
+    38.68
+   ],
+   "center_px": [
+    1435.0,
+    2507.6
+   ],
+   "radius_tiles": 0.86,
+   "radius_px": 54.9,
+   "shadow_frac": 0.29,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C18"
+  },
+  {
+   "center_tile": [
+    25.54,
+    16.35
+   ],
+   "center_px": [
+    1666.7,
+    1078.5
+   ],
+   "radius_tiles": 0.81,
+   "radius_px": 51.7,
+   "shadow_frac": 0.98,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C19"
+  },
+  {
+   "center_tile": [
+    0.16,
+    0.1
+   ],
+   "center_px": [
+    42.5,
+    38.5
+   ],
+   "radius_tiles": 0.81,
+   "radius_px": 51.6,
+   "shadow_frac": 0.47,
+   "psr_floor": true,
+   "touches_map_edge": true,
+   "id": "C20"
+  },
+  {
+   "center_tile": [
+    20.76,
+    37.96
+   ],
+   "center_px": [
+    1360.5,
+    2461.5
+   ],
+   "radius_tiles": 0.81,
+   "radius_px": 51.6,
+   "shadow_frac": 0.22,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C21"
+  },
+  {
+   "center_tile": [
+    37.86,
+    14.48
+   ],
+   "center_px": [
+    2455.0,
+    959.0
+   ],
+   "radius_tiles": 0.8,
+   "radius_px": 50.9,
+   "shadow_frac": 0.72,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C22"
+  },
+  {
+   "center_tile": [
+    23.58,
+    16.74
+   ],
+   "center_px": [
+    1541.0,
+    1103.5
+   ],
+   "radius_tiles": 0.79,
+   "radius_px": 50.6,
+   "shadow_frac": 0.42,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C23"
+  },
+  {
+   "center_tile": [
+    22.15,
+    7.97
+   ],
+   "center_px": [
+    1449.5,
+    542.0
+   ],
+   "radius_tiles": 0.76,
+   "radius_px": 48.4,
+   "shadow_frac": 0.64,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C24"
+  },
+  {
+   "center_tile": [
+    38.96,
+    8.67
+   ],
+   "center_px": [
+    2525.5,
+    587.0
+   ],
+   "radius_tiles": 0.72,
+   "radius_px": 46.3,
+   "shadow_frac": 0.59,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C25"
+  },
+  {
+   "center_tile": [
+    36.48,
+    11.62
+   ],
+   "center_px": [
+    2366.5,
+    775.6
+   ],
+   "radius_tiles": 0.7,
+   "radius_px": 44.6,
+   "shadow_frac": 0.41,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C26"
+  },
+  {
+   "center_tile": [
+    32.61,
+    4.81
+   ],
+   "center_px": [
+    2119.0,
+    340.0
+   ],
+   "radius_tiles": 0.7,
+   "radius_px": 44.5,
+   "shadow_frac": 1.06,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C27"
+  },
+  {
+   "center_tile": [
+    4.02,
+    12.24
+   ],
+   "center_px": [
+    289.5,
+    815.5
+   ],
+   "radius_tiles": 0.7,
+   "radius_px": 44.5,
+   "shadow_frac": 0.47,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C28"
+  },
+  {
+   "center_tile": [
+    32.62,
+    23.91
+   ],
+   "center_px": [
+    2120.0,
+    1562.5
+   ],
+   "radius_tiles": 0.69,
+   "radius_px": 44.2,
+   "shadow_frac": 0.41,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C29"
+  },
+  {
+   "center_tile": [
+    34.34,
+    24.84
+   ],
+   "center_px": [
+    2229.5,
+    1622.0
+   ],
+   "radius_tiles": 0.69,
+   "radius_px": 44.2,
+   "shadow_frac": 0.77,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C30"
+  },
+  {
+   "center_tile": [
+    10.64,
+    38.88
+   ],
+   "center_px": [
+    713.0,
+    2520.5
+   ],
+   "radius_tiles": 0.69,
+   "radius_px": 44.2,
+   "shadow_frac": 0.77,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C31"
+  },
+  {
+   "center_tile": [
+    9.25,
+    4.64
+   ],
+   "center_px": [
+    624.0,
+    329.0
+   ],
+   "radius_tiles": 0.66,
+   "radius_px": 42.4,
+   "shadow_frac": 0.48,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C32"
+  },
+  {
+   "center_tile": [
+    2.45,
+    2.3
+   ],
+   "center_px": [
+    189.0,
+    179.0
+   ],
+   "radius_tiles": 0.61,
+   "radius_px": 38.9,
+   "shadow_frac": 0.64,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C33"
+  },
+  {
+   "center_tile": [
+    6.8,
+    18.39
+   ],
+   "center_px": [
+    467.0,
+    1209.0
+   ],
+   "radius_tiles": 0.61,
+   "radius_px": 38.9,
+   "shadow_frac": 0.62,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C34"
+  },
+  {
+   "center_tile": [
+    1.61,
+    32.45
+   ],
+   "center_px": [
+    135.0,
+    2109.0
+   ],
+   "radius_tiles": 0.59,
+   "radius_px": 37.5,
+   "shadow_frac": 0.47,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C35"
+  },
+  {
+   "center_tile": [
+    8.51,
+    35.77
+   ],
+   "center_px": [
+    576.5,
+    2321.5
+   ],
+   "radius_tiles": 0.57,
+   "radius_px": 36.8,
+   "shadow_frac": 0.71,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C36"
+  },
+  {
+   "center_tile": [
+    31.46,
+    18.1
+   ],
+   "center_px": [
+    2045.5,
+    1190.5
+   ],
+   "radius_tiles": 0.56,
+   "radius_px": 36.1,
+   "shadow_frac": 0.47,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C37"
+  },
+  {
+   "center_tile": [
+    12.87,
+    19.88
+   ],
+   "center_px": [
+    856.0,
+    1304.5
+   ],
+   "radius_tiles": 0.56,
+   "radius_px": 35.7,
+   "shadow_frac": 0.95,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C38"
+  },
+  {
+   "center_tile": [
+    17.27,
+    31.79
+   ],
+   "center_px": [
+    1137.5,
+    2066.6
+   ],
+   "radius_tiles": 0.55,
+   "radius_px": 35.5,
+   "shadow_frac": 0.3,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C39"
+  },
+  {
+   "center_tile": [
+    11.09,
+    34.61
+   ],
+   "center_px": [
+    742.0,
+    2247.0
+   ],
+   "radius_tiles": 0.53,
+   "radius_px": 33.9,
+   "shadow_frac": 0.39,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C40"
+  },
+  {
+   "center_tile": [
+    28.17,
+    6.95
+   ],
+   "center_px": [
+    1835.0,
+    476.5
+   ],
+   "radius_tiles": 0.52,
+   "radius_px": 33.6,
+   "shadow_frac": 0.31,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C41"
+  },
+  {
+   "center_tile": [
+    5.61,
+    39.27
+   ],
+   "center_px": [
+    391.0,
+    2545.5
+   ],
+   "radius_tiles": 0.5,
+   "radius_px": 32.2,
+   "shadow_frac": 0.78,
+   "psr_floor": true,
+   "touches_map_edge": true,
+   "id": "C42"
+  },
+  {
+   "center_tile": [
+    34.98,
+    18.12
+   ],
+   "center_px": [
+    2270.5,
+    1191.5
+   ],
+   "radius_tiles": 0.5,
+   "radius_px": 31.8,
+   "shadow_frac": 0.91,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C43"
+  },
+  {
+   "center_tile": [
+    32.86,
+    12.59
+   ],
+   "center_px": [
+    2135.0,
+    838.0
+   ],
+   "radius_tiles": 0.49,
+   "radius_px": 31.1,
+   "shadow_frac": 0.18,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C44"
+  },
+  {
+   "center_tile": [
+    32.82,
+    2.68
+   ],
+   "center_px": [
+    2132.4,
+    203.5
+   ],
+   "radius_tiles": 0.48,
+   "radius_px": 30.5,
+   "shadow_frac": 0.23,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C45"
+  },
+  {
+   "center_tile": [
+    27.87,
+    25.84
+   ],
+   "center_px": [
+    1815.5,
+    1686.0
+   ],
+   "radius_tiles": 0.46,
+   "radius_px": 29.3,
+   "shadow_frac": 0.59,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C46"
+  },
+  {
+   "center_tile": [
+    25.11,
+    30.93
+   ],
+   "center_px": [
+    1639.0,
+    2011.6
+   ],
+   "radius_tiles": 0.46,
+   "radius_px": 29.3,
+   "shadow_frac": 0.38,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C47"
+  },
+  {
+   "center_tile": [
+    2.91,
+    33.53
+   ],
+   "center_px": [
+    218.5,
+    2178.0
+   ],
+   "radius_tiles": 0.45,
+   "radius_px": 28.6,
+   "shadow_frac": 0.74,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C48"
+  },
+  {
+   "center_tile": [
+    0.69,
+    29.26
+   ],
+   "center_px": [
+    76.0,
+    1904.9
+   ],
+   "radius_tiles": 0.44,
+   "radius_px": 28.2,
+   "shadow_frac": 0.49,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C49"
+  },
+  {
+   "center_tile": [
+    4.32,
+    29.31
+   ],
+   "center_px": [
+    308.4,
+    1908.0
+   ],
+   "radius_tiles": 0.42,
+   "radius_px": 27.2,
+   "shadow_frac": 0.74,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C50"
+  },
+  {
+   "center_tile": [
+    27.7,
+    32.14
+   ],
+   "center_px": [
+    1805.0,
+    2089.2
+   ],
+   "radius_tiles": 0.4,
+   "radius_px": 25.6,
+   "shadow_frac": 0.37,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C51"
+  },
+  {
+   "center_tile": [
+    39.07,
+    0.95
+   ],
+   "center_px": [
+    2532.5,
+    92.5
+   ],
+   "radius_tiles": 0.4,
+   "radius_px": 25.5,
+   "shadow_frac": 0.74,
+   "psr_floor": true,
+   "touches_map_edge": true,
+   "id": "C52"
+  },
+  {
+   "center_tile": [
+    34.87,
+    4.25
+   ],
+   "center_px": [
+    2263.5,
+    304.0
+   ],
+   "radius_tiles": 0.39,
+   "radius_px": 25.1,
+   "shadow_frac": 0.69,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C53"
+  },
+  {
+   "center_tile": [
+    29.26,
+    9.08
+   ],
+   "center_px": [
+    1904.5,
+    613.0
+   ],
+   "radius_tiles": 0.39,
+   "radius_px": 25.1,
+   "shadow_frac": 0.76,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C54"
+  },
+  {
+   "center_tile": [
+    37.54,
+    3.62
+   ],
+   "center_px": [
+    2434.5,
+    264.0
+   ],
+   "radius_tiles": 0.38,
+   "radius_px": 24.4,
+   "shadow_frac": 0.84,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C55"
+  },
+  {
+   "center_tile": [
+    34.79,
+    20.56
+   ],
+   "center_px": [
+    2258.5,
+    1348.0
+   ],
+   "radius_tiles": 0.37,
+   "radius_px": 23.7,
+   "shadow_frac": 0.43,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C56"
+  },
+  {
+   "center_tile": [
+    22.26,
+    28.66
+   ],
+   "center_px": [
+    1456.5,
+    1866.0
+   ],
+   "radius_tiles": 0.37,
+   "radius_px": 23.7,
+   "shadow_frac": 0.4,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C57"
+  },
+  {
+   "center_tile": [
+    19.36,
+    31.68
+   ],
+   "center_px": [
+    1271.0,
+    2059.6
+   ],
+   "radius_tiles": 0.37,
+   "radius_px": 23.7,
+   "shadow_frac": 0.28,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C58"
+  },
+  {
+   "center_tile": [
+    31.03,
+    35.0
+   ],
+   "center_px": [
+    2017.7,
+    2272.2
+   ],
+   "radius_tiles": 0.37,
+   "radius_px": 23.7,
+   "shadow_frac": 0.25,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C59"
+  },
+  {
+   "center_tile": [
+    28.34,
+    37.25
+   ],
+   "center_px": [
+    1845.5,
+    2416.0
+   ],
+   "radius_tiles": 0.36,
+   "radius_px": 23.0,
+   "shadow_frac": 0.74,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C60"
+  },
+  {
+   "center_tile": [
+    31.35,
+    31.56
+   ],
+   "center_px": [
+    2038.5,
+    2052.0
+   ],
+   "radius_tiles": 0.35,
+   "radius_px": 22.3,
+   "shadow_frac": 0.45,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C61"
+  },
+  {
+   "center_tile": [
+    28.69,
+    8.28
+   ],
+   "center_px": [
+    1868.0,
+    562.0
+   ],
+   "radius_tiles": 0.34,
+   "radius_px": 21.9,
+   "shadow_frac": 0.33,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C62"
+  },
+  {
+   "center_tile": [
+    2.27,
+    12.51
+   ],
+   "center_px": [
+    177.0,
+    832.5
+   ],
+   "radius_tiles": 0.34,
+   "radius_px": 21.6,
+   "shadow_frac": 0.56,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C63"
+  },
+  {
+   "center_tile": [
+    5.19,
+    27.16
+   ],
+   "center_px": [
+    364.0,
+    1770.5
+   ],
+   "radius_tiles": 0.33,
+   "radius_px": 20.9,
+   "shadow_frac": 0.26,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C64"
+  },
+  {
+   "center_tile": [
+    23.59,
+    36.37
+   ],
+   "center_px": [
+    1542.0,
+    2360.0
+   ],
+   "radius_tiles": 0.33,
+   "radius_px": 20.9,
+   "shadow_frac": 0.32,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C65"
+  },
+  {
+   "center_tile": [
+    26.7,
+    7.73
+   ],
+   "center_px": [
+    1740.5,
+    527.0
+   ],
+   "radius_tiles": 0.33,
+   "radius_px": 20.8,
+   "shadow_frac": 0.37,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C66"
+  },
+  {
+   "center_tile": [
+    33.71,
+    -0.04
+   ],
+   "center_px": [
+    2189.5,
+    29.1
+   ],
+   "radius_tiles": 0.32,
+   "radius_px": 20.2,
+   "shadow_frac": 0.29,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C67"
+  },
+  {
+   "center_tile": [
+    38.01,
+    5.3
+   ],
+   "center_px": [
+    2464.4,
+    371.0
+   ],
+   "radius_tiles": 0.31,
+   "radius_px": 20.1,
+   "shadow_frac": 0.25,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C68"
+  },
+  {
+   "center_tile": [
+    36.45,
+    38.02
+   ],
+   "center_px": [
+    2365.0,
+    2465.0
+   ],
+   "radius_tiles": 0.31,
+   "radius_px": 19.8,
+   "shadow_frac": 0.31,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C69"
+  },
+  {
+   "center_tile": [
+    19.17,
+    27.43
+   ],
+   "center_px": [
+    1259.0,
+    1787.5
+   ],
+   "radius_tiles": 0.29,
+   "radius_px": 18.7,
+   "shadow_frac": 0.33,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C70"
+  },
+  {
+   "center_tile": [
+    35.39,
+    31.82
+   ],
+   "center_px": [
+    2297.3,
+    2068.8
+   ],
+   "radius_tiles": 0.29,
+   "radius_px": 18.7,
+   "shadow_frac": 0.32,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C71"
+  },
+  {
+   "center_tile": [
+    30.1,
+    5.86
+   ],
+   "center_px": [
+    1958.5,
+    407.0
+   ],
+   "radius_tiles": 0.28,
+   "radius_px": 18.0,
+   "shadow_frac": 0.37,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C72"
+  },
+  {
+   "center_tile": [
+    21.89,
+    7.1
+   ],
+   "center_px": [
+    1433.0,
+    486.5
+   ],
+   "radius_tiles": 0.28,
+   "radius_px": 18.0,
+   "shadow_frac": 0.38,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C73"
+  },
+  {
+   "center_tile": [
+    24.21,
+    8.69
+   ],
+   "center_px": [
+    1581.5,
+    588.0
+   ],
+   "radius_tiles": 0.28,
+   "radius_px": 18.0,
+   "shadow_frac": 0.94,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C74"
+  },
+  {
+   "center_tile": [
+    2.15,
+    31.22
+   ],
+   "center_px": [
+    169.5,
+    2030.0
+   ],
+   "radius_tiles": 0.28,
+   "radius_px": 18.0,
+   "shadow_frac": 0.38,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C75"
+  },
+  {
+   "center_tile": [
+    38.67,
+    5.47
+   ],
+   "center_px": [
+    2507.0,
+    382.0
+   ],
+   "radius_tiles": 0.28,
+   "radius_px": 17.7,
+   "shadow_frac": 0.54,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C76"
+  },
+  {
+   "center_tile": [
+    30.73,
+    5.49
+   ],
+   "center_px": [
+    1998.9,
+    383.4
+   ],
+   "radius_tiles": 0.27,
+   "radius_px": 17.3,
+   "shadow_frac": 0.41,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C77"
+  },
+  {
+   "center_tile": [
+    34.18,
+    38.43
+   ],
+   "center_px": [
+    2219.5,
+    2491.5
+   ],
+   "radius_tiles": 0.27,
+   "radius_px": 17.0,
+   "shadow_frac": 0.99,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C78"
+  },
+  {
+   "center_tile": [
+    35.47,
+    13.88
+   ],
+   "center_px": [
+    2302.1,
+    920.6
+   ],
+   "radius_tiles": 0.26,
+   "radius_px": 16.6,
+   "shadow_frac": 0.6,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C79"
+  },
+  {
+   "center_tile": [
+    35.55,
+    1.58
+   ],
+   "center_px": [
+    2307.2,
+    133.2
+   ],
+   "radius_tiles": 0.26,
+   "radius_px": 16.5,
+   "shadow_frac": 0.32,
+   "psr_floor": false,
+   "touches_map_edge": false,
+   "id": "C80"
+  },
+  {
+   "center_tile": [
+    33.27,
+    2.45
+   ],
+   "center_px": [
+    2161.6,
+    188.5
+   ],
+   "radius_tiles": 0.26,
+   "radius_px": 16.3,
+   "shadow_frac": 0.46,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C81"
+  },
+  {
+   "center_tile": [
+    11.62,
+    6.61
+   ],
+   "center_px": [
+    776.0,
+    454.9
+   ],
+   "radius_tiles": 0.25,
+   "radius_px": 16.2,
+   "shadow_frac": 0.74,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C82"
+  },
+  {
+   "center_tile": [
+    19.9,
+    23.69
+   ],
+   "center_px": [
+    1305.5,
+    1548.5
+   ],
+   "radius_tiles": 0.25,
+   "radius_px": 16.2,
+   "shadow_frac": 0.61,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C83"
+  },
+  {
+   "center_tile": [
+    4.16,
+    20.8
+   ],
+   "center_px": [
+    298.0,
+    1363.5
+   ],
+   "radius_tiles": 0.24,
+   "radius_px": 15.2,
+   "shadow_frac": 0.87,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C84"
+  },
+  {
+   "center_tile": [
+    31.8,
+    25.72
+   ],
+   "center_px": [
+    2067.4,
+    1678.0
+   ],
+   "radius_tiles": 0.24,
+   "radius_px": 15.1,
+   "shadow_frac": 0.6,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C85"
+  },
+  {
+   "center_tile": [
+    27.97,
+    7.81
+   ],
+   "center_px": [
+    1822.3,
+    531.8
+   ],
+   "radius_tiles": 0.22,
+   "radius_px": 14.2,
+   "shadow_frac": 0.71,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C86"
+  },
+  {
+   "center_tile": [
+    15.56,
+    12.56
+   ],
+   "center_px": [
+    1028.0,
+    835.9
+   ],
+   "radius_tiles": 0.22,
+   "radius_px": 14.2,
+   "shadow_frac": 0.93,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C87"
+  },
+  {
+   "center_tile": [
+    34.59,
+    8.98
+   ],
+   "center_px": [
+    2245.5,
+    606.5
+   ],
+   "radius_tiles": 0.22,
+   "radius_px": 14.1,
+   "shadow_frac": 0.44,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C88"
+  },
+  {
+   "center_tile": [
+    21.62,
+    26.1
+   ],
+   "center_px": [
+    1415.5,
+    1702.5
+   ],
+   "radius_tiles": 0.22,
+   "radius_px": 14.1,
+   "shadow_frac": 0.47,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C89"
+  },
+  {
+   "center_tile": [
+    28.98,
+    7.89
+   ],
+   "center_px": [
+    1886.7,
+    537.0
+   ],
+   "radius_tiles": 0.22,
+   "radius_px": 13.9,
+   "shadow_frac": 0.44,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C90"
+  },
+  {
+   "center_tile": [
+    31.98,
+    13.34
+   ],
+   "center_px": [
+    2079.0,
+    885.5
+   ],
+   "radius_tiles": 0.22,
+   "radius_px": 13.8,
+   "shadow_frac": 0.44,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C91"
+  },
+  {
+   "center_tile": [
+    12.34,
+    29.77
+   ],
+   "center_px": [
+    821.5,
+    1937.0
+   ],
+   "radius_tiles": 0.22,
+   "radius_px": 13.8,
+   "shadow_frac": 0.6,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C92"
+  },
+  {
+   "center_tile": [
+    19.23,
+    12.73
+   ],
+   "center_px": [
+    1263.0,
+    847.0
+   ],
+   "radius_tiles": 0.21,
+   "radius_px": 13.4,
+   "shadow_frac": 0.84,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C93"
+  },
+  {
+   "center_tile": [
+    30.81,
+    35.87
+   ],
+   "center_px": [
+    2004.0,
+    2328.0
+   ],
+   "radius_tiles": 0.21,
+   "radius_px": 13.4,
+   "shadow_frac": 0.8,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C94"
+  },
+  {
+   "center_tile": [
+    10.73,
+    36.79
+   ],
+   "center_px": [
+    718.4,
+    2386.4
+   ],
+   "radius_tiles": 0.21,
+   "radius_px": 13.4,
+   "shadow_frac": 0.51,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C95"
+  },
+  {
+   "center_tile": [
+    31.4,
+    6.41
+   ],
+   "center_px": [
+    2041.9,
+    442.5
+   ],
+   "radius_tiles": 0.21,
+   "radius_px": 13.2,
+   "shadow_frac": 0.5,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C96"
+  },
+  {
+   "center_tile": [
+    19.7,
+    38.45
+   ],
+   "center_px": [
+    1292.6,
+    2493.0
+   ],
+   "radius_tiles": 0.21,
+   "radius_px": 13.2,
+   "shadow_frac": 1.23,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C97"
+  },
+  {
+   "center_tile": [
+    14.74,
+    33.45
+   ],
+   "center_px": [
+    975.5,
+    2173.0
+   ],
+   "radius_tiles": 0.2,
+   "radius_px": 13.1,
+   "shadow_frac": 0.74,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C98"
+  },
+  {
+   "center_tile": [
+    28.53,
+    9.73
+   ],
+   "center_px": [
+    1858.0,
+    654.7
+   ],
+   "radius_tiles": 0.2,
+   "radius_px": 12.9,
+   "shadow_frac": 0.48,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C99"
+  },
+  {
+   "center_tile": [
+    36.25,
+    18.2
+   ],
+   "center_px": [
+    2352.0,
+    1196.5
+   ],
+   "radius_tiles": 0.2,
+   "radius_px": 12.9,
+   "shadow_frac": 1.01,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C100"
+  },
+  {
+   "center_tile": [
+    33.6,
+    8.3
+   ],
+   "center_px": [
+    2182.2,
+    563.5
+   ],
+   "radius_tiles": 0.2,
+   "radius_px": 12.5,
+   "shadow_frac": 0.53,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C101"
+  },
+  {
+   "center_tile": [
+    -0.25,
+    9.41
+   ],
+   "center_px": [
+    16.0,
+    634.5
+   ],
+   "radius_tiles": 0.19,
+   "radius_px": 12.4,
+   "shadow_frac": 0.65,
+   "psr_floor": true,
+   "touches_map_edge": true,
+   "id": "C102"
+  },
+  {
+   "center_tile": [
+    30.5,
+    15.19
+   ],
+   "center_px": [
+    1984.0,
+    1004.0
+   ],
+   "radius_tiles": 0.19,
+   "radius_px": 12.0,
+   "shadow_frac": 0.79,
+   "psr_floor": true,
+   "touches_map_edge": false,
+   "id": "C103"
+  }
+ ],
+ "config_features": [
+  {
+   "feature": "habitat (start)",
+   "kind": "building",
+   "config_tile": [
+    18,
+    18
+   ],
+   "footprint": [
+    2,
+    2
+   ],
+   "source": "config.habitatTileX/Y",
+   "terrain_here": [
+    "open",
+    "steep",
+    "open",
+    "open"
+   ],
+   "lines_up": false,
+   "black_fraction": 0.01
+  },
+  {
+   "feature": "solar (start)",
+   "kind": "building",
+   "config_tile": [
+    16,
+    14
+   ],
+   "footprint": [
+    2,
+    2
+   ],
+   "source": "config.startSolarTileX/Y",
+   "terrain_here": [
+    "open",
+    "open",
+    "open",
+    "open"
+   ],
+   "lines_up": true,
+   "black_fraction": 0.01
+  },
+  {
+   "feature": "hauler start A",
+   "kind": "unit",
+   "config_tile": [
+    18,
+    21
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "source": "game.js bootstrap tileCenter(h.tx, h.ty+3)",
+   "terrain_here": [
+    "open"
+   ],
+   "lines_up": true,
+   "black_fraction": 0.0
+  },
+  {
+   "feature": "hauler start B",
+   "kind": "unit",
+   "config_tile": [
+    20,
+    21
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "source": "game.js bootstrap tileCenter(h.tx+2, h.ty+3)",
+   "terrain_here": [
+    "open"
+   ],
+   "lines_up": true,
+   "black_fraction": 0.0
+  },
+  {
+   "feature": "shallow ice",
+   "kind": "ice",
+   "config_tile": [
+    25,
+    16
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "source": "config.shallowIceTileX/Y",
+   "terrain_here": [
+    "psr"
+   ],
+   "lines_up": true,
+   "real_crater": "C19",
+   "crater_center_tile": [
+    25.54,
+    16.35
+   ],
+   "crater_radius_tiles": 0.81,
+   "offset_tiles": 0.64,
+   "black_fraction": 0.63
+  },
+  {
+   "feature": "deep ice (scout target)",
+   "kind": "ice",
+   "config_tile": [
+    37,
+    7
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "source": "game.js pickDeepIceTile(): habitat centre + 22 tiles toward expedition (37,7) -> (37,7)",
+   "terrain_here": [
+    "crater_floor"
+   ],
+   "lines_up": true,
+   "real_crater": "C11",
+   "crater_center_tile": [
+    36.92,
+    6.95
+   ],
+   "crater_radius_tiles": 1.09,
+   "offset_tiles": 0.09,
+   "black_fraction": 0.43,
+   "blackest_neighbour_tile": [
+    36,
+    7
+   ],
+   "blackest_neighbour_fraction": 0.75
+  },
+  {
+   "feature": "crater-s (8,8)",
+   "kind": "crater_s",
+   "config_tile": [
+    8,
+    8
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "source": "game.js bootstrap stampTerrain(...CRATER_S)",
+   "terrain_here": [
+    "open"
+   ],
+   "lines_up": false,
+   "real_crater": "C32",
+   "crater_center_tile": [
+    9.25,
+    4.64
+   ],
+   "crater_radius_tiles": 0.66,
+   "suggested_tile": [
+    9,
+    5
+   ],
+   "move_tiles": 3.2,
+   "black_fraction": 0.0
+  },
+  {
+   "feature": "crater-s (32,10)",
+   "kind": "crater_s",
+   "config_tile": [
+    32,
+    10
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "source": "game.js bootstrap stampTerrain(...CRATER_S)",
+   "terrain_here": [
+    "open"
+   ],
+   "lines_up": false,
+   "real_crater": "C44",
+   "crater_center_tile": [
+    32.86,
+    12.59
+   ],
+   "crater_radius_tiles": 0.49,
+   "suggested_tile": [
+    33,
+    13
+   ],
+   "move_tiles": 3.2,
+   "black_fraction": 0.0
+  },
+  {
+   "feature": "crater-s (6,28)",
+   "kind": "crater_s",
+   "config_tile": [
+    6,
+    28
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "source": "game.js bootstrap stampTerrain(...CRATER_S)",
+   "terrain_here": [
+    "open"
+   ],
+   "lines_up": false,
+   "real_crater": "C50",
+   "crater_center_tile": [
+    4.32,
+    29.31
+   ],
+   "crater_radius_tiles": 0.42,
+   "suggested_tile": [
+    4,
+    29
+   ],
+   "move_tiles": 2.2,
+   "black_fraction": 0.0
+  },
+  {
+   "feature": "crater-s (30,32)",
+   "kind": "crater_s",
+   "config_tile": [
+    30,
+    32
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "source": "game.js bootstrap stampTerrain(...CRATER_S)",
+   "terrain_here": [
+    "open"
+   ],
+   "lines_up": false,
+   "real_crater": "C61",
+   "crater_center_tile": [
+    31.35,
+    31.56
+   ],
+   "crater_radius_tiles": 0.35,
+   "suggested_tile": [
+    31,
+    32
+   ],
+   "move_tiles": 1.0,
+   "black_fraction": 0.0
+  },
+  {
+   "feature": "crater-s (22,8)",
+   "kind": "crater_s",
+   "config_tile": [
+    22,
+    8
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "source": "game.js bootstrap stampTerrain(...CRATER_S)",
+   "terrain_here": [
+    "psr"
+   ],
+   "lines_up": true,
+   "real_crater": "C24",
+   "crater_center_tile": [
+    22.15,
+    7.97
+   ],
+   "crater_radius_tiles": 0.76,
+   "black_fraction": 0.77
+  },
+  {
+   "feature": "crater-s (10,22)",
+   "kind": "crater_s",
+   "config_tile": [
+    10,
+    22
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "source": "game.js bootstrap stampTerrain(...CRATER_S)",
+   "terrain_here": [
+    "open"
+   ],
+   "lines_up": false,
+   "real_crater": "C38",
+   "crater_center_tile": [
+    12.87,
+    19.88
+   ],
+   "crater_radius_tiles": 0.56,
+   "suggested_tile": [
+    13,
+    20
+   ],
+   "move_tiles": 3.6,
+   "black_fraction": 0.0
+  },
+  {
+   "feature": "pit (12,30)",
+   "kind": "pit",
+   "config_tile": [
+    12,
+    30
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "source": "game.js bootstrap stampTerrain(...PIT)",
+   "terrain_here": [
+    "crater_floor"
+   ],
+   "lines_up": true,
+   "real_crater": "C92",
+   "crater_center_tile": [
+    12.34,
+    29.77
+   ],
+   "crater_radius_tiles": 0.22,
+   "black_fraction": 0.09
+  },
+  {
+   "feature": "pit (28,28)",
+   "kind": "pit",
+   "config_tile": [
+    28,
+    28
+   ],
+   "footprint": [
+    1,
+    1
+   ],
+   "source": "game.js bootstrap stampTerrain(...PIT)",
+   "terrain_here": [
+    "open"
+   ],
+   "lines_up": false,
+   "real_crater": "C46",
+   "crater_center_tile": [
+    27.87,
+    25.84
+   ],
+   "crater_radius_tiles": 0.46,
+   "suggested_tile": [
+    28,
+    26
+   ],
+   "move_tiles": 2.0,
+   "black_fraction": 0.0
+  },
+  {
+   "feature": "crater-m (33,24)",
+   "kind": "crater_m",
+   "config_tile": [
+    33,
+    24
+   ],
+   "footprint": [
+    2,
+    2
+   ],
+   "source": "game.js bootstrap craterM 2x2 at 33..34,24..25",
+   "terrain_here": [
+    "crater_floor",
+    "crater_rim",
+    "crater_rim",
+    "psr"
+   ],
+   "lines_up": true,
+   "real_crater": "C30",
+   "crater_center_tile": [
+    34.34,
+    24.84
+   ],
+   "crater_radius_tiles": 0.69,
+   "black_fraction": 0.26
+  }
+ ],
+ "recommended_config_moves": [
+  {
+   "feature": "crater-s (8,8)",
+   "from_tile": [
+    8,
+    8
+   ],
+   "to_tile": [
+    9,
+    5
+   ],
+   "real_crater": "C32"
+  },
+  {
+   "feature": "crater-s (32,10)",
+   "from_tile": [
+    32,
+    10
+   ],
+   "to_tile": [
+    33,
+    13
+   ],
+   "real_crater": "C44"
+  },
+  {
+   "feature": "crater-s (6,28)",
+   "from_tile": [
+    6,
+    28
+   ],
+   "to_tile": [
+    4,
+    29
+   ],
+   "real_crater": "C50"
+  },
+  {
+   "feature": "crater-s (30,32)",
+   "from_tile": [
+    30,
+    32
+   ],
+   "to_tile": [
+    31,
+    32
+   ],
+   "real_crater": "C61"
+  },
+  {
+   "feature": "crater-s (10,22)",
+   "from_tile": [
+    10,
+    22
+   ],
+   "to_tile": [
+    13,
+    20
+   ],
+   "real_crater": "C38"
+  },
+  {
+   "feature": "pit (28,28)",
+   "from_tile": [
+    28,
+    28
+   ],
+   "to_tile": [
+    28,
+    26
+   ],
+   "real_crater": "C46"
+  }
+ ],
+ "recommended_config_tweaks": [
+  {
+   "key": "config.deepIceTilesFromStartStorage",
+   "from_value": 22,
+   "to_value": 21,
+   "effect": "pickDeepIceTile() then lands on tile (36,7): 75% black PSR floor of crater C11 instead of (37,7) (43% black, on the lit inner wall edge). Optional; (37,7) is already inside C11."
+  }
+ ],
+ "notes": [
+  "crater-s / pit / crater-m positions are hard-coded in game.js bootstrap() stampTerrain(...) and craterM, not config.js",
+  "deep ice is not baked into the ground art (it is hidden until unlocked); shallow ice has a faint baked frost glint"
+ ],
+ "placement": {
+  "rot_big_1m_origin_px": [
+   1542,
+   610
+  ],
+  "note": "world(0,0) = pixel (OX,OY) of the 30deg-rotated 1.0 m/px resample; see README"
+ }
 }

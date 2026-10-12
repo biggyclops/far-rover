@@ -75,26 +75,6 @@
       "w": 1920,
       "h": 1080
     },
-    "habitat-build": {
-      "file": "assets/v08/art/realism/sprites/habitat-build.webp",
-      "w": 360,
-      "h": 360
-    },
-    "solar-build": {
-      "file": "assets/v08/art/realism/sprites/solar-build.webp",
-      "w": 360,
-      "h": 360
-    },
-    "printer-build": {
-      "file": "assets/v08/art/realism/sprites/printer-build.webp",
-      "w": 360,
-      "h": 360
-    },
-    "storage-build": {
-      "file": "assets/v08/art/realism/sprites/storage-build.webp",
-      "w": 360,
-      "h": 360
-    },
     "vault": {
       "file": "assets/v08/art/vault.png",
       "w": 384,
@@ -311,252 +291,252 @@
       "h": 32
     },
     "ground-day-0-0": {
-      "file": "assets/v08/art/realism/ground/day/r0c0.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r0-c0.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-0-1": {
-      "file": "assets/v08/art/realism/ground/day/r0c1.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r0-c1.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-0-2": {
-      "file": "assets/v08/art/realism/ground/day/r0c2.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r0-c2.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-0-3": {
-      "file": "assets/v08/art/realism/ground/day/r0c3.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r0-c3.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-0-4": {
-      "file": "assets/v08/art/realism/ground/day/r0c4.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r0-c4.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-1-0": {
-      "file": "assets/v08/art/realism/ground/day/r1c0.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r1-c0.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-1-1": {
-      "file": "assets/v08/art/realism/ground/day/r1c1.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r1-c1.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-1-2": {
-      "file": "assets/v08/art/realism/ground/day/r1c2.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r1-c2.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-1-3": {
-      "file": "assets/v08/art/realism/ground/day/r1c3.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r1-c3.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-1-4": {
-      "file": "assets/v08/art/realism/ground/day/r1c4.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r1-c4.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-2-0": {
-      "file": "assets/v08/art/realism/ground/day/r2c0.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r2-c0.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-2-1": {
-      "file": "assets/v08/art/realism/ground/day/r2c1.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r2-c1.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-2-2": {
-      "file": "assets/v08/art/realism/ground/day/r2c2.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r2-c2.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-2-3": {
-      "file": "assets/v08/art/realism/ground/day/r2c3.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r2-c3.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-2-4": {
-      "file": "assets/v08/art/realism/ground/day/r2c4.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r2-c4.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-3-0": {
-      "file": "assets/v08/art/realism/ground/day/r3c0.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r3-c0.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-3-1": {
-      "file": "assets/v08/art/realism/ground/day/r3c1.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r3-c1.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-3-2": {
-      "file": "assets/v08/art/realism/ground/day/r3c2.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r3-c2.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-3-3": {
-      "file": "assets/v08/art/realism/ground/day/r3c3.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r3-c3.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-3-4": {
-      "file": "assets/v08/art/realism/ground/day/r3c4.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r3-c4.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-4-0": {
-      "file": "assets/v08/art/realism/ground/day/r4c0.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r4-c0.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-4-1": {
-      "file": "assets/v08/art/realism/ground/day/r4c1.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r4-c1.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-4-2": {
-      "file": "assets/v08/art/realism/ground/day/r4c2.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r4-c2.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-4-3": {
-      "file": "assets/v08/art/realism/ground/day/r4c3.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r4-c3.webp",
       "w": 512,
       "h": 512
     },
     "ground-day-4-4": {
-      "file": "assets/v08/art/realism/ground/day/r4c4.webp",
+      "file": "assets/v08/art/realism/ground/ground-day-r4-c4.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-0-0": {
-      "file": "assets/v08/art/realism/ground/night/r0c0.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r0-c0.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-0-1": {
-      "file": "assets/v08/art/realism/ground/night/r0c1.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r0-c1.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-0-2": {
-      "file": "assets/v08/art/realism/ground/night/r0c2.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r0-c2.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-0-3": {
-      "file": "assets/v08/art/realism/ground/night/r0c3.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r0-c3.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-0-4": {
-      "file": "assets/v08/art/realism/ground/night/r0c4.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r0-c4.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-1-0": {
-      "file": "assets/v08/art/realism/ground/night/r1c0.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r1-c0.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-1-1": {
-      "file": "assets/v08/art/realism/ground/night/r1c1.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r1-c1.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-1-2": {
-      "file": "assets/v08/art/realism/ground/night/r1c2.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r1-c2.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-1-3": {
-      "file": "assets/v08/art/realism/ground/night/r1c3.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r1-c3.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-1-4": {
-      "file": "assets/v08/art/realism/ground/night/r1c4.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r1-c4.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-2-0": {
-      "file": "assets/v08/art/realism/ground/night/r2c0.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r2-c0.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-2-1": {
-      "file": "assets/v08/art/realism/ground/night/r2c1.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r2-c1.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-2-2": {
-      "file": "assets/v08/art/realism/ground/night/r2c2.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r2-c2.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-2-3": {
-      "file": "assets/v08/art/realism/ground/night/r2c3.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r2-c3.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-2-4": {
-      "file": "assets/v08/art/realism/ground/night/r2c4.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r2-c4.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-3-0": {
-      "file": "assets/v08/art/realism/ground/night/r3c0.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r3-c0.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-3-1": {
-      "file": "assets/v08/art/realism/ground/night/r3c1.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r3-c1.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-3-2": {
-      "file": "assets/v08/art/realism/ground/night/r3c2.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r3-c2.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-3-3": {
-      "file": "assets/v08/art/realism/ground/night/r3c3.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r3-c3.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-3-4": {
-      "file": "assets/v08/art/realism/ground/night/r3c4.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r3-c4.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-4-0": {
-      "file": "assets/v08/art/realism/ground/night/r4c0.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r4-c0.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-4-1": {
-      "file": "assets/v08/art/realism/ground/night/r4c1.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r4-c1.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-4-2": {
-      "file": "assets/v08/art/realism/ground/night/r4c2.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r4-c2.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-4-3": {
-      "file": "assets/v08/art/realism/ground/night/r4c3.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r4-c3.webp",
       "w": 512,
       "h": 512
     },
     "ground-night-4-4": {
-      "file": "assets/v08/art/realism/ground/night/r4c4.webp",
+      "file": "assets/v08/art/realism/ground/ground-night-r4-c4.webp",
       "w": 512,
       "h": 512
     },
@@ -577,6 +557,11 @@
     },
     "habitat-contact": {
       "file": "assets/v08/art/realism/sprites/habitat-contact.webp",
+      "w": 360,
+      "h": 360
+    },
+    "habitat-build": {
+      "file": "assets/v08/art/realism/sprites/habitat-build.webp",
       "w": 360,
       "h": 360
     },
@@ -605,6 +590,11 @@
       "w": 360,
       "h": 360
     },
+    "solar-build": {
+      "file": "assets/v08/art/realism/sprites/solar-build.webp",
+      "w": 360,
+      "h": 360
+    },
     "solar-build-shadow": {
       "file": "assets/v08/art/realism/sprites/solar-build-shadow.webp",
       "w": 360,
@@ -630,6 +620,11 @@
       "w": 360,
       "h": 360
     },
+    "printer-build": {
+      "file": "assets/v08/art/realism/sprites/printer-build.webp",
+      "w": 360,
+      "h": 360
+    },
     "printer-build-shadow": {
       "file": "assets/v08/art/realism/sprites/printer-build-shadow.webp",
       "w": 360,
@@ -652,6 +647,11 @@
     },
     "storage-contact": {
       "file": "assets/v08/art/realism/sprites/storage-contact.webp",
+      "w": 360,
+      "h": 360
+    },
+    "storage-build": {
+      "file": "assets/v08/art/realism/sprites/storage-build.webp",
       "w": 360,
       "h": 360
     },
@@ -696,69 +696,44 @@
       "h": 360
     },
     "hauler": {
-      "file": "assets/v08/art/realism/sprites/hauler.webp",
+      "file": "assets/v08/art/realism/sprites/hauler-sheet.webp",
       "w": 2816,
       "h": 176
     },
     "hauler-shadow": {
-      "file": "assets/v08/art/realism/sprites/hauler-shadow.webp",
-      "w": 2816,
-      "h": 176
-    },
-    "hauler-contact": {
-      "file": "assets/v08/art/realism/sprites/hauler-contact.webp",
+      "file": "assets/v08/art/realism/sprites/hauler-shadow-sheet.webp",
       "w": 2816,
       "h": 176
     },
     "hauler-loaded": {
-      "file": "assets/v08/art/realism/sprites/hauler-loaded.webp",
+      "file": "assets/v08/art/realism/sprites/hauler-loaded-sheet.webp",
       "w": 2816,
       "h": 176
     },
     "hauler-loaded-shadow": {
-      "file": "assets/v08/art/realism/sprites/hauler-loaded-shadow.webp",
-      "w": 2816,
-      "h": 176
-    },
-    "hauler-loaded-contact": {
-      "file": "assets/v08/art/realism/sprites/hauler-loaded-contact.webp",
+      "file": "assets/v08/art/realism/sprites/hauler-loaded-shadow-sheet.webp",
       "w": 2816,
       "h": 176
     },
     "scout": {
-      "file": "assets/v08/art/realism/sprites/scout.webp",
+      "file": "assets/v08/art/realism/sprites/scout-sheet.webp",
       "w": 2816,
       "h": 176
     },
     "scout-shadow": {
-      "file": "assets/v08/art/realism/sprites/scout-shadow.webp",
+      "file": "assets/v08/art/realism/sprites/scout-shadow-sheet.webp",
       "w": 2816,
       "h": 176
     },
-    "scout-contact": {
-      "file": "assets/v08/art/realism/sprites/scout-contact.webp",
-      "w": 2816,
+    "unit-contact": {
+      "file": "assets/v08/art/realism/sprites/unit-contact.webp",
+      "w": 176,
       "h": 176
     },
     "dust-apron": {
       "file": "assets/v08/art/realism/sprites/dust-apron.webp",
       "w": 768,
       "h": 768
-    },
-    "haul-tracks": {
-      "file": "assets/v08/art/realism/sprites/haul-tracks.webp",
-      "w": 1024,
-      "h": 256
-    },
-    "track-curve": {
-      "file": "assets/v08/art/realism/sprites/track-curve.webp",
-      "w": 512,
-      "h": 512
-    },
-    "tracks-curve": {
-      "file": "assets/v08/art/realism/sprites/track-curve.webp",
-      "w": 512,
-      "h": 512
     },
     "frost-glint": {
       "file": "assets/v08/art/realism/sprites/frost-glint.webp",
@@ -767,13 +742,63 @@
     },
     "floodlight-pool": {
       "file": "assets/v08/art/realism/sprites/floodlight-pool.webp",
-      "w": 256,
-      "h": 256
+      "w": 512,
+      "h": 512
     },
     "status-light": {
       "file": "assets/v08/art/realism/sprites/status-light.webp",
-      "w": 64,
-      "h": 64
+      "w": 32,
+      "h": 32
+    },
+    "track-decal-0": {
+      "file": "assets/v08/art/realism/sprites/track-decal-0.webp",
+      "w": 256,
+      "h": 96
+    },
+    "track-decal-45": {
+      "file": "assets/v08/art/realism/sprites/track-decal-45.webp",
+      "w": 256,
+      "h": 96
+    },
+    "track-decal-90": {
+      "file": "assets/v08/art/realism/sprites/track-decal-90.webp",
+      "w": 256,
+      "h": 96
+    },
+    "track-decal-135": {
+      "file": "assets/v08/art/realism/sprites/track-decal-135.webp",
+      "w": 256,
+      "h": 96
+    },
+    "track-decal": {
+      "file": "assets/v08/art/realism/sprites/track-decal.webp",
+      "w": 256,
+      "h": 96
+    },
+    "track-curve-0": {
+      "file": "assets/v08/art/realism/sprites/track-curve-0.webp",
+      "w": 256,
+      "h": 256
+    },
+    "track-curve-90": {
+      "file": "assets/v08/art/realism/sprites/track-curve-90.webp",
+      "w": 256,
+      "h": 256
+    },
+    "track-curve-180": {
+      "file": "assets/v08/art/realism/sprites/track-curve-180.webp",
+      "w": 256,
+      "h": 256
+    },
+    "track-curve-270": {
+      "file": "assets/v08/art/realism/sprites/track-curve-270.webp",
+      "w": 256,
+      "h": 256
+    },
+    "track-curve": {
+      "file": "assets/v08/art/realism/sprites/track-curve.webp",
+      "w": 256,
+      "h": 256
     }
   },
   "sfx": {

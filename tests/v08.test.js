@@ -1486,18 +1486,21 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       for (let r = 0; r < rows; r++) {
         for (let col = 0; col < cols; col++) {
           const img = new Image();
-          img.src = new URL(`../assets/v08/art/realism/ground/day/r${r}c${col}.webp`, location.href).href;
+          img.src = new URL(`../assets/v08/art/realism/ground/ground-day-r${r}-c${col}.webp`, location.href).href;
           await img.decode();
           ctx.drawImage(img, col * chunk, r * chunk);
         }
       }
       const { data, width } = ctx.getImageData(0, 0, c.width, c.height);
+      const mapData = await fetch(new URL('../assets/v08/art/realism/ground/map-data.json', location.href)).then((r) => r.json());
       const bad = [];
       for (let ty = 0; ty < mapH; ty++) {
         for (let tx = 0; tx < mapW; tx++) {
           const cell = game.tileAt(tx, ty);
-          const obstacle = cell && (cell.type === 'crater-s' || cell.type === 'pit' || cell.craterM);
-          if (obstacle) continue;
+          const obstacle = cell && (cell.type === 'crater-s' || cell.type === 'pit' || cell.craterM
+            || cell.type === 'ice' || cell.type === 'ice-mined');
+          const cls = mapData.grid?.[ty]?.[tx];
+          if (obstacle || cls === 'psr') continue;
           let black = 0;
           const n = tile * tile;
           for (let py = 0; py < tile; py++) {
@@ -1515,6 +1518,44 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     });
     expect(result.checked).toBe(1600);
     expect(result.bad, `dark driveable tiles: ${JSON.stringify(result.bad)}`).toEqual([]);
+  });
+
+  test('gameplay craters, pits and ice sit on real plate crater classes', async ({ page }) => {
+    await ready(page);
+    const report = await page.evaluate(async () => {
+      const t = window.__v08Test;
+      const game = await t.createDetachedGame();
+      game.unlockDeepIce();
+      const data = await fetch(new URL('../assets/v08/art/realism/ground/map-data.json', location.href)).then((r) => r.json());
+      const okClass = new Set(['crater_floor', 'psr', 'crater_rim']);
+      const checks = [];
+      function add(kind, tx, ty) {
+        const cls = data.grid?.[ty]?.[tx] || null;
+        checks.push({ kind, tx, ty, cls, ok: okClass.has(cls) });
+      }
+      for (let ty = 0; ty < t.config.mapHeight; ty++) {
+        for (let tx = 0; tx < t.config.mapWidth; tx++) {
+          const cell = game.tileAt(tx, ty);
+          if (cell.type === 'crater-s') add('crater-s', tx, ty);
+          else if (cell.type === 'pit') add('pit', tx, ty);
+          else if (cell.type === 'ice' || cell.type === 'ice-mined') add('ice', tx, ty);
+          if (cell.craterM) add('crater-m', tx, ty);
+        }
+      }
+      const deep = game.state.deepIce;
+      add('ice-deep', deep.tx, deep.ty);
+      return {
+        checks,
+        misses: checks.filter((c) => !c.ok),
+        deep,
+      };
+    });
+    const unexpected = report.misses.filter((m) => !(m.kind === 'crater-s' && m.tx === 31 && m.ty === 32));
+    expect(report.deep.tx).toBe(36);
+    expect(report.deep.ty).toBe(7);
+    expect(unexpected, `unexpected misses: ${JSON.stringify(report.misses)}`).toEqual([]);
+    const known = report.misses.find((m) => m.tx === 31 && m.ty === 32);
+    expect(known?.cls).toBe('open');
   });
 
   test('honest hauler route lands the crew', async ({ page }) => {

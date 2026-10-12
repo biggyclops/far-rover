@@ -15,11 +15,19 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
   }
 
   const overlayAlpha = new Map();
+  const terrainClass = new Map();
+  const CRATER_CLASSES = new Set(['crater_floor', 'psr', 'crater_rim']);
   fetch(new URL('../assets/v08/art/realism/ground/map-data.json', import.meta.url))
     .then((r) => r.json())
     .then((data) => {
-      for (const row of data.gameplayOverlays || []) {
-        overlayAlpha.set(`${row.tx},${row.ty}`, row.overlayAlpha);
+      const grid = data.grid || [];
+      for (let ty = 0; ty < grid.length; ty++) {
+        const row = grid[ty] || [];
+        for (let tx = 0; tx < row.length; tx++) {
+          const cls = row[tx];
+          terrainClass.set(`${tx},${ty}`, cls);
+          if (CRATER_CLASSES.has(cls)) overlayAlpha.set(`${tx},${ty}`, 0.28);
+        }
       }
     })
     .catch(() => {});
@@ -111,6 +119,10 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
     return hit == null ? fallback : hit;
   }
 
+  function tileClass(tx, ty) {
+    return terrainClass.get(`${tx},${ty}`) || null;
+  }
+
   function drawDustApron(ctx, z) {
     const apron = img('dust-apron');
     if (!apron) return;
@@ -119,7 +131,7 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
     const wx = (hab.tx + 1) * C.tileSize;
     const wy = (hab.ty + 1) * C.tileSize;
     const s = worldToScreen(wx, wy);
-    const size = 768 * DRAW_SCALE * z * 1.1;
+    const size = 768 * DRAW_SCALE * z;
     ctx.save();
     ctx.globalAlpha = 0.82;
     ctx.imageSmoothingEnabled = true;
@@ -128,30 +140,56 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
     ctx.restore();
   }
 
-  function trackAngle(facing) {
-    let a = (facing || 0) % Math.PI;
-    if (a < 0) a += Math.PI;
+  function eastDegMod180(facing) {
+    // Clockwise from east, then mod 180 (tracks look the same forwards/back).
+    let a = ((facing || 0) * 180) / Math.PI - 90;
+    a = ((a % 180) + 180) % 180;
     return a;
   }
 
+  function nearestTrackDecal(a) {
+    const variants = [0, 45, 90, 135];
+    let best = 0;
+    let bestD = 999;
+    for (const v of variants) {
+      const d = Math.min(Math.abs(a - v), Math.abs(a - v - 180), Math.abs(a - v + 180));
+      if (d < bestD) {
+        bestD = d;
+        best = v;
+      }
+    }
+    return best;
+  }
+
   function drawTracks(ctx, z) {
-    const strip = img('haul-tracks');
-    const curve = img('track-curve') || img('tracks-curve');
-    if ((!strip && !curve) || !stamps.length) return;
+    if (!stamps.length) return;
+    const s0 = DRAW_SCALE * z;
     for (const st of stamps) {
       const s = worldToScreen(st.x, st.y);
-      const useCurve = st.curve && curve;
-      const im = useCurve ? curve : strip;
-      if (!im) continue;
-      const w = (useCurve ? 96 : 96) * z;
-      const h = (useCurve ? 96 : 24) * z;
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(0.85, st.t / TRACK_LIFE));
-      ctx.translate(s.x, s.y);
-      ctx.rotate(trackAngle(st.facing));
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(im, -w / 2, -h / 2, w, h);
+      if (st.curve) {
+        const q = ((Math.round((((st.facing || 0) * 180) / Math.PI) / 90) % 4) + 4) % 4;
+        const ang = [0, 90, 180, 270][q];
+        const curve = img(`track-curve-${ang}`) || img('track-curve');
+        if (curve) {
+          const size = 256 * s0;
+          ctx.drawImage(curve, s.x - size / 2, s.y - size / 2, size, size);
+        }
+      } else {
+        const a = eastDegMod180(st.facing);
+        const variant = nearestTrackDecal(a);
+        const strip = img(`track-decal-${variant}`) || img('track-decal');
+        if (strip) {
+          const w = 256 * s0;
+          const h = 96 * s0;
+          ctx.translate(s.x, s.y);
+          ctx.rotate(((a - variant) * Math.PI) / 180);
+          ctx.drawImage(strip, -w / 2, -h / 2, w, h);
+        }
+      }
       ctx.restore();
     }
   }
@@ -242,27 +280,38 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
     const light = img('status-light');
     if (!light) return;
     const s = buildingScreen(b);
-    const size = 18 * z;
+    const size = 32 * DRAW_SCALE * z;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = 0.9;
-    ctx.drawImage(light, s.x - size * 0.15, s.y - 22 * z, size, size);
+    ctx.drawImage(light, s.x - size * 0.2, s.y - 20 * z, size, size);
     ctx.restore();
   }
 
   function unitSheets(u) {
     const loaded = (u.cargo.ice + u.cargo.regolith) > 0.05;
     if (u.kind === 'scout') {
-      return { body: img('scout'), shadow: img('scout-shadow'), contact: img('scout-contact') };
+      return {
+        body: img('scout'),
+        shadow: img('scout-shadow'),
+        contact: img('unit-contact'),
+        contactScale: 0.8,
+      };
     }
     if (loaded) {
       return {
         body: img('hauler-loaded') || img('hauler'),
         shadow: img('hauler-loaded-shadow') || img('hauler-shadow'),
-        contact: img('hauler-loaded-contact') || img('hauler-contact'),
+        contact: img('unit-contact'),
+        contactScale: 1,
       };
     }
-    return { body: img('hauler'), shadow: img('hauler-shadow'), contact: img('hauler-contact') };
+    return {
+      body: img('hauler'),
+      shadow: img('hauler-shadow'),
+      contact: img('unit-contact'),
+      contactScale: 1,
+    };
   }
 
   function drawUnitShadow(ctx, u, z, night) {
@@ -277,10 +326,19 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
   }
 
   function drawUnitContact(ctx, u, z) {
-    const { contact } = unitSheets(u);
+    const { contact, contactScale } = unitSheets(u);
     if (!contact) return;
     const s = worldToScreen(u.x, u.y);
-    drawSheetFrame(ctx, contact, headingFrame(u.facing), s.x, s.y, z);
+    const sc = DRAW_SCALE * (contactScale || 1) * z;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(
+      contact,
+      s.x - UNIT.pivot * sc,
+      s.y - UNIT.pivot * sc,
+      UNIT.frame * sc,
+      UNIT.frame * sc,
+    );
   }
 
   function drawUnitBody(ctx, u, z, night) {
@@ -317,5 +375,6 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
     drawUnitBody,
     drawFloodlight,
     headingFrame,
+    tileClass,
   };
 }

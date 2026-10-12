@@ -132,7 +132,7 @@ export function createRenderer(canvas, assets, game) {
         if (!tile.craterMAnchor) continue;
         const s = worldToScreen(tx * C.tileSize, ty * C.tileSize);
         ctx.save();
-        ctx.globalAlpha = usedPlate ? 0.5 : 1;
+        ctx.globalAlpha = usedPlate ? (realism?.craterOverlayAlpha(tx, ty, 0.5) ?? 0.5) : 1;
         drawImg(img('crater-m'), s.x, s.y, C.tileSize * 2 * z, C.tileSize * 2 * z);
         ctx.restore();
       }

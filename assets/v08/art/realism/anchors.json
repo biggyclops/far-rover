@@ -1,15 +1,379 @@
 {
-  "version": 2,
-  "drawScale": 0.5,
-  "credit": "NASA/GSFC/Arizona State University, LROC NAC NAC_POLE_SOUTH_CM_345_P892S1350",
-  "building": { "canvas": 360, "pivot": [112, 112] },
-  "unit": {
-    "frame": 176,
-    "pivot": [78, 78],
-    "headings": 16,
-    "stepDeg": 22.5,
-    "from": "north",
-    "clockwise": true,
-    "shadowRotate": false
+ "scale_note": "@2x: draw every file at 0.5 (1 tile = 128px in these files = 64px on screen)",
+ "buildings": {
+  "habitat": {
+   "canvas": [
+    360,
+    360
+   ],
+   "object_offset": [
+    22,
+    22
+   ],
+   "object_size": [
+    180,
+    180
+   ],
+   "pivot": [
+    112,
+    112
+   ],
+   "footprint_tiles": [
+    2,
+    2
+   ],
+   "footprint_px_2x": [
+    256,
+    256
+   ],
+   "height_px_2x": 45.4,
+   "shadow_len_px_2x": 145.2,
+   "build_shadow_len_px_2x": 65.1,
+   "edge_alpha": 0.0
+  },
+  "solar": {
+   "canvas": [
+    360,
+    360
+   ],
+   "object_offset": [
+    22,
+    22
+   ],
+   "object_size": [
+    180,
+    180
+   ],
+   "pivot": [
+    112,
+    112
+   ],
+   "footprint_tiles": [
+    2,
+    2
+   ],
+   "footprint_px_2x": [
+    256,
+    256
+   ],
+   "height_px_2x": 20.9,
+   "shadow_len_px_2x": 67.0,
+   "build_shadow_len_px_2x": 33.3,
+   "edge_alpha": 0.0
+  },
+  "storage": {
+   "canvas": [
+    360,
+    360
+   ],
+   "object_offset": [
+    22,
+    22
+   ],
+   "object_size": [
+    180,
+    180
+   ],
+   "pivot": [
+    112,
+    112
+   ],
+   "footprint_tiles": [
+    2,
+    2
+   ],
+   "footprint_px_2x": [
+    256,
+    256
+   ],
+   "height_px_2x": 42.9,
+   "shadow_len_px_2x": 137.2,
+   "build_shadow_len_px_2x": 68.3,
+   "edge_alpha": 0.0
+  },
+  "printer": {
+   "canvas": [
+    360,
+    360
+   ],
+   "object_offset": [
+    22,
+    22
+   ],
+   "object_size": [
+    180,
+    180
+   ],
+   "pivot": [
+    112,
+    112
+   ],
+   "footprint_tiles": [
+    2,
+    2
+   ],
+   "footprint_px_2x": [
+    256,
+    256
+   ],
+   "height_px_2x": 28.1,
+   "shadow_len_px_2x": 89.8,
+   "build_shadow_len_px_2x": 44.9,
+   "edge_alpha": 0.0
+  },
+  "tunnel-hub": {
+   "canvas": [
+    360,
+    360
+   ],
+   "object_offset": [
+    22,
+    22
+   ],
+   "object_size": [
+    180,
+    180
+   ],
+   "pivot": [
+    112,
+    112
+   ],
+   "footprint_tiles": [
+    2,
+    2
+   ],
+   "footprint_px_2x": [
+    256,
+    256
+   ],
+   "height_px_2x": 17.5,
+   "shadow_len_px_2x": 55.9,
+   "build_shadow_len_px_2x": 27.6,
+   "edge_alpha": 0.0
   }
+ },
+ "units": {
+  "hauler": {
+   "sheet": "hauler-sheet.png",
+   "shadow_sheet": "hauler-shadow-sheet.png",
+   "contact": "unit-contact.png",
+   "contact_scale": 1.0,
+   "frame": [
+    176,
+    176
+   ],
+   "frames": 16,
+   "layout": "1 row, frame i at x=i*176",
+   "pivot_in_frame": [
+    78,
+    78
+   ],
+   "object_box_in_frame": [
+    22,
+    22,
+    112,
+    112
+   ],
+   "headings_deg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+   ],
+   "heading_rule": "frame = round(heading_deg_clockwise_from_north/22.5) mod 16",
+   "shadow_len_px_2x": 35.8,
+   "edge_alpha": 0.0
+  },
+  "hauler-loaded": {
+   "sheet": "hauler-loaded-sheet.png",
+   "shadow_sheet": "hauler-loaded-shadow-sheet.png",
+   "contact": "unit-contact.png",
+   "contact_scale": 1.0,
+   "frame": [
+    176,
+    176
+   ],
+   "frames": 16,
+   "layout": "1 row, frame i at x=i*176",
+   "pivot_in_frame": [
+    78,
+    78
+   ],
+   "object_box_in_frame": [
+    22,
+    22,
+    112,
+    112
+   ],
+   "headings_deg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+   ],
+   "heading_rule": "frame = round(heading_deg_clockwise_from_north/22.5) mod 16",
+   "shadow_len_px_2x": 36.6,
+   "edge_alpha": 0.0
+  },
+  "scout": {
+   "sheet": "scout-sheet.png",
+   "shadow_sheet": "scout-shadow-sheet.png",
+   "contact": "unit-contact.png",
+   "contact_scale": 0.8,
+   "frame": [
+    176,
+    176
+   ],
+   "frames": 16,
+   "layout": "1 row, frame i at x=i*176",
+   "pivot_in_frame": [
+    78,
+    78
+   ],
+   "object_box_in_frame": [
+    22,
+    22,
+    112,
+    112
+   ],
+   "headings_deg": [
+    0.0,
+    22.5,
+    45.0,
+    67.5,
+    90.0,
+    112.5,
+    135.0,
+    157.5,
+    180.0,
+    202.5,
+    225.0,
+    247.5,
+    270.0,
+    292.5,
+    315.0,
+    337.5
+   ],
+   "heading_rule": "frame = round(heading_deg_clockwise_from_north/22.5) mod 16",
+   "shadow_len_px_2x": 52.0,
+   "edge_alpha": 0.0
+  }
+ },
+ "decals": {
+  "track-decal": {
+   "files": [
+    "track-decal-0.png",
+    "track-decal-45.png",
+    "track-decal-90.png",
+    "track-decal-135.png"
+   ],
+   "size": [
+    256,
+    96
+   ],
+   "pivot": [
+    128,
+    48
+   ],
+   "tiles_along": "x (period 256 px @2x)",
+   "gauge_px_2x": 43,
+   "rule": "a = route angle in degrees clockwise from +x (east), reduced mod 180; pick the variant nearest a (0/45/90/135), draw it rotated by a about its pivot; tile along its local x",
+   "alias": "track-decal.png = copy of track-decal-0.png"
+  },
+  "track-curve": {
+   "files": [
+    "track-curve-0.png",
+    "track-curve-90.png",
+    "track-curve-180.png",
+    "track-curve-270.png"
+   ],
+   "size": [
+    256,
+    256
+   ],
+   "centreline_radius_px_2x": 128,
+   "note": "pre-rotated and pre-lit: draw UNROTATED. -0: arc centre at the bottom-left corner (0,256): joins the LEFT edge at (0,128) and the BOTTOM edge at (128,256). -90/-180/-270: the same turned clockwise by that angle (-90: TOP edge (128,0) to LEFT edge (0,128); -180: RIGHT edge (256,128) to TOP edge (128,0); -270: BOTTOM edge (128,256) to RIGHT edge (256,128))",
+   "alias": "track-curve.png = copy of track-curve-0.png"
+  },
+  "dust-apron": {
+   "size": [
+    768,
+    768
+   ],
+   "pivot": [
+    384,
+    384
+   ],
+   "note": "centre on the base; covers about 6x6 tiles at 0.5; rotate/scale freely (its scuffs are faint, so rotation-safe)"
+  },
+  "frost-glint": {
+   "size": [
+    256,
+    256
+   ],
+   "pivot": [
+    128,
+    128
+   ],
+   "note": "centre on an ice tile; mask to the black floor (luma<0.05)"
+  }
+ },
+ "night": {
+  "floodlight-pool.png": {
+   "size": [
+    512,
+    512
+   ],
+   "pivot": [
+    256,
+    256
+   ],
+   "blend": "additive: dst += rgb*alpha*intensity (rgb is constant #FFE9C4, falloff in alpha: 1/(1+(r/34)^2) windowed to 0 at r=256, plus a hot core)",
+   "suggested": "draw at 0.5 centred under each building (intensity about 0.9), at 0.3 under units (0.6)"
+  },
+  "status-light.png": {
+   "size": [
+    32,
+    32
+   ],
+   "pivot": [
+    16,
+    16
+   ],
+   "blend": "additive (or normal for a dim daytime lamp at 0.5)",
+   "note": "orange #FF8A1F glow, warm-white core; draw at 0.5 at the small orange accents, at night only"
+  }
+ },
+ "draw_order": [
+  "dust-apron, track decals, frost-glint (ground decals)",
+  "contact (normal alpha)",
+  "shadow (multiply: dst *= 1 - shadow.alpha; rgb is black)",
+  "object (normal alpha)",
+  "night: floodlight-pool, status-light (additive)"
+ ],
+ "pivot_note": "pivot = canvas pixel to place at the footprint centre (buildings) / unit position (units); all three layers share canvas and pivot"
 }
