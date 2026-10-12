@@ -4,6 +4,7 @@ const BUILDING_KEYS = new Set(['habitat', 'solar', 'printer', 'storage', 'tunnel
 const BUILDING = { canvas: 360, pivot: 112 };
 const UNIT = { frame: 176, pivot: 78, headings: 16, stepDeg: 22.5 };
 const DRAW_SCALE = 0.5;
+const UNIT_SCALE = 0.64;
 const CHUNK = 512;
 const TRACK_LIFE = 36;
 const TRACK_STEP = 18;
@@ -123,9 +124,9 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
     return terrainClass.get(`${tx},${ty}`) || null;
   }
 
-  function drawDustApron(ctx, z) {
+  function drawDustApron(ctx, z, night) {
     const apron = img('dust-apron');
-    if (!apron) return;
+    if (!apron || night) return;
     const hab = game.habitat();
     if (!hab) return;
     const wx = (hab.tx + 1) * C.tileSize;
@@ -209,7 +210,7 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
 
   function drawSheetFrame(ctx, sheet, frame, sx, sy, z) {
     if (!sheet) return;
-    const s = DRAW_SCALE * z;
+    const s = UNIT_SCALE * z;
     const src = UNIT.frame;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
@@ -329,7 +330,7 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
     const { contact, contactScale } = unitSheets(u);
     if (!contact) return;
     const s = worldToScreen(u.x, u.y);
-    const sc = DRAW_SCALE * (contactScale || 1) * z;
+    const sc = UNIT_SCALE * (contactScale || 1) * z;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(
@@ -350,12 +351,22 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
     });
   }
 
-  function drawFloodlight(ctx, x, y, size, intensity) {
-    const pool = img('floodlight-pool') || img('glow-building') || img('glow-unit');
+  function drawFloodlight(ctx, x, y, size, intensity, wideKey) {
+    const wide = img(wideKey) || img('glow-building') || img('glow-unit');
+    const core = img('floodlight-pool');
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = intensity;
-    if (pool) ctx.drawImage(pool, x - size / 2, y - size / 2, size, size);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    if (wide) {
+      ctx.globalAlpha = intensity;
+      ctx.drawImage(wide, x - size / 2, y - size / 2, size, size);
+    }
+    if (core) {
+      ctx.globalAlpha = wide ? Math.min(0.4, intensity * 0.7) : Math.min(0.9, intensity + 0.25);
+      const coreSize = wide ? size : size * 2;
+      ctx.drawImage(core, x - coreSize / 2, y - coreSize / 2, coreSize, coreSize);
+    }
     ctx.restore();
   }
 
