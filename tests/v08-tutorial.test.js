@@ -116,7 +116,7 @@ test.describe('Far Rover v0.8 tutorial', () => {
         if (n === 6) t.placeBuilding('storage', 22, 21, false);
         if (n === 14 || n === 15 || n === 16) t.unlockDeepIce();
         if (n === 15 || n === 16) {
-          t.placeBuilding('tunnel-hub', 22, 8, false);
+          t.placeBuilding('tunnel-hub', 22, 9, false);
           t.placeBuilding('tunnel-hub', 34, 8, false);
         }
         if (n === 3) t.selectUnits(t.getState().units.map((u) => u.id));

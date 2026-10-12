@@ -129,9 +129,9 @@ export function bindTutorial(root, ctx) {
   function suggestHubs() {
     const ice = game.state.deepIce;
     const presets = [
+      { home: { tx: 22, ty: 9 }, far: { tx: 34, ty: 8 } },
+      { home: { tx: 21, ty: 9 }, far: { tx: 34, ty: 8 } },
       { home: { tx: 22, ty: 8 }, far: { tx: 34, ty: 8 } },
-      { home: { tx: 22, ty: 9 }, far: { tx: 34, ty: 9 } },
-      { home: { tx: 21, ty: 8 }, far: { tx: 35, ty: 8 } },
       { home: { tx: 23, ty: 9 }, far: { tx: 34, ty: 9 } },
     ];
     for (const p of presets) {
@@ -245,7 +245,7 @@ export function bindTutorial(root, ctx) {
       game.state.buildGhost = null;
     } else if (step === 14) {
       game.state.armedOrder = null;
-      game.state.buildGhost = { type: 'tunnel-hub', tx: 22, ty: 8 };
+      game.state.buildGhost = { type: 'tunnel-hub', tx: 22, ty: 9 };
     } else if (step === 15) {
       game.state.buildGhost = null;
       game.state.armedOrder = 'dig';
@@ -364,7 +364,8 @@ export function bindTutorial(root, ctx) {
     }
     if (showBtn) {
       const launched = !!game.state.expedition.launched;
-      const hideAfterLaunch = (step === 10 || step === 12) && launched;
+      const running = launched && !game.state.expedition.ended;
+      const hideAfterLaunch = (step === 10 && launched) || (step === 12 && running);
       showBtn.hidden = !isAction || hideAfterLaunch;
     }
     const showTry = step === 12 && relaunchFails >= 2 && !stepDone(12);

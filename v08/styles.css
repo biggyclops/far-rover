@@ -862,9 +862,10 @@ body.scout-open .battery-n {
   font-size: 12px;
 }
 #res-haulers {
-  color: var(--text);
-  font-size: 13px;
+  color: var(--muted);
+  font-size: 11px;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 .rule-slot.tutorial-rule-on {
   outline: 2px solid var(--warn);
