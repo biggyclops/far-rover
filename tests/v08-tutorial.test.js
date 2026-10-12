@@ -192,6 +192,9 @@ test.describe('Far Rover v0.8 tutorial', () => {
     });
     await waitStep(page, 11);
     await expect(page.locator('#tutorial-text')).toContainText(STEP_TEXT[11]);
+    await expect(page.locator('.trace-item.tutorial-trace-on')).toBeVisible();
+    await expect(page.locator('.trace-item.tutorial-trace-on .trace-reason'))
+      .toContainText(/Battery below|Return and charge/i);
     await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/tutorial-read-trace.png', fullPage: true });
     await page.click('#tutorial-next');
     await waitStep(page, 12);

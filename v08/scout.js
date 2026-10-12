@@ -113,14 +113,23 @@ export function bindScout(root, game, hooks = {}) {
     const h2 = traceRoot.querySelector('h2');
     if (h2) h2.textContent = line;
     const reasons = traceRoot.querySelectorAll('.trace-reason');
+    let firstBattery = null;
     items.forEach((t, i) => {
       if (reasons[i]) reasons[i].textContent = t.reason || '';
       const li = reasons[i]?.closest('.trace-item');
-      if (li && /Battery below|Return and charge/i.test(t.reason || '')) {
+      const rule = (sim?.rules || [])[(sim?.trace || [])[i]?.ruleFired - 1];
+      const batteryFire = rule?.condition?.type === Sim.CONDITIONS.BATTERY_BELOW
+        || /Battery below|Return and charge/i.test(t.reason || '');
+      if (li && batteryFire) {
         li.classList.add('trace-battery-fire');
         li.dataset.rule = 'battery';
+        if (!firstBattery) firstBattery = li;
       }
     });
+    if (firstBattery) {
+      firstBattery.classList.add('tutorial-trace-on');
+      firstBattery.scrollIntoView({ block: 'center', behavior: 'auto' });
+    }
     traceRoot.querySelector('#relaunch-scout')?.addEventListener('click', (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
