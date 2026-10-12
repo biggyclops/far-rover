@@ -182,15 +182,21 @@ button:disabled {
 #power-alert[hidden] { display: none !important; }
 #expedition-panel {
   position: fixed;
-  top: 64px;
-  right: 12px;
+  left: 12px;
+  right: auto;
+  top: auto;
+  bottom: 86px;
   z-index: 4;
-  width: 188px;
+  width: 240px;
+  max-height: min(380px, calc(100vh - 170px));
   padding: 8px;
   background: rgba(8, 8, 10, 0.88);
   border: 1px solid rgba(255,255,255,0.12);
   color: var(--text);
   font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 #expedition-panel[hidden] { display: none !important; }
 #expedition-panel .exp-head {
@@ -198,18 +204,32 @@ button:disabled {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 6px;
+  flex: 0 0 auto;
 }
 #expedition-panel canvas {
-  width: 168px;
-  height: 168px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
   display: block;
   background: #101216;
+  flex: 0 0 auto;
 }
 #exp-log {
   margin: 6px 0 0;
   padding-left: 16px;
-  max-height: 120px;
-  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 88px;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.4;
+}
+#exp-log li {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 #toast.ice-confirm {
   border-color: var(--accent);
@@ -336,14 +356,23 @@ button:disabled {
   inset: 0;
   z-index: 20;
   background: #0a0806;
+  display: flex;
+  flex-direction: column;
 }
 #scout-overlay[hidden] { display: none !important; }
-#scout-overlay-title {
-  position: fixed;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
+#scout-overlay-chrome {
+  position: relative;
   z-index: 31;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 16px 8px 10px;
+}
+#scout-overlay-title {
+  position: static;
+  align-self: center;
   margin: 0;
   padding: 6px 12px;
   font-size: 14px;
@@ -354,20 +383,14 @@ button:disabled {
   pointer-events: none;
 }
 #scout-back {
-  position: fixed;
-  top: 10px;
-  left: 10px;
-  z-index: 30;
+  position: static;
+  align-self: flex-start;
   background: rgba(8, 8, 10, 0.86);
   border-color: var(--accent);
   color: var(--accent);
 }
 #scout-hints {
-  position: fixed;
-  top: 10px;
-  left: 140px;
-  right: 16px;
-  z-index: 30;
+  position: static;
   display: flex;
   flex-wrap: wrap;
   gap: 8px 18px;
@@ -382,14 +405,24 @@ button:disabled {
   margin: 0 0 6px;
   font-size: 10px;
   line-height: 1.35;
+  flex: 0 0 auto;
 }
 #exp-hints p { margin: 0 0 4px; }
+#scout-overlay-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
 #scout-trace {
   position: absolute;
-  inset: 52px 16px 16px;
+  inset: 0;
   overflow: auto;
   z-index: 25;
   padding: 16px;
+}
+#scout-overlay-stage #game-container {
+  position: absolute;
+  inset: 0;
 }
 #scout-trace[hidden] { display: none !important; }
 .scout-trace-card {

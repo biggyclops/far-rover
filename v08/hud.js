@@ -360,6 +360,8 @@ export function bindHud(root, game, hooks = {}) {
         if (row.kind) li.dataset.kind = row.kind;
         log.append(li);
       }
+      const last = log.lastElementChild;
+      if (last) last.scrollIntoView({ block: 'nearest' });
     }
     const hints = $('#exp-hints');
     if (hints) {
