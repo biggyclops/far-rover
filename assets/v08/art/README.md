@@ -115,3 +115,14 @@ Colours: cyan #3FD8FF for finds and hints, orange #FF8A1F for the player. Hint s
 | step-dot-active.png | 32x32 RGBA | current step: filled cyan dot with a soft glow |
 
 All of these were checked at 1x, with the 32px icons drawn at 32px. Preview: art-src/preview-hints.png.
+
+---
+# Scout overlay rover cam (lunar)
+
+NASA Apollo 15 Hasselblad **AS15-82-11057** (Hadley–Apennine, public domain), cropped 16:9 and greyscaled to match Pixel’s LROC plate. Used only in the v0.8 scout overlay — the root demo keeps Mastcam-Z.
+
+| file | size | use |
+|---|---|---|
+| lunar-navcam.jpg | 1280×720 JPEG | Full forward plate (mastcam / mid / far) |
+| lunar-navcam-near.jpg | 1024×576 JPEG | Foreground parallax |
+| lunar-navcam-sky.jpg | 1024×256 JPEG | Black sky plate |

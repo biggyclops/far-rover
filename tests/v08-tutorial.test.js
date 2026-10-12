@@ -248,7 +248,7 @@ test.describe('Far Rover v0.8 tutorial', () => {
     await expect(page.locator('#rule-display')).toBeVisible();
     await expect(page.locator('#minimap-canvas')).toBeVisible();
 
-    const seen = { reasons: [], toasts: [] };
+    const seen = { reasons: [], toasts: [], ticks: new Set() };
     let frames = 0;
     for (let i = 0; i < 90; i++) {
       const snap = await page.evaluate(() => {
@@ -257,6 +257,7 @@ test.describe('Far Rover v0.8 tutorial', () => {
         const live = window.__v08Test.getLive();
         const fired = document.querySelector('.rule-line.fired');
         return {
+          tick: parseInt((document.querySelector('#hud-tick')?.textContent || '').replace(/\D/g, ''), 10) || 0,
           reason: document.querySelector('#live-rule-reason')?.textContent || '',
           firedRule: fired?.getAttribute('data-rule') || null,
           toast: window.__v08Test.getState().toast,
@@ -269,6 +270,10 @@ test.describe('Far Rover v0.8 tutorial', () => {
       if (snap.live?.fired > 0) {
         expect(snap.firedRule, `tick highlight ${snap.reason}`).toBe(String(snap.live.fired));
         expect(snap.reason, 'panel reason matches live trace').toBe(snap.live.reason);
+      }
+      if ((snap.tick === 1 || snap.tick === 5 || snap.tick === 9) && !seen.ticks.has(snap.tick)) {
+        seen.ticks.add(snap.tick);
+        await page.screenshot({ path: `/opt/cursor/artifacts/screenshots/live-panel-tick-${snap.tick}.png`, fullPage: true });
       }
       if (/so exploring/.test(snap.reason) && frames === 0) {
         await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/live-panel-explore.png', fullPage: true });
@@ -288,5 +293,135 @@ test.describe('Far Rover v0.8 tutorial', () => {
     expect(seen.toasts.some((t) => /Scout: trace ice at [A-L]\d+, continuing/.test(t))).toBe(true);
     expect(seen.toasts.some((t) => t === 'Scout: crater ahead, sidestepping')).toBe(true);
     expect(frames).toBeGreaterThanOrEqual(3);
+  });
+
+  test('live panel, readouts, tutorial card and mini-map do not overlap or clip', async ({ page }) => {
+    test.setTimeout(60000);
+    for (const size of [{ w: 1280, h: 800 }, { w: 1920, h: 1080 }]) {
+      await page.setViewportSize({ width: size.w, height: size.h });
+      await ready(page, TUTORIAL);
+      await page.evaluate(() => window.__v08Test.tutorial.jump(10));
+      await page.click('#tutorial-show');
+      await expect(page.locator('.operate-view')).toBeVisible({ timeout: 15000 });
+      await page.click('.speed-btn[data-speed="pause"]');
+      await page.waitForFunction(() => window.__orbitalRenderer?.ready && window.__orbitalRenderer?.lunar, null, { timeout: 15000 });
+      await page.evaluate(() => {
+        window.__v08Test.tickScout(1);
+        window.__v08Test.syncHud();
+      });
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+      await expect(page.locator('#live-sensors')).toBeVisible();
+      await expect(page.locator('#live-battery')).toBeVisible();
+      await expect(page.locator('#live-front')).toBeVisible();
+      await expect(page.locator('#live-ore')).toBeVisible();
+      await expect(page.locator('#tutorial-card')).toBeVisible();
+      await expect(page.locator('#minimap-canvas')).toBeVisible();
+      await expect(page.locator('#live-sensors')).toHaveCSS('display', /grid|block|flex/);
+
+      const report = await page.evaluate(() => {
+        const box = (sel) => {
+          const el = document.querySelector(sel);
+          if (!el || el.hidden) return null;
+          const cs = getComputedStyle(el);
+          if (cs.display === 'none' || cs.visibility === 'hidden') return null;
+          const r = el.getBoundingClientRect();
+          return {
+            sel,
+            x: r.x, y: r.y, w: r.width, h: r.height,
+            top: r.top, right: r.right, bottom: r.bottom, left: r.left,
+          };
+        };
+        const clipped = (sel) => {
+          const el = document.querySelector(sel);
+          if (!el || el.hidden) return `${sel}: missing`;
+          const r = el.getBoundingClientRect();
+          if (r.width < 2 || r.height < 2) return `${sel}: collapsed`;
+          if (r.top < -1 || r.left < -1 || r.bottom > innerHeight + 1 || r.right > innerWidth + 1) {
+            return `${sel}: off viewport`;
+          }
+          let p = el.parentElement;
+          while (p && p !== document.body) {
+            const cs = getComputedStyle(p);
+            if (/hidden/.test(cs.overflow + cs.overflowY + cs.overflowX)) {
+              const pr = p.getBoundingClientRect();
+              if (r.bottom > pr.bottom + 1.5 || r.top < pr.top - 1.5
+                || r.right > pr.right + 1.5 || r.left < pr.left - 1.5) {
+                return `${sel}: clipped by ${p.id || p.className}`;
+              }
+            }
+            p = p.parentElement;
+          }
+          return null;
+        };
+        const overlap = (a, b) => {
+          if (!a || !b) return false;
+          return !(a.right <= b.left + 1 || b.right <= a.left + 1
+            || a.bottom <= b.top + 1 || b.bottom <= a.top + 1);
+        };
+        const meanChroma = (canvas) => {
+          if (!canvas) return null;
+          const ctx = canvas.getContext('2d');
+          const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          let acc = 0;
+          let n = 0;
+          for (let y = 0; y < height; y += 4) {
+            for (let x = 0; x < width; x += 4) {
+              const i = (y * width + x) * 4;
+              if (data[i + 3] < 12) continue;
+              acc += Math.max(data[i], data[i + 1], data[i + 2]) - Math.min(data[i], data[i + 1], data[i + 2]);
+              n++;
+            }
+          }
+          return n ? acc / n : 0;
+        };
+        const card = box('#tutorial-card');
+        const rules = box('.operate-view .rules-panel');
+        const sensors = box('#live-sensors');
+        const mini = box('#minimap');
+        const miniCanvas = box('#minimap-canvas');
+        const hints = box('#scout-hints');
+        const cam = box('#rover-cam');
+        const pairs = [
+          ['tutorial vs rules', card, rules],
+          ['tutorial vs sensors', card, sensors],
+          ['tutorial vs minimap', card, mini],
+          ['tutorial vs hints', card, hints],
+          ['sensors vs minimap', sensors, mini],
+          ['rules vs minimap', rules, mini],
+          ['tutorial vs rover-cam', card, cam],
+        ];
+        const overlaps = pairs.filter(([, a, b]) => overlap(a, b)).map(([name]) => name);
+        const clips = ['#tutorial-card', '#live-sensors', '#live-battery', '#live-front', '#live-ore', '#live-cam', '#minimap', '#minimap-canvas', '#live-rule-reason']
+          .map(clipped)
+          .filter(Boolean);
+        const camCanvas = document.getElementById('rover-cam-canvas');
+        const mapCanvas = document.querySelector('.operate-view .game-canvas');
+        return {
+          overlaps,
+          clips,
+          miniW: miniCanvas?.w || 0,
+          miniH: miniCanvas?.h || 0,
+          sensorsParent: document.getElementById('live-sensors')?.closest('.sensors-panel') ? 'sensors-panel' : 'other',
+          sat: document.querySelector('.hud-sat')?.textContent || '',
+          camChroma: meanChroma(camCanvas),
+          mapChroma: meanChroma(mapCanvas),
+          lunar: !!window.__orbitalRenderer?.lunar,
+          vw: innerWidth,
+          vh: innerHeight,
+        };
+      });
+
+      expect(report.lunar, `${size.w}x${size.h} lunar renderer`).toBe(true);
+      expect(report.sensorsParent, `${size.w}x${size.h} sensors dock`).toBe('sensors-panel');
+      expect(report.sat, `${size.w}x${size.h} sat line`).toMatch(/LROC NAC/);
+      expect(report.miniW, `${size.w}x${size.h} minimap width`).toBeGreaterThanOrEqual(200);
+      expect(report.miniH, `${size.w}x${size.h} minimap height`).toBeGreaterThanOrEqual(216);
+      expect(report.overlaps, `${size.w}x${size.h} overlaps ${report.overlaps.join(', ')}`).toEqual([]);
+      expect(report.clips, `${size.w}x${size.h} clips ${report.clips.join(', ')}`).toEqual([]);
+      expect(report.camChroma, `${size.w}x${size.h} rover cam should be grey, chroma ${report.camChroma}`).toBeLessThan(40);
+      expect(report.mapChroma, `${size.w}x${size.h} orbital feed should be grey, chroma ${report.mapChroma}`).toBeLessThan(45);
+      await page.screenshot({ path: `/opt/cursor/artifacts/screenshots/live-panel-layout-${size.w}x${size.h}.png`, fullPage: true });
+    }
   });
 });

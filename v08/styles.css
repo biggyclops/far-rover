@@ -259,7 +259,8 @@ button:disabled {
 }
 
 body.scout-open .orbital-left {
-  max-height: calc(100vh - 130px);
+  top: 52px;
+  max-height: calc(100% - 360px);
 }
 body.scout-open .orbital-ops .rules-panel {
   order: -1;
@@ -269,18 +270,44 @@ body.scout-open .orbital-left .sensor-layers-panel {
 }
 body.scout-open .live-sensors {
   grid-template-columns: 1fr;
+  margin-top: 0;
+}
+body.scout-open .orbital-ops .info-panel {
+  overflow: visible;
+}
+body.scout-open .orbital-ops .sensors-panel {
+  overflow: visible;
+  flex: 0 1 auto;
+  min-height: auto;
+}
+body.scout-open .orbital-ops .sensors-panel #sensor-readings[hidden] {
+  display: none !important;
 }
 body.scout-open .orbital-ops .minimap {
   display: block;
-  left: auto;
-  right: 214px;
-  bottom: 58px;
+  position: absolute;
+  left: 18px;
+  right: auto;
+  bottom: 14px;
   z-index: 32;
   background: rgba(8, 12, 16, 0.86);
 }
-#tutorial-card:not([hidden]) ~ #scout-overlay .orbital-left {
-  top: 228px;
-  max-height: calc(100vh - 250px);
+body.scout-open #minimap-canvas {
+  width: 216px;
+  height: 234px;
+}
+body.scout-open #rover-cam-canvas {
+  background: #121214;
+}
+body.scout-open .tracking-strip {
+  display: none;
+}
+body.scout-open #tutorial-card {
+  top: auto;
+  left: 268px;
+  right: auto;
+  bottom: 16px;
+  width: min(420px, calc(100vw - 268px - 548px));
 }
 
 #objectives {

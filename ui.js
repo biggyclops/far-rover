@@ -616,7 +616,7 @@ function createBoardRenderer(container, state) {
     new URLSearchParams(location.search).get('renderer') === '2d');
   if (!force2d) {
     try {
-      const r = new OrbitalRenderer(container, state);
+      const r = new OrbitalRenderer(container, state, { lunar: hostedIceLabels });
       r.setPlaybackSpeed(currentSpeed || 1);
       r.setPausedHint?.(isPaused);
       r.onFrame = onRendererFrame;
@@ -684,7 +684,7 @@ function showOperateView() {
             <span class="hud-brand">FAR ROVER</span>
             <span class="hud-ops">//  ORBITAL OPS</span>
           </div>
-          <div class="hud-sat">FR-SAT 1  ·  HiRISE-CLASS  ·  NADIR</div>
+          <div class="hud-sat">${hostedIceLabels ? 'FR-SAT 1  ·  LROC NAC  ·  NADIR' : 'FR-SAT 1  ·  HiRISE-CLASS  ·  NADIR'}</div>
         </div>
         <div class="hud-center">
           <span class="tick-indicator" id="hud-tick">Tick ${gameState.tick}</span>
@@ -721,7 +721,7 @@ function showOperateView() {
           <h3>Rover Rules</h3>
           <p class="live-rule-reason" id="live-rule-reason" data-testid="live-rule-reason"></p>
           <div class="rule-display" id="rule-display"></div>
-          <div class="live-sensors" id="live-sensors" data-testid="live-sensors"></div>
+          ${hostedIceLabels ? '' : '<div class="live-sensors" id="live-sensors" data-testid="live-sensors"></div>'}
           <div id="hosted-notify-ping" class="hosted-notify-ping" data-testid="hosted-notify-ping" hidden></div>
         </div>
       </div>
@@ -729,7 +729,8 @@ function showOperateView() {
       <div class="info-panel">
         <div class="sensors-panel glass-panel">
           <h3>Sensor Readings</h3>
-          <div class="sensor-readings" id="sensor-readings"></div>
+          ${hostedIceLabels ? '<div class="live-sensors" id="live-sensors" data-testid="live-sensors"></div>' : ''}
+          <div class="sensor-readings" id="sensor-readings"${hostedIceLabels ? ' hidden' : ''}></div>
         </div>
         <div class="controls-panel glass-panel">
           <button class="pause-btn" id="pause-btn">${isPaused ? 'Resume' : 'Pause'}</button>
@@ -760,14 +761,16 @@ function showOperateView() {
       </div>
 
       <div class="tracking-strip" id="tracking-strip">${trackingText(gameState)}</div>
-      <div class="credits-line">Terrain: NASA/JPL-Caltech/UArizona HiRISE PIA23289 · Rover cam: NASA/JPL-Caltech/ASU/MSSS Mastcam-Z PIA23727, Navcam PIA24422, PIA24543</div>
+      <div class="credits-line">${hostedIceLabels
+        ? 'Terrain: NASA/GSFC/ASU LROC NAC_POLE_SOUTH_CM_345_P892S1350 · Rover cam: NASA Apollo 15 AS15-82-11057 (public domain)'
+        : 'Terrain: NASA/JPL-Caltech/UArizona HiRISE PIA23289 · Rover cam: NASA/JPL-Caltech/ASU/MSSS Mastcam-Z PIA23727, Navcam PIA24422, PIA24543'}</div>
       <div class="battery-gauge visual-hidden" aria-hidden="true">
         <div class="battery-fill" id="battery-fill" style="width: ${gameState.battery * 5}%"></div>
       </div>
 
-      <div class="minimap glass-panel" id="minimap">
+      <div class="minimap glass-panel" id="minimap" data-testid="minimap">
         <div class="minimap-label">Surface map</div>
-        <canvas id="minimap-canvas" width="108" height="117"></canvas>
+        <canvas id="minimap-canvas" width="${hostedIceLabels ? 216 : 108}" height="${hostedIceLabels ? 234 : 117}"></canvas>
       </div>
 
       ${pendingAutoPause && !pendingAutoPause.resumed ? renderAutoPauseToast() : ''}
@@ -783,6 +786,7 @@ function showOperateView() {
   // Initialize minimap renderer
   const minimapCanvas = document.getElementById('minimap-canvas');
   minimapRenderer = new MinimapRenderer(minimapCanvas, gameState);
+  minimapRenderer.lunar = hostedIceLabels;
   
   renderRuleDisplay();
   renderSensorReadings();

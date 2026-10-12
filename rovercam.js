@@ -1,5 +1,6 @@
 // Pose-true rover-cam modes: photo parallax, hybrid projection, voxel 3D.
 // Visual only. NASA/JPL-Caltech/ASU/MSSS Mastcam-Z & Navcam (public domain).
+// v0.8 overlay (renderer.lunar): NASA Apollo 15 AS15-82-11057, greyscale.
 
 const LANDER_COL = 5;
 const LANDER_ROW = 12;
@@ -188,13 +189,20 @@ function camBuf(renderer, bw, bh) {
   return { canvas: renderer._camOff, ctx: renderer._camOffCtx, img: renderer._camImg, bw, bh };
 }
 
+function isLunar(renderer) {
+  return !!renderer?.lunar;
+}
+
 function drawSkyPhoto(ctx, renderer, w, h, pan, bob) {
-  const sky = renderer.camSky || renderer.mastcamImg;
+  const sky = renderer.camSky || (isLunar(renderer) ? null : renderer.mastcamImg);
   const far = renderer.camFar || renderer.mastcamImg;
   const pano = renderer.camPano;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  if (sky) {
+  if (isLunar(renderer) && !sky) {
+    ctx.fillStyle = '#050506';
+    ctx.fillRect(0, 0, w, h * 0.42);
+  } else if (sky) {
     blitWrapFeather(ctx, renderer, sky, -pan * 52, -6 + bob * 0.12, w * 1.38, h * 0.38, 0, 0.55);
   } else {
     const g = ctx.createLinearGradient(0, 0, 0, h * 0.4);
@@ -439,7 +447,7 @@ function drawPhoto(ctx, renderer, w, h, t) {
   const moving = !!(renderer.anim && renderer.anim.moving);
   const bob = (moving && !renderer.reduceMotion ? Math.sin(t * 16) * 3.2 : Math.sin(t * 2.1) * 0.8);
   const drive = driveAmt(renderer);
-  ctx.fillStyle = '#2a1c12';
+  ctx.fillStyle = isLunar(renderer) ? '#0a0a0c' : '#2a1c12';
   ctx.fillRect(0, 0, w, h);
   drawSkyPhoto(ctx, renderer, w, h, pan, bob);
   const mid = renderer.camMid || renderer.mastcamImg;
@@ -469,12 +477,15 @@ function drawPhoto(ctx, renderer, w, h, t) {
 }
 
 function shadeGround(renderer, wx, wy, fwdC, fwdR, r, g, b, z) {
+  const fogR = isLunar(renderer) ? 148 : 210;
+  const fogG = isLunar(renderer) ? 148 : 168;
+  const fogB = isLunar(renderer) ? 152 : 110;
   if (!renderer.heightArr) {
     const fog = Math.min(1, z / 6.4);
     return [
-      r + (210 - r) * fog * 0.42,
-      g + (168 - g) * fog * 0.42,
-      b + (110 - b) * fog * 0.42
+      r + (fogR - r) * fog * 0.42,
+      g + (fogG - g) * fog * 0.42,
+      b + (fogB - b) * fog * 0.42
     ];
   }
   const ht = renderer._heightAt(wx, wy);
@@ -490,9 +501,9 @@ function shadeGround(renderer, wx, wy, fwdC, fwdR, r, g, b, z) {
   g *= shade;
   b *= shade;
   const fog = Math.min(1, z / 6.4);
-  r = r + (210 - r) * fog * 0.45;
-  g = g + (168 - g) * fog * 0.45;
-  b = b + (110 - b) * fog * 0.45;
+  r = r + (fogR - r) * fog * 0.45;
+  g = g + (fogG - g) * fog * 0.45;
+  b = b + (fogB - b) * fog * 0.45;
   return [r, g, b];
 }
 
@@ -589,7 +600,7 @@ function drawHybrid(ctx, renderer, w, h, t) {
   const bob = (moving && !renderer.reduceMotion ? Math.sin(t * 16) * 2.4 : 0.5);
   const drive = driveAmt(renderer);
   const horizon = h * 0.34 + bob * 0.15;
-  ctx.fillStyle = '#d0ae82';
+  ctx.fillStyle = isLunar(renderer) ? '#161618' : '#d0ae82';
   ctx.fillRect(0, 0, w, h);
   drawSkyPhoto(ctx, renderer, w, h, pan + drive * 0.08, bob);
   const mid = renderer.camMid || renderer.mastcamImg;
@@ -610,7 +621,7 @@ function drawVoxel(ctx, renderer, w, h, t) {
   const bob = (moving && !renderer.reduceMotion ? Math.sin(t * 17) * 2.2 : 0.4);
   const drive = driveAmt(renderer);
   const horizon = h * 0.34 + bob * 0.12;
-  ctx.fillStyle = '#d4b48a';
+  ctx.fillStyle = isLunar(renderer) ? '#161618' : '#d4b48a';
   ctx.fillRect(0, 0, w, h);
   drawSkyPhoto(ctx, renderer, w, h, pan, bob);
   const near = renderer.camNear || renderer.mastcamImg;
@@ -660,10 +671,17 @@ export function drawRoverCam(renderer, now, t) {
   const vg = ctx.createLinearGradient(0, 0, 0, h);
   vg.addColorStop(0, '#000');
   vg.addColorStop(0.4, 'transparent');
-  vg.addColorStop(1, '#1a1008');
+  vg.addColorStop(1, isLunar(renderer) ? '#08080a' : '#1a1008');
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, w, h);
   ctx.globalAlpha = 1;
+  if (isLunar(renderer)) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'saturation';
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
   drawGrain(ctx, renderer, w, h, t);
   drawHud(ctx, renderer, w, h);
   ctx.restore();

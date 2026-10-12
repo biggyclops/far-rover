@@ -1337,7 +1337,8 @@ export class MinimapRenderer {
   constructor(canvas, gameState) {
     this.canvas = canvas;
     this.gameState = gameState;
-    this.cellSize = 9;
+    this.cellSize = Math.max(1, canvas.width / GRID_COLS);
+    this.lunar = false;
     this.ctx = canvas.getContext('2d');
   }
   
@@ -1362,7 +1363,24 @@ export class MinimapRenderer {
         const isCameraSeen = state.cameraSeen?.[row]?.[col];
         const terrain = state.terrain[row]?.[col];
         
-        if (isRevealed) {
+        if (this.lunar) {
+          if (isRevealed) {
+            switch (terrain) {
+              case 'crater': ctx.fillStyle = '#3a3a3e'; break;
+              case 'ore': ctx.fillStyle = state.drilled[row]?.[col] ? '#5c656c' : '#c5d4dc'; break;
+              case 'dust': ctx.fillStyle = '#6a6a6e'; break;
+              default: ctx.fillStyle = '#8a8a8e'; break;
+            }
+          } else if (isCameraSeen) {
+            switch (terrain) {
+              case 'ore': ctx.fillStyle = '#8a949c'; break;
+              case 'dust': ctx.fillStyle = '#4a4a4e'; break;
+              default: ctx.fillStyle = '#3a3a3e'; break;
+            }
+          } else {
+            ctx.fillStyle = '#1c1c20';
+          }
+        } else if (isRevealed) {
           switch (terrain) {
             case 'crater': ctx.fillStyle = '#6b2010'; break;
             case 'ore': ctx.fillStyle = state.drilled[row]?.[col] ? '#5a3810' : '#d4a020'; break;
@@ -1390,7 +1408,7 @@ export class MinimapRenderer {
     const trace = state.trace || [];
     if (trace.length) {
       ctx.strokeStyle = 'rgba(232, 242, 246, 0.55)';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = Math.max(1.5, cs * 0.17);
       ctx.beginPath();
       let started = false;
       for (const t of trace) {
@@ -1427,7 +1445,7 @@ export class MinimapRenderer {
     ctx.moveTo(state.col * cs + cs / 2, state.row * cs + cs / 2);
     ctx.lineTo(state.col * cs + cs / 2 + dx * cs * 0.6, state.row * cs + cs / 2 + dy * cs * 0.6);
     ctx.strokeStyle = '#40e070';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = Math.max(2, cs * 0.22);
     ctx.stroke();
 
     const next = this.nextPose;
