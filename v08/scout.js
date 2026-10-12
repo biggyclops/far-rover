@@ -107,9 +107,15 @@ export function bindScout(root, game, hooks = {}) {
     const line = explainScoutResult(sim) || resultLineFor(sim) || game.state.expedition.resultLine || 'Scout';
     const items = renderTraceItems(sim);
     const rows = items.length
-      ? items.map((t) => `<li class="trace-item"><span class="trace-tick">Tick ${t.tick}</span><span class="trace-pos">${t.cell}${t.facing ? ` facing ${t.facing}` : ''}</span><span class="trace-battery">Battery: ${t.battery ?? ''}</span><span class="trace-reason">${t.reason}</span></li>`).join('')
+      ? items.map((t) => `<li class="trace-item"><span class="trace-tick">Tick ${t.tick}</span><span class="trace-pos">${t.cell}${t.facing ? ` facing ${t.facing}` : ''}</span><span class="trace-battery">Battery: ${t.battery ?? ''}</span><span class="trace-reason"></span></li>`).join('')
       : '<li class="trace-item">No ticks recorded.</li>';
-    traceRoot.innerHTML = `<div class="scout-trace-card"><h2>${line}</h2><ol class="trace-list" data-expanded="true">${rows}</ol><button type="button" id="relaunch-scout" class="relaunch-scout">Relaunch scout</button></div>`;
+    traceRoot.innerHTML = `<div class="scout-trace-card"><h2></h2><ol class="trace-list" data-expanded="true">${rows}</ol><button type="button" id="relaunch-scout" class="relaunch-scout">Relaunch scout</button></div>`;
+    const h2 = traceRoot.querySelector('h2');
+    if (h2) h2.textContent = line;
+    const reasons = traceRoot.querySelectorAll('.trace-reason');
+    items.forEach((t, i) => {
+      if (reasons[i]) reasons[i].textContent = t.reason || '';
+    });
     traceRoot.querySelector('#relaunch-scout')?.addEventListener('click', (ev) => {
       ev.preventDefault();
       ev.stopPropagation();

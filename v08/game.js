@@ -448,12 +448,16 @@ export function createGame() {
 
   function placementInCommandRange(type, tx, ty) {
     const n = buildingFootprint(type);
-    for (let y = 0; y < n; y++) {
-      for (let x = 0; x < n; x++) {
-        if (!inCommandRange(tx + x, ty + y)) return false;
+    if (type === 'vault') {
+      for (let y = 0; y < n; y++) {
+        for (let x = 0; x < n; x++) {
+          if (!inCommandRange(tx + x, ty + y)) return false;
+        }
       }
+      return true;
     }
-    return true;
+    const c = buildingCenterTile(null, tx, ty, type);
+    return inCommandRange(c.tx, c.ty);
   }
 
   function hubBesideDeepIceAt(tx, ty) {

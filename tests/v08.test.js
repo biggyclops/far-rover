@@ -770,7 +770,8 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     expect(snap.placed).toBe(true);
     expect(snap.kind).toBe('storage-tip');
     await expect(page.locator('#toast')).toContainText('Tip: build storage at the edge of command range, toward the ice.');
-    await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/storage-tip.png', fullPage: true });
+    await page.locator('#toast').screenshot({ path: '/opt/cursor/artifacts/screenshots/storage-tip.png' });
+    await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/storage-tip-board.png', fullPage: true });
   });
 
   test('unit: setResources cannot put ice above the habitat cap', async ({ page }) => {

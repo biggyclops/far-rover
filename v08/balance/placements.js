@@ -44,12 +44,17 @@ function footprint(game, type) {
 
 function inRangePlacement(game, type, tx, ty) {
   const n = footprint(game, type);
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      if (!game.inCommandRange(tx + x, ty + y)) return false;
+  if (type === 'vault') {
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        if (!game.inCommandRange(tx + x, ty + y)) return false;
+      }
     }
+    return true;
   }
-  return true;
+  const cx = tx + Math.floor(n / 2);
+  const cy = ty + Math.floor(n / 2);
+  return game.inCommandRange(cx, cy);
 }
 
 export function listLegalDrops(game, type) {

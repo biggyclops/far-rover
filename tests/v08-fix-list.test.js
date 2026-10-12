@@ -1,5 +1,6 @@
 // Headless coverage for the M1 fix-list + Player 2 v2 bugs.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createGame, TILE } from '../v08/game.js';
 import { CONFIG as C } from '../v08/config.js';
 import * as Sim from '../v08/engine.js';
@@ -916,6 +917,21 @@ function runUntilOutcome(sensors, rules, place) {
   assert.equal(g.issueContextual(laterSpot.x, laterSpot.y), true, 'unarmed right-click on an unfinished tunnel tile');
   assert.equal(h2.order?.type, 'dig');
   console.log('ok  r4.4 re-arming Dig keeps progress and unarmed right-click adds a digger');
+}
+
+{
+  const main = readFileSync(new URL('../v08/main.js', import.meta.url), 'utf8');
+  assert.match(main, /const scoutDt = scout\.isOpen\(\) \? raw : dt/);
+  assert.match(main, /if \(scoutDt > 0\) scout\.pump\(scoutDt\)/);
+  console.log('ok  r4.5 scout pumps wall-clock dt while the overlay is open');
+}
+
+{
+  const scout = readFileSync(new URL('../v08/scout.js', import.meta.url), 'utf8');
+  assert.match(scout, /setOverlayTitle\('Scout program'\)/);
+  assert.match(scout, /createTextNode\('Scout program'\)/);
+  assert.match(scout, /if \(run\) run\.hidden = true/);
+  console.log('ok  r4.6 relaunch panel is titled Scout program');
 }
 
 {
