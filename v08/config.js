@@ -6,7 +6,7 @@ export const CONFIG = {
   mapWidth: 40, // Proposed (Game Designer)
   mapHeight: 40, // Proposed (Game Designer)
   tileSize: 64, // 64 px per tile at 1x; 128 px sources are @2x
-  defaultZoom: 1,
+  defaultZoom: 0.75, // visual — start zoomed out enough that the command ring clips the view
   minZoom: 0.5,
   maxZoom: 2,
   unitClickRadius: 36, // world px; ~36 CSS px at default zoom so a hauler is easy to click
@@ -82,7 +82,7 @@ export const CONFIG = {
   // Pixel 2026-10-10: one player accent; one reserved warning/notify color.
   playerAccent: '#FF8A1F', // Pixel — tint ring-select.png and player UI
   warningNotify: '#3FD8FF', // Pixel — unconfirmed finds, hazards, Notify ping only
-  nightTint: 'rgba(6, 10, 24, 0.52)', // Pixel — whole-board tint; no moving shadows at night
+  nightTint: 'rgba(3, 8, 22, 0.70)', // Pixel realism mockup — cold, deep night; floodlight glows stay additive
   nightMovingShadows: false, // Pixel
   sunFrom: 'upper-left',
   // Pixel: shadow SPRITE rotates with the unit; offset is screen-space and never rotates.

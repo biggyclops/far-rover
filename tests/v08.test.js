@@ -230,8 +230,8 @@ test.describe('Far Rover v0.8 M1', () => {
 
   test('ice hint and live objectives are on the base map', async ({ page }) => {
     await ready(page);
-    await expect(page.locator('#ice-hint')).toBeVisible();
-    await expect(page.locator('#ice-hint')).toContainText('Select haulers, then right-click the ice to start a delivery loop');
+    await expect(page.locator('#goal-banner')).toContainText('Select haulers, then right-click the ice to start a delivery loop');
+    await expect(page.locator('#ice-hint')).toBeHidden();
     await expect(page.locator('#scout-hint-arrow')).toBeHidden();
     await expect(page.locator('#btn-build-scout')).not.toHaveClass(/hint-pulse/);
     await expect(page.locator('#objectives')).toContainText('Select haulers, then right-click the ice to start a delivery loop');
@@ -249,6 +249,8 @@ test.describe('Far Rover v0.8 M1', () => {
     await expect(page.locator('#ice-tooltip')).toContainText(/Shallow ice/i);
     await expect(page.locator('#ice-tooltip')).toContainText(/delivery loop/i);
     await expect(page.locator('#goal-banner')).toContainText('Select haulers, then right-click the ice to start a delivery loop');
+    await expect(page.locator('#ground-credit')).toContainText('LROC');
+    await expect(page.locator('#about-btn')).toBeVisible();
     await expect(page.locator('#build-solar small')).toContainText('30 reg');
     await expect(page.locator('#print-hauler small')).toContainText('25 reg');
     await expect(page.locator('#res-transit')).toContainText('Hubs + transit');
@@ -432,9 +434,9 @@ test.describe('Far Rover v0.8 M2', () => {
         pos,
       };
     });
-    expect(info.zoom).toBeGreaterThanOrEqual(1);
-    expect(info.spritePx).toBeGreaterThanOrEqual(64);
-    expect(info.clickPx).toBeGreaterThanOrEqual(32);
+    expect(info.zoom).toBeGreaterThanOrEqual(0.7);
+    expect(info.spritePx).toBeGreaterThanOrEqual(48);
+    expect(info.clickPx).toBeGreaterThanOrEqual(24);
   });
 
   test('tunnel hub builds for 20 regolith in 10 s', async ({ page }) => {
@@ -995,6 +997,32 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
 });
 
 test.describe('Far Rover v0.8 M3/M4 honest play', () => {
+  test('camera centers after the canvas has its final height', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await ready(page);
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const cam = await page.evaluate(() => {
+      const t = window.__v08Test;
+      const vs = t.viewSize();
+      const s = t.getState();
+      const hab = s.buildings.find((b) => b.type === 'habitat');
+      const z = s.zoom;
+      const cx = (hab.tx + 1) * t.config.tileSize;
+      const cy = (hab.ty + 1) * t.config.tileSize;
+      return {
+        camX: s.camX,
+        camY: s.camY,
+        expectX: cx - (vs.w / z) / 2,
+        expectY: cy - (vs.h / z) / 2,
+        h: vs.h,
+        z,
+      };
+    });
+    expect(cam.h).toBeGreaterThan(400);
+    expect(Math.abs(cam.camY - cam.expectY)).toBeLessThan(6);
+    expect(Math.abs(cam.camX - cam.expectX)).toBeLessThan(6);
+  });
+
   test('map canvas fills the viewport at 1280×800 and 1920×1080', async ({ page }) => {
     for (const size of [{ w: 1280, h: 800 }, { w: 1920, h: 1080 }]) {
       await page.setViewportSize({ width: size.w, height: size.h });
