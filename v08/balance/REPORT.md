@@ -2,6 +2,66 @@
 
 Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
 
+## Stop report (2026-10-12, r5 low-effort tunnel on #53): persist dig / auto-reroute, criterion 2 still short
+
+#53 is on `main` (`c965e51`). Game Designer chose (b): make the finished tunnel the low-effort route. No number changes. Off-road and `haulerCarry` locked. Root demo still 5/46/45. Tests green, including the three new persist / reroute / digger-haul cases. Merge either way — this is the ship of that behavior, not a 5/5.
+
+Diggers stay on Dig until the last tile, resume after a power cut, and go back to the best Deep Ice haul when the corridor opens. Haulers whose drop is faster through the tube switch on the same tick. One toast: "Tunnel open, haulers rerouted" if anyone switched, else #51's "Tunnel complete".
+
+Persist-dig helps long delays (delay 10 2-digger 5:45 → **5:36**) but does not put any delay into 20–35%. Stop; no further knob changes.
+
+### 1x best-placement table (dt = 1/60, delay 0)
+
+| Strategy | Best layout | Win | Night | Power min | Ice |
+|---|---|---:|:---:|---:|---:|
+| Haulers only (2 start) | nearest-ice | 7:26 | yes | 48 | 180 |
+| Haulers + print 1 | nearest-ice | 6:36 | yes | 0 | 180 |
+| Haulers + print 2 | nearest-ice | 5:51 | yes | 0 | 180 |
+| Haulers + print 3 | nearest-ice | 5:51 | yes | 0 | 180 |
+| Haulers + print 4 | nearest-ice | 5:51 | yes | 0 | 180 |
+| Tunnel, 1 digger | corr-10 | 6:14 | yes | 27 | 180 |
+| Tunnel, 2 diggers | corr-10 | 4:47 | yes | 18 | 180 |
+| Tunnel, 3 diggers | corr-10 | 5:06 | yes | 0 | 180 |
+| Tunnel, 4 diggers | corr-10 | 5:05 | yes | 0 | 180 |
+| Tunnel + surface haulers | corr-10 | 5:16 | yes | 0 | 180 |
+| Mixed (1 hauls, 1 digs) | corr-10 | 6:54 | yes | 39 | 180 |
+
+Best haulers-only: **Haulers + print 2** at 5:51 (print-3/4 tie). Best tunnel: **Tunnel, 2 diggers** at 4:47 (**18.4% faster**).
+
+### Tunnel lead across reaction delays 0–10 s
+
+Pinned delay-0 layouts: 2-digger `corr-10` vs best haulers at that delay (print-2 or print-3 `nearest-ice`).
+
+| Delay | 2-digger | Best haulers | Lead | GD |
+|---|---:|---|---:|---:|
+| 0 s | 4:47 | 5:51 print-2 nearest-ice | 18.4% | 4/5 |
+| 1 s | 4:51 | 5:54 print-2 nearest-ice | 17.8% | 4/5 |
+| 2 s | 4:56 | 5:23 print-2 nearest-ice | 8.6% | 4/5 |
+| 3 s | 5:01 | 5:28 print-3 nearest-ice | 8.4% | 4/5 |
+| 4 s | 5:06 | 5:31 print-3 nearest-ice | 7.7% | 4/5 |
+| 5 s | 5:11 | 5:29 print-3 nearest-ice | 5.5% | 4/5 |
+| 6 s | 5:16 | 5:32 print-3 nearest-ice | 4.8% | 4/5 |
+| 7 s | 5:21 | 5:46 print-2 nearest-ice | 7.3% | 4/5 |
+| 8 s | 5:26 | 5:48 print-2 nearest-ice | 6.4% | 4/5 |
+| 9 s | 5:31 | 5:50 print-2 nearest-ice | 5.5% | 4/5 |
+| 10 s | 5:36 | 5:52 print-2 nearest-ice | 4.7% | 4/5 |
+
+Earliest win at delay 0 is 4:47 (17 s inside the no-win-under-4:00 / 30 s margin rule).
+
+### Five criteria (every delay 0–10)
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Haulers + print 1 beats haulers only | **Pass** at every delay. Delay 0: 6:36 vs 7:26. |
+| 2 | Tunnel with 2 diggers is 20–35% faster than the best haulers-only route including prints | **FAIL** at every delay. Peak 18.4% at delay 0 vs print-2 5:51. Floor 4.7% at delay 10. |
+| 3 | Every winning route crosses at least one night | **Pass.** First night is at 1:30. |
+| 4 | Power drops below 50 on at least one tunnel route | **Pass.** 2-digger `powerMin` 18. |
+| 5 | No route wins under 4:00 (30 s margin) | **Pass.** Earliest legal win is 4:47. |
+
+### Why stop
+
+Persist-dig and auto-reroute cannot put every delay in 20–35% without a number change. Off-road, range, ice, and carry were left alone.
+
 ## Stop report (2026-10-12, r5-tune on #52): print 30/60/90, delay hold, criterion 2 still short
 
 #52 is on `main` (`eb69a09`). No Pages/CI deploy job; merge to main is the ship path. This tune sits on top of that. Off-road and `haulerCarry` were not touched. Root demo still 5/46/45. Tests green. **Not merging** — all five criteria do not pass at every delay 0–10.

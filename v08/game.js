@@ -1193,16 +1193,17 @@ export function createGame() {
       ? worldToTile(unit.x, unit.y)
       : { tx: order.sourceTx, ty: order.sourceTy };
     const best = nearestDrop(from.tx, from.ty, unit, kind);
-    if (!best) return;
-    if (best.id === order.destBuildingId) return;
+    if (!best) return false;
+    if (best.id === order.destBuildingId) return false;
     const cur = buildingById(order.destBuildingId);
     if (cur && dropCandidateOk(cur) && (buildingRoom(cur, kind) > 1e-6 || hubPipelineHasRoom(cur))) {
       const curT = dropTravelTime(from.tx, from.ty, cur);
       const bestT = dropTravelTime(from.tx, from.ty, best);
-      if (bestT + 0.05 >= curT) return;
+      if (bestT + 0.05 >= curT) return false;
     }
     order.destBuildingId = best.id;
     if (order.phase === 'unload') order.phase = 'toDest';
+    return true;
   }
 
   function storageBlockedReason(unit) {
@@ -1386,6 +1387,89 @@ export function createGame() {
     return o;
   }
 
+  function startBestHaul(unit) {
+    if (!unit || unit.kind !== 'hauler') return false;
+    const carrying = cargoAmount(unit) > 0.001;
+    if (carrying && resumeHaulLoop(unit)) return true;
+    const deep = state.deepIce.unlocked
+      ? tileAt(state.deepIce.tx, state.deepIce.ty)
+      : null;
+    const deepLeft = deep && deep.type === TILE.ICE && (deep.iceRemaining || 0) > 0;
+    if (tunnelReady() && deepLeft) {
+      const dest = nearestDrop(state.deepIce.tx, state.deepIce.ty, unit, 'ice');
+      if (dest) {
+        unit.order = {
+          type: 'haul',
+          sourceTx: state.deepIce.tx,
+          sourceTy: state.deepIce.ty,
+          destBuildingId: dest.id,
+          phase: 'toSource',
+        };
+        unit.lastOrder = cloneOrder(unit.order);
+        unit.resumeOrder = null;
+        unit.blockedReason = null;
+        unit.status = 'haul';
+        return true;
+      }
+    }
+    if (resumeHaulLoop(unit)) return true;
+    const next = defaultHaulOrder();
+    if (!next) return false;
+    unit.order = resetOrder(next);
+    unit.lastOrder = cloneOrder(unit.order);
+    unit.resumeOrder = null;
+    unit.blockedReason = null;
+    unit.status = 'haul';
+    return true;
+  }
+
+  function haulKind(unit) {
+    if (unit.cargo?.ice > 0.001) return 'ice';
+    if (unit.cargo?.regolith > 0.001) return 'regolith';
+    return 'ice';
+  }
+
+  function rerouteHaulersForOpenTunnel() {
+    let n = 0;
+    for (const u of state.units) {
+      if (u.kind !== 'hauler') continue;
+      if (u.order?.type === 'dig' || u.digUntilDone) {
+        u.digUntilDone = false;
+        if (startBestHaul(u)) {
+          if (u.order?.type === 'haul') retargetHaulDest(u, u.order, haulKind(u));
+          n += 1;
+        }
+        continue;
+      }
+      if (u.order?.type === 'haul') {
+        if (retargetHaulDest(u, u.order, haulKind(u))) n += 1;
+        continue;
+      }
+      if (u.resumeOrder?.type === 'haul') {
+        const before = u.resumeOrder.destBuildingId;
+        retargetHaulDest(u, u.resumeOrder, haulKind(u));
+        if (u.resumeOrder.destBuildingId !== before) n += 1;
+      }
+    }
+    return n > 0;
+  }
+
+  function announceTunnelOpen(destSnap = null) {
+    if (state.tunnelCompleteAnnounced) return;
+    const tiles = state.tunnel.tiles;
+    if (!tiles.length || tiles.some((t) => !t.done)) return;
+    state.tunnelCompleteAnnounced = true;
+    let rerouted = tunnelReady() && rerouteHaulersForOpenTunnel();
+    if (destSnap) {
+      for (const u of state.units) {
+        if (u.kind !== 'hauler' || u.order?.type !== 'haul') continue;
+        if (destSnap.get(u.id) !== u.order.destBuildingId) rerouted = true;
+      }
+    }
+    toast(rerouted ? 'Tunnel open, haulers rerouted' : 'Tunnel complete');
+    emit('tunnel-complete', { rerouted });
+  }
+
   function resumeHaulLoop(unit) {
     if (!unit || unit.kind !== 'hauler') return false;
     const haul = (unit.resumeOrder?.type === 'haul' && unit.resumeOrder)
@@ -1412,6 +1496,8 @@ export function createGame() {
     }
     if (haul && canRepeat(haul)) {
       unit.order = resetOrder(haul);
+      const dest = nearestDrop(haul.sourceTx, haul.sourceTy, unit, 'ice');
+      if (dest) unit.order.destBuildingId = dest.id;
       unit.lastOrder = cloneOrder(unit.order);
       unit.resumeOrder = null;
       unit.blockedReason = null;
@@ -1432,7 +1518,18 @@ export function createGame() {
   function finishOrder(unit) {
     const resume = unit.resumeOrder;
     const last = unit.lastOrder;
+    const wasDig = unit.order?.type === 'dig' || unit.digUntilDone;
     unit.order = null;
+    if (wasDig && currentDigTile()) {
+      unit.digUntilDone = true;
+      unit.order = { type: 'dig' };
+      unit.status = 'dig';
+      return;
+    }
+    if (wasDig && !currentDigTile()) {
+      unit.digUntilDone = false;
+      if (startBestHaul(unit)) return;
+    }
     if (resume?.type === 'haul' || last?.type === 'haul') {
       if (resumeHaulLoop(unit)) return;
     }
@@ -1460,7 +1557,7 @@ export function createGame() {
         || (u.lastOrder && u.lastOrder.type !== 'charge' && cloneOrder(u.lastOrder));
       u._emptyAfterDrop = false;
       u.order = resetOrder(order);
-      if (order.type === 'build' && priorHaul) {
+      if ((order.type === 'build' || order.type === 'dig') && priorHaul) {
         u.lastOrder = resetOrder(priorHaul);
         u.resumeOrder = resetOrder(priorHaul);
       } else if (order.type === 'charge' && priorWork) {
@@ -1470,6 +1567,7 @@ export function createGame() {
         u.lastOrder = cloneOrder(u.order);
         u.resumeOrder = null;
       }
+      u.digUntilDone = order.type === 'dig';
       u.blockedReason = null;
       u._strandWarned = false;
       u.status = order.type;
@@ -1679,7 +1777,10 @@ export function createGame() {
       insertCharge(unit);
     }
     if (unit.kind === 'hauler' && !unit.order && !unit.blockedReason) {
-      if (resumeHaulLoop(unit)) {
+      if (unit.digUntilDone && currentDigTile()) {
+        unit.order = { type: 'dig' };
+        unit.status = 'dig';
+      } else if (resumeHaulLoop(unit)) {
         // haul loop restored (cargo drop or remaining ice)
       } else if (unit.lastOrder && canRepeat(unit.lastOrder)) {
         unit.order = resetOrder(unit.lastOrder);
@@ -1746,7 +1847,14 @@ export function createGame() {
 
     if (order.type === 'charge') {
       if (unit.battery >= C.haulerBattery - 0.01) {
-        if (unit.resumeOrder) {
+        if (unit.digUntilDone && currentDigTile()) {
+          unit.order = { type: 'dig' };
+          unit.status = 'dig';
+          unit.resumeOrder = null;
+          unit.blockedReason = null;
+        } else if (unit.digUntilDone && !currentDigTile()) {
+          finishOrder(unit);
+        } else if (unit.resumeOrder) {
           unit.order = cloneOrder(unit.resumeOrder);
           if (unit.order.type === 'haul' && !unit.order.phase) unit.order.phase = 'toSource';
           unit.lastOrder = cloneOrder(unit.resumeOrder.type === 'charge' ? unit.lastOrder : unit.resumeOrder);
@@ -2083,7 +2191,7 @@ export function createGame() {
     return applyDigTiles(tiles);
   }
 
-  function updateDigTiles(dt) {
+  function updateDigTiles(dt, destSnap = null) {
     for (const tile of state.tunnel.tiles) {
       if (tile.done) {
         tile.diggers = 0;
@@ -2114,11 +2222,7 @@ export function createGame() {
     }
     const tiles = state.tunnel.tiles;
     if (tiles.length && tiles.every((t) => t.done)) {
-      if (!state.tunnelCompleteAnnounced) {
-        state.tunnelCompleteAnnounced = true;
-        toast('Tunnel complete');
-        emit('tunnel-complete');
-      }
+      announceTunnelOpen(destSnap);
     } else if (!tiles.length || tiles.some((t) => !t.done)) {
       state.tunnelCompleteAnnounced = false;
     }
@@ -2363,8 +2467,14 @@ export function createGame() {
       * state.units.filter((u) => u.kind === 'hauler').length
       * dt;
     if (upkeep > 0) spendPower(upkeep);
+    const haulDests = new Map();
+    for (const u of state.units) {
+      if (u.kind === 'hauler' && u.order?.type === 'haul') {
+        haulDests.set(u.id, u.order.destBuildingId);
+      }
+    }
     for (const u of state.units) updateUnit(u, dt);
-    updateDigTiles(dt);
+    updateDigTiles(dt, haulDests);
     updateBuildings(dt);
     updateCargo(dt);
     updateExpedition(dt);
@@ -2712,6 +2822,7 @@ export function createGame() {
       t.progress = 1;
       t.started = true;
     }
+    announceTunnelOpen();
   }
 
   function bootstrap() {

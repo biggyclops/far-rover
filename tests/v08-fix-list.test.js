@@ -1304,4 +1304,136 @@ function runUntilOutcome(sensors, rules, place) {
   console.log(`ok  print-3 nearest-ice delay 10 ${d10.winTimeLabel} is not faster than delay 0 ${d0.winTimeLabel}`);
 }
 
+{
+  const g = createGame();
+  g.selectUnits(g.state.units.map((u) => u.id));
+  const home = g.placeBuilding('tunnel-hub', 14, 21, false);
+  const far = g.placeBuilding('tunnel-hub', 22, 21, false);
+  g.completeBuilding(home.id);
+  g.completeBuilding(far.id);
+  const tiles = g.startDigCorridor();
+  assert.ok(tiles && tiles.length >= 2, 'corridor has more than one tile');
+  const [h1] = g.state.units.filter((u) => u.kind === 'hauler');
+  const first = tiles[0];
+  const spot = g.tileCenter(first.tx, first.ty);
+  h1.x = spot.x;
+  h1.y = spot.y;
+  h1.battery = C.haulerBattery;
+  g.assignOrder([h1], { type: 'dig' }, spot);
+  advance(g, C.digSecondsPerTilePerRover + 0.5);
+  assert.equal(first.done, true, 'first tile finishes without a second click');
+  assert.equal(h1.order?.type, 'dig', 'digger stays on Dig after a tile completes');
+  const next = g.state.tunnel.tiles.find((t) => !t.done);
+  assert.ok(next, 'later tiles remain');
+  advance(g, 8);
+  assert.equal(h1.order?.type, 'dig');
+  assert.ok(
+    next.progress > 0 || next.started || (h1.x !== spot.x || h1.y !== spot.y),
+    'digger walks to the next unfinished tile on its own',
+  );
+  const later = g.state.tunnel.tiles.find((t) => !t.done) || next;
+  later.started = false;
+  later.progress = 0;
+  const laterSpot = g.tileCenter(later.tx, later.ty);
+  h1.x = laterSpot.x;
+  h1.y = laterSpot.y;
+  h1.battery = C.haulerBattery;
+  for (const b of g.state.buildings) {
+    if (b.powerCap > 0) b.power = 0;
+  }
+  g.state.time = C.startDaylightRemainingSec + 1;
+  advance(g, 1.2);
+  assert.equal(h1.blockedReason, 'Need power');
+  assert.equal(h1.order?.type, 'dig');
+  h1.order = null;
+  g.habitat().power = 100;
+  g.state.time = 0;
+  advance(g, 0.2);
+  assert.equal(h1.blockedReason, null);
+  assert.equal(h1.order?.type, 'dig', 'digger resumes Dig by itself once power is back');
+  console.log('ok  diggers keep digging until the tunnel is finished and resume after power');
+}
+
+{
+  const g = createGame();
+  const { far, storage: store, deep } = (() => {
+    g.unlockDeepIce();
+    g.selectUnits([g.state.units[0].id]);
+    const farHub = g.placeBuilding('tunnel-hub', 34, 8, false);
+    const homeHub = g.placeBuilding('tunnel-hub', 22, 9, false);
+    g.completeBuilding(farHub.id);
+    g.completeBuilding(homeHub.id);
+    const storePad = g.placeBuilding('storage', 21, 18, false);
+    g.completeBuilding(storePad.id);
+    const line = g.startDigCorridor();
+    assert.ok(line && line.length >= 2);
+    for (let i = 0; i < line.length - 1; i++) {
+      line[i].done = true;
+      line[i].progress = 1;
+      line[i].started = true;
+    }
+    return { far: farHub, storage: storePad, deep: g.state.deepIce, last: line[line.length - 1] };
+  })();
+  const u = g.state.units[0];
+  u.x = (deep.tx + 0.5) * C.tileSize;
+  u.y = (deep.ty + 0.5) * C.tileSize;
+  u.cargo.ice = 10;
+  u.battery = C.haulerBattery;
+  g.assignOrder([u], {
+    type: 'haul',
+    sourceTx: deep.tx,
+    sourceTy: deep.ty,
+    destBuildingId: store.id,
+    phase: 'toDest',
+  });
+  assert.equal(u.order.destBuildingId, store.id);
+  const last = g.state.tunnel.tiles.find((t) => !t.done);
+  last.started = true;
+  last.progress = 1;
+  last.done = true;
+  advance(g, 1 / 60);
+  assert.equal(u.order?.type, 'haul');
+  assert.equal(u.order.destBuildingId, far.id, 'haulers switch to the tunnel the moment it opens');
+  assert.equal(g.state.toast?.text, 'Tunnel open, haulers rerouted');
+  assert.notEqual(g.state.toast?.text, 'Tunnel complete');
+  console.log('ok  tunnel open reroutes haulers and shows one combined toast');
+}
+
+{
+  const g = createGame();
+  g.unlockDeepIce();
+  g.selectUnits(g.state.units.map((u) => u.id));
+  const far = g.placeBuilding('tunnel-hub', 34, 8, false);
+  const home = g.placeBuilding('tunnel-hub', 22, 9, false);
+  g.completeBuilding(far.id);
+  g.completeBuilding(home.id);
+  const tiles = g.startDigCorridor();
+  assert.ok(tiles?.length);
+  const haulers = g.state.units.filter((u) => u.kind === 'hauler');
+  const spot = g.tileCenter(tiles[0].tx, tiles[0].ty);
+  for (const u of haulers) {
+    u.x = spot.x;
+    u.y = spot.y;
+    u.battery = C.haulerBattery;
+    g.assignOrder([u], { type: 'dig' }, spot);
+  }
+  g.markTunnelDone();
+  assert.equal(g.tunnelReady(), true);
+  const best = g.nearestDrop(
+    g.state.deepIce.tx,
+    g.state.deepIce.ty,
+    { cargo: { ice: 1, regolith: 0 } },
+    'ice',
+  );
+  assert.ok(best, 'best drop exists after the tunnel opens');
+  for (const u of haulers) {
+    assert.equal(u.order?.type, 'haul', 'digger returns to hauling when the tunnel finishes');
+    assert.equal(u.order.destBuildingId, best.id, 'diggers haul the best drop');
+    assert.equal(u.order.sourceTx, g.state.deepIce.tx);
+    assert.equal(u.order.sourceTy, g.state.deepIce.ty);
+  }
+  assert.equal(g.state.toast?.text, 'Tunnel open, haulers rerouted');
+  console.log('ok  diggers return to the best haul when the dig finishes');
+}
+
 console.log('v08 fix-list node tests passed');
