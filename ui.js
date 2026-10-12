@@ -719,8 +719,8 @@ function showOperateView() {
         </div>
         <div class="rules-panel glass-panel">
           <h3>Rover Rules</h3>
-          <div class="rule-display" id="rule-display"></div>
           <p class="live-rule-reason" id="live-rule-reason" data-testid="live-rule-reason"></p>
+          <div class="rule-display" id="rule-display"></div>
           <div class="live-sensors" id="live-sensors" data-testid="live-sensors"></div>
           <div id="hosted-notify-ping" class="hosted-notify-ping" data-testid="hosted-notify-ping" hidden></div>
         </div>
@@ -928,8 +928,7 @@ function renderRuleDisplay() {
   display.innerHTML = html || '<div class="no-rules">No rules defined</div>';
   const reasonEl = document.getElementById('live-rule-reason');
   if (reasonEl) {
-    reasonEl.textContent = live.reason || '';
-    reasonEl.hidden = !live.reason;
+    reasonEl.textContent = live.reason || 'Waiting for the first turn.';
   }
   renderLiveSensors(live.sensors);
   renderHostedNotifyPing();
