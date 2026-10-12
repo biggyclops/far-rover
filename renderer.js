@@ -1386,6 +1386,28 @@ export class MinimapRenderer {
     ctx.fillStyle = '#40a0c0';
     ctx.fillRect(LANDER_COL * cs, GRID_ROWS * cs, cs - 1, cs - 1);
     
+    // Path so far
+    const trace = state.trace || [];
+    if (trace.length) {
+      ctx.strokeStyle = 'rgba(232, 242, 246, 0.55)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      let started = false;
+      for (const t of trace) {
+        const p = t.positionAfter || t.positionBefore;
+        if (!p || p.col == null || p.row == null) continue;
+        const x = p.col * cs + cs / 2;
+        const y = p.row * cs + cs / 2;
+        if (!started) {
+          ctx.moveTo(x, y);
+          started = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+      if (started) ctx.stroke();
+    }
+
     // Rover
     ctx.fillStyle = '#40e070';
     ctx.beginPath();
@@ -1407,6 +1429,14 @@ export class MinimapRenderer {
     ctx.strokeStyle = '#40e070';
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    const next = this.nextPose;
+    if (next && (next.col !== state.col || next.row !== state.row)) {
+      ctx.fillStyle = '#3FD8FF';
+      ctx.beginPath();
+      ctx.arc(next.col * cs + cs / 2, next.row * cs + cs / 2, cs * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 

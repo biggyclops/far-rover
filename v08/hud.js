@@ -229,6 +229,7 @@ export function bindHud(root, game, hooks = {}) {
       toast.classList.toggle('show', toastOn);
       toast.classList.toggle('ice-confirm', kind === 'ice-confirm');
       toast.classList.toggle('trace-ice', kind === 'trace-ice');
+      toast.classList.toggle('scout-narrate', kind === 'scout-narrate');
       toast.classList.toggle('has-action', kind === 'scout-result');
     }
     const banner = $('#goal-banner');
@@ -450,11 +451,31 @@ export function bindHud(root, game, hooks = {}) {
       ctx.arc((p.col + 0.5) * tw, (p.row + 0.5) * th, 3, 0, Math.PI * 2);
       ctx.fill();
     }
-    if (path.length) {
-      const last = path[path.length - 1];
+    const last = path.length
+      ? path[path.length - 1]
+      : (paper?.col != null ? { col: paper.col, row: paper.row } : null);
+    const facing = paper?.facing || last?.facing;
+    if (last && last.col != null) {
+      const x = (last.col + 0.5) * tw;
+      const y = (last.row + 0.5) * th;
       ctx.fillStyle = '#E8F2F6';
       ctx.beginPath();
-      ctx.arc((last.col + 0.5) * tw, (last.row + 0.5) * th, 3.5, 0, Math.PI * 2);
+      ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      const arrow = { north: [0, -1], east: [1, 0], south: [0, 1], west: [-1, 0] };
+      const [dx, dy] = arrow[facing] || [0, -1];
+      ctx.strokeStyle = '#E8F2F6';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + dx * tw * 0.55, y + dy * th * 0.55);
+      ctx.stroke();
+    }
+    const next = paper?.next;
+    if (next && next.col != null && (next.col !== last?.col || next.row !== last?.row)) {
+      ctx.fillStyle = '#3FD8FF';
+      ctx.beginPath();
+      ctx.arc((next.col + 0.5) * tw, (next.row + 0.5) * th, 2.6, 0, Math.PI * 2);
       ctx.fill();
     }
   }

@@ -150,7 +150,7 @@ button:disabled {
   top: 56px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 5;
+  z-index: 48;
   padding: 6px 14px;
   border-radius: 4px;
   background: rgba(8, 8, 10, 0.88);
@@ -251,6 +251,11 @@ button:disabled {
 #toast.trace-ice {
   border-color: var(--warn);
   color: var(--warn);
+}
+#toast.scout-narrate {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(8, 8, 10, 0.92);
 }
 
 #objectives {

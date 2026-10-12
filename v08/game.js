@@ -162,6 +162,14 @@ export function createGame() {
     emit('warning', { text, kind: extra.kind || null });
   }
 
+  function narrateScout(text, extra = {}) {
+    if (!text) return;
+    const kind = state.toast?.kind;
+    if (kind === 'ice-confirm' || kind === 'scout-result') return;
+    toast(text, extra.ttl ?? 2.6, { kind: extra.kind || 'scout-narrate' });
+    noteExpedition(text, { kind: extra.kind || 'scout-narrate' });
+  }
+
   function makeTiles() {
     state.tiles = [];
     for (let y = 0; y < C.mapHeight; y++) {
@@ -2676,6 +2684,7 @@ export function createGame() {
     addScout,
     unlockDeepIce,
     queueNotifyPing,
+    narrateScout,
     queuePatch,
     patchesLeft,
     startRecall,

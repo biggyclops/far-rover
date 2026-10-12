@@ -4,6 +4,7 @@
 import * as Sim from './simulation.js';
 import { runHostedScoutTick } from './v08/hosted-tick.js';
 import { explainScoutResult } from './v08/scout-explain.js';
+import { explainLiveTick, liveFromTrace } from './v08/scout-live.js';
 import { GameRenderer, MinimapRenderer, loadAssets, hasRealArt, getBackgroundImage, getIcon } from './renderer.js';
 import { shouldUse3D } from './renderer3d.js';
 import { OrbitalRenderer, warmupOrbitalArt } from './orbital.js';
@@ -719,6 +720,8 @@ function showOperateView() {
         <div class="rules-panel glass-panel">
           <h3>Rover Rules</h3>
           <div class="rule-display" id="rule-display"></div>
+          <p class="live-rule-reason" id="live-rule-reason" data-testid="live-rule-reason"></p>
+          <div class="live-sensors" id="live-sensors" data-testid="live-sensors"></div>
           <div id="hosted-notify-ping" class="hosted-notify-ping" data-testid="hosted-notify-ping" hidden></div>
         </div>
       </div>
@@ -845,6 +848,7 @@ function renderStuckToast() {
 function renderMinimap() {
   if (minimapRenderer) {
     minimapRenderer.updateState(gameState);
+    minimapRenderer.nextPose = peekNextPose();
     minimapRenderer.render();
   }
 }
@@ -887,15 +891,23 @@ function renderHostedNotifyPing() {
   el.classList.toggle('trace-ice', !ping.confirmedIce);
 }
 
+function currentTickRecord() {
+  if (lastTickResult?.tickRecord) return lastTickResult.tickRecord;
+  const trace = gameState?.trace || [];
+  return trace[trace.length - 1] || null;
+}
+
 function renderRuleDisplay() {
   const display = document.getElementById('rule-display');
   if (!display) return;
   const ping = hostedIceLabels ? latestNotifyPing() : null;
+  const live = gameState ? explainLiveTick(gameState, currentTickRecord()) : liveFromTrace(gameState);
+  const dimmed = new Set(live.dimmed || []);
   
   let html = '';
   for (let i = 0; i < 4; i++) {
     const rule = gameState.rules[i];
-    const isFired = lastTickResult?.tickRecord?.ruleFired === i + 1;
+    const isFired = live.fired === i + 1;
     
     if (rule && rule.condition && rule.action) {
       const condText = formatConditionForDisplay(rule.condition);
@@ -905,7 +917,8 @@ function renderRuleDisplay() {
       const badge = pinged
         ? `<span class="notify-ping-badge ${ping.confirmedIce ? 'ice-confirm' : 'trace-ice'}">${ping.label}</span>`
         : '';
-      html += `<div class="rule-line ${isFired ? 'fired' : ''} ${pinged ? 'notified' : ''}">
+      const dim = dimmed.has(i) ? 'checked-false' : '';
+      html += `<div class="rule-line ${isFired ? 'fired' : ''} ${dim} ${pinged ? 'notified' : ''}" data-rule="${i + 1}" data-testid="rule-line-${i + 1}">
         <span class="rule-indicator">${isFired ? '▶' : ''}</span>
         <span class="rule-text">${condText} : <span class="action-name">${actText}</span></span>
         ${badge}
@@ -913,7 +926,40 @@ function renderRuleDisplay() {
     }
   }
   display.innerHTML = html || '<div class="no-rules">No rules defined</div>';
+  const reasonEl = document.getElementById('live-rule-reason');
+  if (reasonEl) {
+    reasonEl.textContent = live.reason || '';
+    reasonEl.hidden = !live.reason;
+  }
+  renderLiveSensors(live.sensors);
   renderHostedNotifyPing();
+}
+
+function renderLiveSensors(sensors = {}) {
+  const el = document.getElementById('live-sensors');
+  if (!el) return;
+  const battery = sensors.battery == null ? '—' : String(sensors.battery);
+  const front = sensors.inFront || '—';
+  const ore = sensors.oreNearby === 'yes' ? 'yes' : 'no';
+  const rows = [
+    ['live-battery', 'Battery', battery],
+    ['live-front', 'In front', front],
+    ['live-ore', 'Ore nearby', ore],
+    ['live-cam', 'Rover cam', 'forward view'],
+  ];
+  el.replaceChildren();
+  for (const [id, label, value] of rows) {
+    const row = document.createElement('div');
+    row.className = id === 'live-cam' ? 'live-sensor live-sensor-cam' : 'live-sensor';
+    row.id = id;
+    row.dataset.testid = id;
+    const span = document.createElement('span');
+    span.textContent = label;
+    const strong = document.createElement('strong');
+    strong.textContent = value;
+    row.append(span, strong);
+    el.append(row);
+  }
 }
 
 function formatConditionForDisplay(condition) {
@@ -2190,6 +2236,16 @@ export { showOperateView, updateOperateView, pause as pauseOperate, setSpeed as 
 export function getOperateSpeed() {
   return currentSpeed;
 }
+
+export function setLastTickResult(result) {
+  lastTickResult = result;
+}
+
+export function getLastTickResult() {
+  return lastTickResult;
+}
+
+export { peekNextPose };
 
 export function isOperatePaused() {
   return isPaused;

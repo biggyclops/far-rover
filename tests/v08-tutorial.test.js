@@ -233,4 +233,58 @@ test.describe('Far Rover v0.8 tutorial', () => {
     expect(end.tutorialMode).toBe('play');
     expect(end.deepIce.unlocked).toBe(true);
   });
+
+  test('live panel highlights the firing rule, matches the starter trace, and narrates events', async ({ page }) => {
+    test.setTimeout(60000);
+    await ready(page, TUTORIAL);
+    await page.evaluate(() => window.__v08Test.tutorial.jump(10));
+    await page.click('#tutorial-show');
+    await expect(page.locator('.operate-view')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.speed-btn[data-speed="1"]')).toHaveClass(/active/);
+    await expect(page.locator('#rover-cam')).toBeVisible();
+    await expect(page.locator('#live-sensors')).toBeVisible();
+    await expect(page.locator('#live-battery')).toBeVisible();
+    await expect(page.locator('#minimap-canvas')).toBeVisible();
+
+    const seen = { reasons: [], toasts: [] };
+    let frames = 0;
+    for (let i = 0; i < 90; i++) {
+      const snap = await page.evaluate(() => {
+        window.__v08Test.tickScout(1);
+        window.__v08Test.syncHud();
+        const live = window.__v08Test.getLive();
+        const fired = document.querySelector('.rule-line.fired');
+        return {
+          reason: document.querySelector('#live-rule-reason')?.textContent || '',
+          firedRule: fired?.getAttribute('data-rule') || null,
+          toast: window.__v08Test.getState().toast,
+          live,
+          outcome: window.__v08Test.getState().scoutOutcome,
+        };
+      });
+      if (snap.reason) seen.reasons.push(snap.reason);
+      if (snap.toast) seen.toasts.push(snap.toast);
+      if (snap.live?.fired > 0) {
+        expect(snap.firedRule, `tick highlight ${snap.reason}`).toBe(String(snap.live.fired));
+        expect(snap.reason, 'panel reason matches live trace').toBe(snap.live.reason);
+      }
+      if (/so exploring/.test(snap.reason) && frames === 0) {
+        await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/live-panel-explore.png', fullPage: true });
+        frames = 1;
+      } else if (/sidestepping/.test(snap.reason) && frames < 2) {
+        await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/live-panel-sidestep.png', fullPage: true });
+        frames = 2;
+      } else if (/heading home to charge/.test(snap.reason) && frames < 3) {
+        await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/live-panel-home.png', fullPage: true });
+        frames = 3;
+      }
+      if (snap.outcome) break;
+    }
+    expect(seen.reasons.some((r) => /Rule 4: nothing else true, so exploring/.test(r))).toBe(true);
+    expect(seen.reasons.some((r) => /Rule 2: Battery \d+ is below 12, so heading home to charge/.test(r))).toBe(true);
+    expect(seen.toasts.some((t) => t === 'Scout: battery low, heading home')).toBe(true);
+    expect(seen.toasts.some((t) => /Scout: trace ice at [A-L]\d+, continuing/.test(t))).toBe(true);
+    expect(seen.toasts.some((t) => t === 'Scout: crater ahead, sidestepping')).toBe(true);
+    expect(frames).toBeGreaterThanOrEqual(3);
+  });
 });

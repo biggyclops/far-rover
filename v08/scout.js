@@ -2,6 +2,7 @@ import * as Sim from './engine.js';
 import { CONFIG as C } from './config.js';
 import { hostedTickAndResume } from './hosted-tick.js';
 import { explainScoutResult, renderTraceItems } from './scout-explain.js';
+import { explainLiveTick, liveFromTrace, shouldNarrate } from './scout-live.js';
 import {
   showBuildScreen,
   prepareHostedScout,
@@ -15,9 +16,11 @@ import {
   setGameStateForTest,
   isOperatePaused,
   getOperateSpeed,
+  setOperateSpeed,
   stopOperateTicking,
-  runHostedTick,
   recordHostedRunIfNeeded,
+  setLastTickResult,
+  peekNextPose,
 } from '../ui.js';
 
 function ensureDemoCss() {
@@ -42,14 +45,21 @@ export function bindScout(root, game, hooks = {}) {
   let scoutAcc = 0;
   let lastSim = null;
   let savedBaseSpeed = null;
+  let narrateState = { key: null, iceCells: new Set(), keys: new Set() };
+
+  function resetNarrate() {
+    narrateState = { key: null, iceCells: new Set(), keys: new Set() };
+  }
 
   async function ensureReady() {
     if (ready) return;
     await prepareHostedScout();
     onScoutLaunch((sim) => {
       lastSim = sim;
+      resetNarrate();
+      scoutAcc = 0;
       game.markExpeditionLaunched({ hasNotifyRule: rulesHaveNotify(sim?.rules) });
-      hideOverlay();
+      showLiveOperate();
       hooks.onLaunched?.(sim);
     });
     onScoutTick((result) => handleNotify(result));
@@ -165,6 +175,15 @@ export function bindScout(root, game, hooks = {}) {
     retitleProgramPanel();
   }
 
+  function showLiveOperate() {
+    showOverlay();
+    setOverlayTitle('Scout expedition');
+    showHosted();
+    showOperateView();
+    setOperateSpeed(1);
+    updateOperateView();
+  }
+
   async function openOperate() {
     if (!lastSim && !getGameState()) return false;
     await ensureReady();
@@ -172,12 +191,7 @@ export function bindScout(root, game, hooks = {}) {
     if (lastSim?.outcome || game.state.expedition.ended) {
       return openTrace();
     }
-    showOverlay();
-    setOverlayTitle('Scout expedition: trace');
-    showHosted();
-    showOperateView();
-    stopOperateTicking();
-    updateOperateView();
+    showLiveOperate();
     return true;
   }
 
@@ -206,13 +220,28 @@ export function bindScout(root, game, hooks = {}) {
     return Sim.applyPatch(lastSim, ev.slot, ev.condition, ev.action);
   }
 
-  function paperSnapshot(sim, status) {
+  function applyNarration(sim, result) {
+    const tick = result?.tickRecord || (sim?.trace || [])[(sim?.trace || []).length - 1] || null;
+    const live = explainLiveTick(sim, tick);
+    if (/so exploring/.test(live.reason || '')) narrateState.keys.delete('battery-home');
+    if (!shouldNarrate(narrateState, live)) return;
+    game.narrateScout(live.toast);
+    if (live.iceCell) narrateState.iceCells.add(live.iceCell);
+    narrateState.keys.add(live.toastKey);
+    narrateState.key = live.toastKey;
+  }
+
+  function paperSnapshot(sim, status, next = null) {
     if (!sim) return null;
-    const path = (sim.trace || []).map((t) => ({
-      col: t.col,
-      row: t.row,
-      tick: t.tick,
-    }));
+    const path = (sim.trace || []).map((t) => {
+      const pos = t.positionAfter || t.positionBefore || {};
+      return {
+        col: pos.col,
+        row: pos.row,
+        tick: t.tick,
+        facing: t.facingAfter || null,
+      };
+    });
     const revealed = [];
     if (sim.revealed) {
       for (let r = 0; r < sim.revealed.length; r++) {
@@ -223,13 +252,26 @@ export function bindScout(root, game, hooks = {}) {
     }
     const pings = (sim.trace || [])
       .filter((t) => t.actionResult?.ping || t.actionResult?.notified)
-      .map((t) => ({
-        col: t.col,
-        row: t.row,
-        label: t.actionResult?.label || null,
-        kind: t.actionResult?.kind || null,
-      }));
-    return { path, revealed, pings, tick: sim.tick || 0, status };
+      .map((t) => {
+        const pos = t.positionAfter || t.positionBefore || {};
+        return {
+          col: pos.col,
+          row: pos.row,
+          label: t.actionResult?.label || null,
+          kind: t.actionResult?.kind || null,
+        };
+      });
+    return {
+      path,
+      revealed,
+      pings,
+      tick: sim.tick || 0,
+      status,
+      facing: sim.facing,
+      col: sim.col,
+      row: sim.row,
+      next: next ? { col: next.col, row: next.row } : null,
+    };
   }
 
   function resultLineFor(sim) {
@@ -260,20 +302,26 @@ export function bindScout(root, game, hooks = {}) {
 
   function pump(dt) {
     if (!lastSim || game.state.expedition.ended || !game.state.expedition.launched) return;
+    const operateOpen = overlay && !overlay.hidden;
     if (lastSim.outcome) {
       finishIfNeeded();
-      const operateOpen = overlay && !overlay.hidden;
       if (operateOpen) openTrace();
       return;
     }
-    const operateOpen = overlay && !overlay.hidden;
+    if (operateOpen && isOperatePaused()) {
+      updateOperateView();
+      return;
+    }
+    const period = operateOpen ? (1 / Math.max(1, getOperateSpeed() || 1)) : 1;
     scoutAcc += dt;
-    while (scoutAcc >= 1 && lastSim && !lastSim.outcome) {
-      scoutAcc -= 1;
+    while (scoutAcc >= period && lastSim && !lastSim.outcome) {
+      scoutAcc -= period;
       const result = hostedTickAndResume(lastSim);
+      setLastTickResult(result);
       handleNotify(result);
+      applyNarration(lastSim, result);
       lastSim = getGameState() || lastSim;
-      game.updateScoutPaper(paperSnapshot(lastSim, statusFor(lastSim)));
+      game.updateScoutPaper(paperSnapshot(lastSim, statusFor(lastSim), peekNextPose()));
     }
     if (lastSim?.outcome) finishIfNeeded();
     if (operateOpen) updateOperateView();
@@ -296,6 +344,8 @@ export function bindScout(root, game, hooks = {}) {
     setGameStateForTest(lastSim);
     setSelectedSensorsForTest(sensors);
     setRulesForTest(rules);
+    resetNarrate();
+    scoutAcc = 0;
     game.markExpeditionLaunched({ hasNotifyRule: rulesHaveNotify(rules) });
     return lastSim;
   }
@@ -306,9 +356,13 @@ export function bindScout(root, game, hooks = {}) {
     for (let i = 0; i < n; i++) {
       if (lastSim.outcome) break;
       last = hostedTickAndResume(lastSim);
+      setLastTickResult(last);
       handleNotify(last);
+      applyNarration(lastSim, last);
+      game.updateScoutPaper(paperSnapshot(lastSim, statusFor(lastSim), peekNextPose()));
     }
     if (lastSim?.outcome) finishIfNeeded();
+    if (overlay && !overlay.hidden) updateOperateView();
     return last;
   }
 
@@ -437,6 +491,7 @@ export function bindScout(root, game, hooks = {}) {
     loadProgram,
     highlightFirstBatteryTick,
     getSim: () => lastSim,
+    getLive: () => liveFromTrace(lastSim),
     isOpen: () => overlay && !overlay.hidden,
   };
 }

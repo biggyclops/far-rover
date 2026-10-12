@@ -26,8 +26,8 @@ const STEP_TEXT = {
   7: 'Buildings cost regolith (the grey number up top). When you run low, right-click open ground away from your buildings to mine more. Digging tunnels gives you regolith too.',
   8: "The ice near your base is shallow and won't be enough. Somewhere beyond your range is a big deposit. You can't drive out there yourself, so you send a scout that runs a program. Click Build Scout.",
   9: "Your scout follows a list of rules. Every turn it checks them top to bottom and does the first one that's true. This starter program dodges craters, heads home to charge when the battery is low, pings you when it's standing on ice, and otherwise explores.",
-  10: 'Launch it and watch what happens.',
-  11: "It came home with only trace ice. Look at the trace: it turned back when the battery fell below 12, before it reached the big deposits up top. That's the threshold to change.",
+  10: 'Launch it and watch what happens. Each turn the firing rule lights up, with a one-line reason so you can say what the scout is doing and why.',
+  11: "It came home with only trace ice. Look at the trace: it turned back when the battery fell below 12 — the same rule you saw light up — before it reached the big deposits up top. That's the threshold to change.",
   12: "Change 'Battery below 12' to 'Battery below 6' so it goes farther, then Relaunch.",
   13: "Deep Ice found! It's far out on rough ground, where haulers drive at half speed. You can haul it the long way, or dig a tunnel.",
   14: 'Place a Tunnel hub at the edge of your range facing the ice, and a second hub next to the ice. They must line up in a straight row or column.',
@@ -261,7 +261,11 @@ export function bindTutorial(root, ctx) {
       const i = Math.floor(rulePulse / 1.15) % Math.max(slots.length, 1);
       slots[i]?.classList.add('tutorial-rule-on');
     }
-    if (step === 10) glow(root.querySelector('#launch-btn'));
+    if (step === 10) {
+      glow(root.querySelector('#launch-btn'));
+      glow(root.querySelector('#live-rule-reason'), false);
+      glow(root.querySelector('#rule-display'), false);
+    }
     if (step === 12) glow(root.querySelector('.battery-n'));
     if (step === 14) glow(root.querySelector('#build-hub'));
     if (step === 15) glow(root.querySelector('#order-dig'));
