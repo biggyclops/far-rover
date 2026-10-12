@@ -898,19 +898,20 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
         y1: Math.max(a.y, b.y) + 36,
       };
     });
-    await page.mouse.move(box.x0, box.y0);
-    await page.mouse.down();
-    await page.mouse.move(box.x1, box.y1, { steps: 8 });
     const ice = await page.evaluate(() => {
       const C = window.__v08Test.config;
       return window.__v08Test.tileClientPos(C.shallowIceTileX, C.shallowIceTileY);
     });
-    await page.mouse.click(ice.x, ice.y, { button: 'right' });
+    await page.mouse.move(box.x0, box.y0);
+    await page.mouse.down();
+    await page.mouse.move(box.x1, box.y1, { steps: 8 });
     await page.mouse.up();
-    const s = await page.evaluate(() => window.__v08Test.getState());
-    const hauling = s.units.filter((u) => u.kind === 'hauler' && u.order === 'haul');
+    let s = await page.evaluate(() => window.__v08Test.getState());
     expect(s.selectedIds.length).toBe(2);
-    expect(hauling.length).toBe(2);
+    await page.mouse.click(ice.x, ice.y, { button: 'right' });
+    s = await page.evaluate(() => window.__v08Test.getState());
+    expect(s.selectedIds.length).toBe(2);
+    expect(s.units.filter((u) => u.kind === 'hauler' && u.order === 'haul').length).toBe(2);
   });
 
   test('stuck scout toast spells out the Go to ore miss', async ({ page }) => {
