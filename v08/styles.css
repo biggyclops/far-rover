@@ -466,6 +466,8 @@ button:disabled {
   list-style: none;
   padding: 0;
   margin: 0;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
 }
 .scout-trace-card .relaunch-scout {
   margin-top: 14px;
