@@ -40,6 +40,7 @@
         <button id="speed-16" type="button">16×</button>
         <button id="view-toggle" type="button">Underground</button>
         <button id="mute-btn" type="button">Mute</button>
+        <button id="btn-tutorial" type="button">Tutorial</button>
         <button id="about-btn" type="button">About</button>
         <button id="btn-land-crew" type="button" hidden>Land crew</button>
       </div>
@@ -74,6 +75,28 @@
     </footer>
   </div>
   <div id="goal-banner" data-testid="goal-banner">Select haulers, then right-click the ice to start a delivery loop</div>
+  <div id="tutorial-chooser" data-testid="tutorial-chooser" hidden>
+    <div class="chooser-card">
+      <h1>Far Rover</h1>
+      <p>Command a new base at the Moon's south pole.</p>
+      <button id="chooser-tutorial" type="button" data-testid="chooser-tutorial">
+        Tutorial
+        <small>recommended for first time</small>
+      </button>
+      <button id="chooser-play" type="button" data-testid="chooser-play">Play</button>
+    </div>
+  </div>
+  <div id="tutorial-card" data-testid="tutorial-card" hidden>
+    <p id="tutorial-text" data-testid="tutorial-text"></p>
+    <p id="tutorial-fail" data-testid="tutorial-fail" hidden></p>
+    <div class="tutorial-actions">
+      <button id="tutorial-next" type="button" data-testid="tutorial-next">Next</button>
+      <button id="tutorial-show" type="button" data-testid="tutorial-show">Show me</button>
+      <button id="tutorial-try" type="button" data-testid="tutorial-try" hidden>Try this program</button>
+      <button id="tutorial-skip" type="button" class="link" data-testid="tutorial-skip">Skip tutorial</button>
+    </div>
+  </div>
+  <div id="tutorial-rings" data-testid="tutorial-rings"></div>
   <div id="unit-card" data-testid="unit-card" hidden></div>
   <aside id="objectives" data-testid="objectives">
     <div class="obj-title">First goal</div>

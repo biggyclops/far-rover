@@ -98,6 +98,34 @@ export function runHostedScoutTick(state, previouslyRevealed = null) {
   return result;
 }
 
+/** Hosted overlay ticks: Notify is a side effect, so resume movement after a hazard auto-pause. */
+export function hostedTickAndResume(state, previouslyRevealed = null) {
+  const result = runHostedScoutTick(state, previouslyRevealed);
+  if (!result?.continueFromStep4 || !result.autoPause || state.outcome) return result;
+  const saved = state.rules;
+  state.rules = stripNotifyRules(saved);
+  const cont = Sim.continueTickFromStep4(
+    state,
+    result.tickRecord,
+    result.tickRecord.readings || state.readings,
+  );
+  state.rules = saved;
+  restoreConfirmDepositTiles(state);
+  annotateReturnChargeLoop(state, cont);
+  if (result.hostedPings?.length) {
+    cont.hostedPings = result.hostedPings;
+    const ping = result.hostedPings[0];
+    cont.tickRecord = cont.tickRecord || result.tickRecord;
+    if (cont.tickRecord) {
+      cont.tickRecord.actionResult = {
+        ...(cont.tickRecord.actionResult || {}),
+        ...ping,
+      };
+    }
+  }
+  return cont;
+}
+
 export function hostedNotifyMovementEqualsStripped(sensors, rules, ticks = 20) {
   const full = Sim.createInitialState(sensors, rules);
   const stripped = Sim.createInitialState(sensors, stripNotifyRules(rules));

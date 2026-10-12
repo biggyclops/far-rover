@@ -223,7 +223,7 @@ export function bindHud(root, game, hooks = {}) {
     const banner = $('#goal-banner');
     if (banner) {
       banner.textContent = game.goalBanner();
-      banner.hidden = toastOn;
+      banner.hidden = toastOn || !!hooks.tutorialActive?.();
     }
     const deficit = $('#power-alert');
     if (deficit) {

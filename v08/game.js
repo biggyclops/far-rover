@@ -683,6 +683,7 @@ export function createGame() {
     if (ice > 0 && (dest.type === 'habitat' || dest.type === 'storage' || dest.type === 'vault') && buildingInCommandRange(dest)) {
       state.stats.goalIceByHauler = (state.stats.goalIceByHauler || 0) + ice;
     }
+    if (ice > 0 || reg > 0) emit('delivery', { ice, regolith: reg, destId: dest.id, destType: dest.type });
     return { ice, regolith: reg, total: ice + reg };
   }
 
@@ -1848,6 +1849,7 @@ export function createGame() {
       };
     });
     state.tunnel = { tiles: merged, packets: state.tunnel.packets };
+    if (merged.length) emit('dig-start', { tiles: merged.length });
     return merged;
   }
 
@@ -2060,6 +2062,9 @@ export function createGame() {
       if (counted && vaults.some((v) => buildingInCommandRange(v))) {
         state.stats.goalIceByTunnel = (state.stats.goalIceByTunnel || 0) + p.ice;
       }
+    }
+    if (p.ice > 0 || p.regolith > 0) {
+      emit('packet-home', { ice: p.ice, regolith: p.regolith, destId: dest.id, destType: dest.type });
     }
   }
 
@@ -2370,6 +2375,7 @@ export function createGame() {
       toast('Tip: build storage at the edge of command range, toward the ice.', 8, { kind: 'storage-tip' });
     }
     state.buildGhost = null;
+    emit('place', { type, tx, ty, id: b.id });
     return b;
   }
 

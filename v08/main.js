@@ -6,6 +6,7 @@ import { createRenderer } from './renderer.js';
 import { bindInput } from './input.js';
 import { bindHud } from './hud.js';
 import { bindScout } from './scout.js';
+import { bindTutorial } from './tutorial.js';
 import {
   onHostedPatch,
   setHostedPatchInfo,
@@ -34,6 +35,7 @@ if (typeof ResizeObserver !== 'undefined') {
 }
 
 const scout = bindScout(document, game);
+let tutorial = null;
 
 const hud = bindHud(document, game, {
   onMute: (muted) => audio.setMuted(muted),
@@ -41,11 +43,14 @@ const hud = bindHud(document, game, {
   onRecall: () => { game.startRecall(); },
   onLandCrew: () => { game.landCrew(); },
   onViewTrace: () => { scout.viewTrace(); },
+  tutorialActive: () => tutorial?.active(),
   tileScreenPos: (tx, ty) => {
     const c = game.tileCenter(tx, ty);
     return renderer.worldToScreen(c.x, c.y);
   },
 });
+
+tutorial = bindTutorial(document, { game, scout, renderer, canvas, hud });
 
 onHostedPatch((slot, condition, action) => game.queuePatch(slot, condition, action));
 setHostedPatchInfo(() => ({
@@ -70,6 +75,7 @@ function handleEvents(evs) {
       const ok = scout.applyIncomingPatch(ev);
       game.notePatchApplied(ok);
     }
+    tutorial?.onEvent(ev);
   }
 }
 
@@ -87,8 +93,10 @@ function frame(now) {
   if (scoutDt > 0) scout.pump(scoutDt);
   audio.setDigLoop(game.isDigging());
   handleEvents(game.flushEvents());
+  tutorial?.tick(raw);
   renderer.draw();
   hud.sync();
+  tutorial?.sync();
   requestAnimationFrame(frame);
 }
 
@@ -204,6 +212,8 @@ function serialize() {
     hoverTip: game.state.hoverTile
       ? game.iceHoverText(game.state.hoverTile.tx, game.state.hoverTile.ty)
       : '',
+    tutorialMode: tutorial?.getMode() || null,
+    tutorialStep: tutorial?.getStep() || 0,
     won: game.state.won,
     win: game.state.win ? { ...game.state.win } : null,
     scoutOpen: scout.isOpen(),
@@ -257,6 +267,7 @@ const debugHooks = {
   selectBuilding: (id) => game.selectBuilding(id),
   issueContextual: (x, y) => game.issueContextual(x, y),
   armOrder: (kind) => { game.state.armedOrder = kind || null; },
+  commandHaul: (tx, ty) => game.commandHaulTile(game.selectedUnits(), tx, ty),
   issueOrder: (order) => {
     const units = game.selectedUnits();
     if (!units.length) return false;
@@ -334,6 +345,18 @@ const debugHooks = {
     renderer.focusTile(tx, ty);
   },
   config: C,
+  tutorial: {
+    start: () => tutorial.startTutorial(),
+    play: () => tutorial.startPlay(),
+    skip: () => tutorial.skip(),
+    showMe: () => tutorial.showMe(),
+    tryThis: () => tutorial.tryThis(),
+    next: () => tutorial.clickNext(),
+    step: () => tutorial.getStep(),
+    mode: () => tutorial.getMode(),
+    stepDone: (n) => tutorial.stepDone(n),
+    jump: (n) => tutorial.jump(n),
+  },
 };
 
 if (new URLSearchParams(location.search).has('debug')) {
