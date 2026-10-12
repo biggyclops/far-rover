@@ -52,7 +52,8 @@ function printSet(summary, title) {
   const t2 = summary.t2vsBestHaulers;
   lines.push('');
   lines.push(`1 print1 < haulers-2: ${g.print1BeatsHaulers ? 'PASS' : 'FAIL'}`);
-  lines.push(`2 T2 20–35% vs best haulers: ${g.tunnel2in20to35 ? 'PASS' : 'FAIL'} (${t2 == null ? '—' : `${(t2 * 100).toFixed(1)}%`})`);
+  const c2 = g.tunnel2LeadOk ?? g.tunnel2in20to35;
+  lines.push(`2 T2 15–35% at delay 0–1s, win outright 0–10s (cap 35%): ${c2 ? 'PASS' : 'FAIL'} (${t2 == null ? '—' : `${(t2 * 100).toFixed(1)}%`})`);
   lines.push(`3 every winner hits night: ${g.everyWinnerHitsNight ? 'PASS' : 'FAIL'}`);
   lines.push(`4 tunnel power min < 50: ${g.tunnelPowerBelow50 ? 'PASS' : 'FAIL'}`);
   lines.push(`5 no win under 4:00: ${g.noWinUnder4 ? 'PASS' : 'FAIL'}`);

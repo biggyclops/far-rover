@@ -10,6 +10,16 @@ export { STRATEGY_IDS, STRATEGY_META, CONFIG, DEFAULTS, changedFromDefaults };
 
 export const REACTION_DELAYS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
+// Criterion 2 (Game Designer, post-#55): with 2 diggers, the tunnel must beat
+// the best hauler route including prints by 15–35% at delay 0–1 s, and still
+// win outright (lead > 0, cap 35%) at every delay 0–10 s.
+export function criterion2LeadOk(lead, delay = 0) {
+  if (lead == null || !Number.isFinite(lead)) return false;
+  if (lead > 0.35 + 1e-12) return false;
+  if ((delay ?? 0) <= 1) return lead + 1e-12 >= 0.15;
+  return lead > 0;
+}
+
 export function formatTime(seconds) {
   if (seconds == null || !Number.isFinite(seconds)) return '—';
   const m = Math.floor(seconds / 60);
@@ -187,7 +197,7 @@ export function runAllStrategies(overrides = {}, opts = {}) {
   return summarize(results, overrides);
 }
 
-export function summarize(results, overrides = {}) {
+export function summarize(results, overrides = {}, opts = {}) {
   const won = results.filter((r) => r.won);
   const haulers = won.filter((r) => r.family === 'haulers');
   const tunnel = won.filter((r) => r.family === 'tunnel');
@@ -205,10 +215,11 @@ export function summarize(results, overrides = {}) {
   const t2vsBestHaulers = (bestHaulers && tunnel2?.won)
     ? (bestHaulers.winTime - tunnel2.winTime) / bestHaulers.winTime
     : null;
+  const delay = opts.delay ?? results.find((r) => r.reactionDelay != null)?.reactionDelay ?? 0;
   const changes = changedFromDefaults(overrides);
   const gd = {
     print1BeatsHaulers: !!(print1?.won && haulers2?.won && print1.winTime < haulers2.winTime),
-    tunnel2in20to35: t2vsBestHaulers != null && t2vsBestHaulers >= 0.20 && t2vsBestHaulers <= 0.35,
+    tunnel2LeadOk: criterion2LeadOk(t2vsBestHaulers, delay),
     everyWinnerHitsNight: won.length > 0 && won.every((r) => r.hitNight),
     tunnelPowerBelow50: results.some((r) => r.family === 'tunnel' && r.powerMin != null && r.powerMin < 50),
     noWinUnder4: won.length > 0 && won.every((r) => r.winTime >= 4 * 60),
@@ -253,7 +264,7 @@ export function sweepReactionDelays(overrides = {}, opts = {}) {
           reactionDelay: delay,
         })
     ));
-    const summary = summarize(results, overrides);
+    const summary = summarize(results, overrides, { delay });
     const tunnel = results.find((r) => r.strategy === 'tunnel-2-diggers');
     const hauler = summary.bestHaulers;
     const lead = (tunnel?.won && hauler?.won)

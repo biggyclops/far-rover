@@ -2,6 +2,36 @@
 
 Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
 
+## Shipped (2026-10-12, criterion 2 restated on #55): 5/5 at every delay 0–10
+
+#55 stays as it is. No number changes. Off-road and `haulerCarry` locked. Root demo still 5/46/45. Game Designer restated criterion 2: 2-digger must beat the best hauler route including prints by **15–35% at delay 0–1 s**, and still **win outright** at every delay **0–10 s** (cap 35%). Harness `gd.tunnel2LeadOk` and its tests match that rule.
+
+Honest delay sweep (same times as #55): **5/5 at every delay**.
+
+| Delay | 2-digger | Best haulers | Lead | GD |
+|---|---:|---|---:|---:|
+| 0 s | 4:47 | 5:51 print-2 nearest-ice | 18.4% | 5/5 |
+| 1 s | 4:51 | 5:54 print-2 nearest-ice | 17.8% | 5/5 |
+| 2 s | 4:56 | 5:23 print-2 nearest-ice | 8.6% | 5/5 |
+| 3 s | 5:01 | 5:28 print-3 nearest-ice | 8.4% | 5/5 |
+| 4 s | 5:06 | 5:31 print-3 nearest-ice | 7.7% | 5/5 |
+| 5 s | 5:11 | 5:29 print-3 nearest-ice | 5.5% | 5/5 |
+| 6 s | 5:16 | 5:32 print-3 nearest-ice | 4.8% | 5/5 |
+| 7 s | 5:21 | 5:46 print-2 nearest-ice | 7.3% | 5/5 |
+| 8 s | 5:26 | 5:48 print-2 nearest-ice | 6.4% | 5/5 |
+| 9 s | 5:31 | 5:50 print-2 nearest-ice | 5.5% | 5/5 |
+| 10 s | 5:36 | 5:52 print-2 nearest-ice | 4.7% | 5/5 |
+
+### Five criteria (every delay 0–10)
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Haulers + print 1 beats haulers only | **Pass.** Delay 0: 6:36 vs 7:26. |
+| 2 | 2-digger 15–35% faster at delay 0–1 s, and wins outright at every delay 0–10 s (cap 35%) | **Pass.** Delay 0 18.4%, delay 1 17.8%; delay 10 still wins at 4.7%. |
+| 3 | Every winning route crosses at least one night | **Pass.** First night is at 1:30. |
+| 4 | Power drops below 50 on at least one tunnel route | **Pass.** 2-digger `powerMin` 18. |
+| 5 | No route wins under 4:00 (30 s margin) | **Pass.** Earliest legal win is 4:47. |
+
 ## Stop report (2026-10-12, r5 low-effort tunnel on #53): persist dig / auto-reroute, criterion 2 still short
 
 #53 is on `main` (`c965e51`). Game Designer chose (b): make the finished tunnel the low-effort route. No number changes. Off-road and `haulerCarry` locked. Root demo still 5/46/45. Tests green, including the three new persist / reroute / digger-haul cases. Merge either way — this is the ship of that behavior, not a 5/5.

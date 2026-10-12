@@ -9,7 +9,7 @@ import {
   hostedNotifyMovementEqualsStripped,
 } from '../v08/hosted-tick.js';
 import { explainScoutResult } from '../v08/scout-explain.js';
-import { runStrategy, REACTION_DELAYS } from '../v08/balance/harness.js';
+import { runStrategy, REACTION_DELAYS, criterion2LeadOk, summarize } from '../v08/balance/harness.js';
 import { nearestLegalDrop, listTunnelPlans, listStorageLayouts, P2_DIAGONAL_334, listAllTunnelPlans, layoutsFor, lineOpts } from '../v08/balance/placements.js';
 import { runProgram } from '../v08/balance/scout-run.js';
 
@@ -1434,6 +1434,55 @@ function runUntilOutcome(sensors, rules, place) {
   }
   assert.equal(g.state.toast?.text, 'Tunnel open, haulers rerouted');
   console.log('ok  diggers return to the best haul when the dig finishes');
+}
+
+{
+  // Criterion 2 (post-#55): 15–35% at delay 0–1 s; win outright (lead > 0, cap 35%) at 0–10 s.
+  assert.equal(criterion2LeadOk(0.184, 0), true, 'delay 0 18.4% is in 15–35');
+  assert.equal(criterion2LeadOk(0.150, 1), true, 'delay 1 15% floor');
+  assert.equal(criterion2LeadOk(0.149, 0), false, 'delay 0 below 15% fails');
+  assert.equal(criterion2LeadOk(0.149, 1), false, 'delay 1 below 15% fails');
+  assert.equal(criterion2LeadOk(0.351, 0), false, 'delay 0 above 35% fails');
+  assert.equal(criterion2LeadOk(0.047, 10), true, 'delay 10 4.7% still wins outright');
+  assert.equal(criterion2LeadOk(0.086, 2), true, 'delay 2 8.6% wins outright');
+  assert.equal(criterion2LeadOk(0, 10), false, 'a tie is not an outright win');
+  assert.equal(criterion2LeadOk(-0.01, 5), false, 'haulers-faster fails');
+  assert.equal(criterion2LeadOk(0.36, 10), false, '35% cap still applies at long delay');
+  assert.equal(criterion2LeadOk(null, 0), false);
+  console.log('ok  criterion 2 is 15–35% at delay 0–1 and an outright win through delay 10');
+}
+
+{
+  function pack(delay, t2, print2) {
+    const row = (strategy, family, winTime, extra = {}) => ({
+      strategy,
+      family,
+      won: true,
+      winTime,
+      winTimeLabel: 'x',
+      hitNight: true,
+      powerMin: extra.powerMin ?? 40,
+      ice: 180,
+      reactionDelay: delay,
+    });
+    return [
+      row('haulers-2', 'haulers', 446),
+      row('haulers-plus-1', 'haulers', 396),
+      row('haulers-plus-2', 'haulers', print2),
+      row('tunnel-2-diggers', 'tunnel', t2, { powerMin: 18 }),
+    ];
+  }
+  const d0 = summarize(pack(0, 287, 351));
+  assert.equal(d0.gd.tunnel2LeadOk, true, 'delay 0 18.2% lead passes the new band');
+  assert.equal(d0.gd.passCount, 5);
+  const d0short = summarize(pack(0, 310, 351));
+  assert.equal(d0short.gd.tunnel2LeadOk, false, 'delay 0 11.7% lead is below 15%');
+  const d10 = summarize(pack(10, 336, 352));
+  assert.equal(d10.gd.tunnel2LeadOk, true, 'delay 10 4.5% lead still wins outright');
+  assert.equal(d10.gd.passCount, 5);
+  const d10loss = summarize(pack(10, 360, 352));
+  assert.equal(d10loss.gd.tunnel2LeadOk, false, 'delay 10 2-digger slower fails outright-win');
+  console.log('ok  harness summarize scores criterion 2 by delay');
 }
 
 console.log('v08 fix-list node tests passed');
