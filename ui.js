@@ -289,7 +289,7 @@ export function showBuildScreen() {
               <ul>
                 <li><strong>Explore:</strong> move toward nearest hidden tile</li>
                 <li><strong>Return and charge:</strong> go to lander and charge (3 ticks)</li>
-                <li><strong>Go to ore:</strong> move onto adjacent ${hostedIceLabels ? 'ice' : 'ore'} and drill it (costs 3)</li>
+                <li><strong>Go to ore:</strong> move onto adjacent ${hostedIceLabels ? 'ice' : 'ore'} and drill it${hostedIceLabels ? '' : ' (costs 3)'}</li>
                 <li><strong>Drill:</strong> drill ${hostedIceLabels ? 'ice' : 'ore'} on current tile (costs 2)</li>
                 <li><strong>Wait:</strong> do nothing this tick</li>
                 <li><strong>Sidestep:</strong> move to the rover's right if valid, otherwise left; facing stays the same</li>
@@ -2170,7 +2170,13 @@ export async function prepareHostedScout() {
   if (!rules.some((r) => r && r.condition && r.action)) {
     applyHostedNotifyPreset();
   }
-  startNewSession('v08-scout');
+  if (!log.currentSession || log.currentSession.label !== 'v08-scout') {
+    startNewSession('v08-scout');
+  } else {
+    sessionId = log.currentSession.id;
+    testerLabel = log.currentSession.label || '';
+    runNumber = log.currentSession.runs?.length || 0;
+  }
 }
 
 export { showOperateView, updateOperateView, pause as pauseOperate, setSpeed as setOperateSpeed, togglePause as toggleOperatePause };

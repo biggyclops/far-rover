@@ -28,7 +28,11 @@ const hud = bindHud(document, game, {
   onBuildScout: () => { scout.openBuild(); },
   onRecall: () => { game.startRecall(); },
   onLandCrew: () => { game.landCrew(); },
-  onViewTrace: () => { scout.openOperate(); },
+  onViewTrace: () => { scout.viewTrace(); },
+  tileScreenPos: (tx, ty) => {
+    const c = game.tileCenter(tx, ty);
+    return renderer.worldToScreen(c.x, c.y);
+  },
 });
 
 onHostedPatch((slot, condition, action) => game.queuePatch(slot, condition, action));
@@ -191,6 +195,9 @@ function serialize() {
     iceConfirmed: !!scout.getSim()?.iceConfirmed,
     scoutOutcome: scout.getSim()?.outcome || null,
     toastKind: game.state.toast?.kind || null,
+    scoutTraceOpen: !!(document.querySelector('#scout-trace') && !document.querySelector('#scout-trace').hidden),
+    tunnelPayoff: game.tunnelPayoffText(),
+    hubPayoff: game.hubPayoffText(),
   };
 }
 
@@ -275,8 +282,12 @@ const debugHooks = {
   confirmOnOre: () => scout.confirmOnOre(),
   pingOreCell: (cell) => scout.pingOreCell(cell),
   openOperate: () => scout.openOperate(),
+  openTrace: () => scout.openTrace(),
+  viewTrace: () => scout.viewTrace(),
   openBuild: () => scout.openBuild(),
   hideOverlay: () => scout.hideOverlay(),
+  playTraceOnlyReturn: () => scout.playTraceOnlyReturn(),
+  explainScoutResult: (sim) => scout.explainResult(sim),
   queuePatch: (slot, condition, action) => game.queuePatch(slot, condition, action),
   startRecall: () => game.startRecall(),
   notePatchApplied: (ok) => game.notePatchApplied(ok),
