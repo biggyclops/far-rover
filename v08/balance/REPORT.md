@@ -41,10 +41,10 @@ Best tunnel: **Tunnel, 2 diggers** at 5:06 (**23.9% faster**).
 | 1 | Haulers + print 1 beats haulers only | **Pass.** 7:26 vs 7:56. |
 | 2 | Tunnel with 2 diggers is 20–35% faster than the best haulers-only route including prints | **Pass.** 23.9% (5:06 vs print-2 6:43). |
 | 3 | Every winning route crosses at least one night | **Pass.** First night is at 1:30. |
-| 4 | Power drops below 50 on at least one tunnel route | **Pass.** 2-digger `powerMin` 18. |
+| 4 | Power drops below 50 on at least one tunnel route | **Pass.** 2-digger `powerMin` 15. |
 | 5 | No route wins under 4:00 | **Pass.** Earliest win is 5:06. |
 
-Honest Playwright times are recorded after the live 1x runs below.
+Honest Playwright (1x, `canPlace` only): haulers **12:10**, 1-digger **7:17**, 2-digger (longer legal corridor) **5:15**, ring-edge 2-digger **4:50** (home 22,9 / far 35,8). No honest win under 4:00. The honest hauler script is two starters with no prints — off-road stretches that route more than the harness print-2.
 
 ---
 
