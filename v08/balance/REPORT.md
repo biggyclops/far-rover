@@ -42,7 +42,7 @@ Deep Ice distance was left at 22 — 26+ made the far-hub / in-range home-hub co
 Best haulers-only: **Haulers + print 1** at 7:28.
 Best tunnel: **Tunnel, 2 diggers** at 5:45 (**22.9% faster**).
 
-Honest Playwright at the same numbers is reported in the PR after the live UI pass.
+Honest Playwright at these numbers: haulers **7:53**, 1-digger **8:10**, 2-digger **5:30**. Harness shared routes stay within ~15 s.
 
 ### Five criteria
 
