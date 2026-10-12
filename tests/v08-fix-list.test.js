@@ -10,6 +10,7 @@ import {
 } from '../v08/hosted-tick.js';
 import { explainScoutResult } from '../v08/scout-explain.js';
 import { runStrategy, REACTION_DELAYS, criterion2LeadOk, summarize } from '../v08/balance/harness.js';
+import { createBrain } from '../v08/balance/strategies.js';
 import { nearestLegalDrop, listTunnelPlans, listStorageLayouts, P2_DIAGONAL_334, listAllTunnelPlans, layoutsFor, lineOpts } from '../v08/balance/placements.js';
 import { runProgram } from '../v08/balance/scout-run.js';
 
@@ -305,7 +306,7 @@ function scriptedHaul(game) {
   assert.equal(C.tunnelHubMinSeparationTiles, 6);
   assert.equal(C.deepIceTilesFromStartStorage, 21);
   assert.equal(C.haulerOffRoadSpeedMult, 0.5);
-  assert.equal(C.digSecondsPerTilePerRover, 15);
+  assert.equal(C.digSecondsPerTilePerRover, 17);
   assert.equal(C.printerHaulerSeconds, 30);
   assert.equal(C.printerHaulerSecondsSecond, 60);
   assert.equal(C.printerHaulerSecondsAfter, 90);
@@ -862,7 +863,7 @@ function runUntilOutcome(sensors, rules, place) {
   assert.equal(g.state.tunnel.tiles[0].done, false);
   advance(g, C.digSecondsPerTilePerRover * 0.15);
   assert.equal(g.state.tunnel.tiles[0].done, true);
-  console.log('ok  r4.2 one rover digs a tile in 15 s');
+  console.log('ok  r4.2 one rover digs a tile in 17 s');
 }
 
 {
@@ -1450,6 +1451,22 @@ function runUntilOutcome(sensors, rules, place) {
   assert.equal(criterion2LeadOk(0.36, 10), false, '35% cap still applies at long delay');
   assert.equal(criterion2LeadOk(null, 0), false);
   console.log('ok  criterion 2 is 15–35% at delay 0–1 and an outright win through delay 10');
+}
+
+{
+  const g = createGame();
+  g.unlockDeepIce();
+  const layout = layoutsFor('tunnel-2-diggers').find((l) => l.id === 'corr-10');
+  assert.ok(layout, 'corr-10 is the P2 (22,9)/(34,8) plan');
+  const think = createBrain('tunnel-2-diggers', { layout });
+  think(g, { launch() {} });
+  const hubs = g.state.buildings.filter((b) => b.type === 'tunnel-hub');
+  assert.equal(hubs.length, 2, 'far and home hubs both place in the first think');
+  const builders = g.state.units.filter((u) => u.kind === 'hauler' && u.order?.type === 'build');
+  const dests = new Set(builders.map((u) => u.order?.buildingId));
+  assert.equal(builders.length, 2, 'both starters walk to a hub');
+  assert.equal(dests.size, 2, 'each hauler is assigned a different hub');
+  console.log('ok  tunnel-2 places far and home hubs in parallel');
 }
 
 {

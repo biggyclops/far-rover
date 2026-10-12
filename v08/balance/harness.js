@@ -10,9 +10,12 @@ export { STRATEGY_IDS, STRATEGY_META, CONFIG, DEFAULTS, changedFromDefaults };
 
 export const REACTION_DELAYS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-// Criterion 2 (Game Designer, post-#55): with 2 diggers, the tunnel must beat
-// the best hauler route including prints by 15–35% at delay 0–1 s, and still
-// win outright (lead > 0, cap 35%) at every delay 0–10 s.
+// "Best hauler route" means the fastest route without a tunnel, printing
+// included (family === 'haulers'). Criterion 2 (Game Designer, post-#55):
+// with 2 diggers, the tunnel must beat that route by 15–35% at delay 0–1 s,
+// and still win outright (lead > 0, cap 35%) at every delay 0–10 s.
+// Criterion 5 this round: no win under 4:00, with at least 15 s of margin
+// (earliest win ≥ 4:15).
 export function criterion2LeadOk(lead, delay = 0) {
   if (lead == null || !Number.isFinite(lead)) return false;
   if (lead > 0.35 + 1e-12) return false;
@@ -199,6 +202,7 @@ export function runAllStrategies(overrides = {}, opts = {}) {
 
 export function summarize(results, overrides = {}, opts = {}) {
   const won = results.filter((r) => r.won);
+  // Best hauler route = fastest family==='haulers' result: no tunnel, prints in.
   const haulers = won.filter((r) => r.family === 'haulers');
   const tunnel = won.filter((r) => r.family === 'tunnel');
   const bestHaulers = haulers.sort((a, b) => a.winTime - b.winTime)[0] || null;
@@ -222,7 +226,7 @@ export function summarize(results, overrides = {}, opts = {}) {
     tunnel2LeadOk: criterion2LeadOk(t2vsBestHaulers, delay),
     everyWinnerHitsNight: won.length > 0 && won.every((r) => r.hitNight),
     tunnelPowerBelow50: results.some((r) => r.family === 'tunnel' && r.powerMin != null && r.powerMin < 50),
-    noWinUnder4: won.length > 0 && won.every((r) => r.winTime >= 4 * 60),
+    noWinUnder4: won.length > 0 && won.every((r) => r.winTime >= 4 * 60 + 15),
   };
   gd.passCount = Object.values(gd).filter((v) => v === true).length;
   return {
