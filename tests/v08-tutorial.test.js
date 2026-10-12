@@ -241,9 +241,11 @@ test.describe('Far Rover v0.8 tutorial', () => {
     await page.click('#tutorial-show');
     await expect(page.locator('.operate-view')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('.speed-btn[data-speed="1"]')).toHaveClass(/active/);
+    await page.click('.speed-btn[data-speed="pause"]');
     await expect(page.locator('#rover-cam')).toBeVisible();
     await expect(page.locator('#live-sensors')).toBeVisible();
     await expect(page.locator('#live-battery')).toBeVisible();
+    await expect(page.locator('#rule-display')).toBeVisible();
     await expect(page.locator('#minimap-canvas')).toBeVisible();
 
     const seen = { reasons: [], toasts: [] };

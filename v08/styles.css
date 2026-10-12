@@ -258,6 +258,28 @@ button:disabled {
   background: rgba(8, 8, 10, 0.92);
 }
 
+body.scout-open .orbital-left {
+  max-height: calc(100vh - 130px);
+}
+body.scout-open .orbital-ops .rules-panel {
+  order: -1;
+}
+body.scout-open .orbital-left .telemetry-block {
+  display: none;
+}
+body.scout-open .orbital-ops .minimap {
+  display: block;
+  left: auto;
+  right: 214px;
+  bottom: 58px;
+  z-index: 32;
+  background: rgba(8, 12, 16, 0.86);
+}
+#tutorial-card:not([hidden]) ~ #scout-overlay .orbital-left {
+  top: 228px;
+  max-height: calc(100vh - 250px);
+}
+
 #objectives {
   position: fixed;
   top: 64px;
