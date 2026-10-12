@@ -138,7 +138,7 @@ export function createRenderer(canvas, assets, game) {
       }
     }
     if (usedPlate) {
-      realism.drawDustApron(ctx, z);
+      realism.drawDustApron(ctx, z, night);
       realism.drawTracks(ctx, z);
     }
   }
@@ -224,8 +224,8 @@ export function createRenderer(canvas, assets, game) {
     if (pass === 'glow' && night && C.nightGlowAdditive) {
       const c = worldToScreen(wx + n * C.tileSize / 2, wy + n * C.tileSize / 2);
       const pool = (C.glowBuildingSize || 256) * z;
-      if (realism?.drawFloodlight) realism.drawFloodlight(ctx, c.x, c.y, pool, C.glowBuildingIntensity);
-      else drawGlow(c.x, c.y, pool, 'floodlight-pool', C.glowBuildingIntensity);
+      if (realism?.drawFloodlight) realism.drawFloodlight(ctx, c.x, c.y, pool, C.glowBuildingIntensity, 'glow-building');
+      else drawGlow(c.x, c.y, pool, 'glow-building', C.glowBuildingIntensity);
     }
     if (pass === 'shadow') {
       realism?.drawBuildingShadow(ctx, b, z, night);
@@ -284,8 +284,8 @@ export function createRenderer(canvas, assets, game) {
     if (pass === 'glow') {
       if (night && C.nightGlowAdditive) {
         const pool = (C.glowUnitSize || 128) * z;
-        if (realism?.drawFloodlight) realism.drawFloodlight(ctx, s.x, s.y, pool, C.glowUnitIntensity);
-        else drawGlow(s.x, s.y, pool, 'floodlight-pool', C.glowUnitIntensity);
+        if (realism?.drawFloodlight) realism.drawFloodlight(ctx, s.x, s.y, pool, C.glowUnitIntensity, 'glow-unit');
+        else drawGlow(s.x, s.y, pool, 'glow-unit', C.glowUnitIntensity);
       }
       return;
     }
@@ -322,7 +322,7 @@ export function createRenderer(canvas, assets, game) {
       ctx.font = `600 ${Math.max(9, 10 * z)}px "IBM Plex Mono", ui-monospace, monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
-      const y = s.y - C.tileSize * z * 0.42;
+      const y = s.y - C.tileSize * z * 0.55;
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(8, 8, 10, 0.75)';
       ctx.strokeText(label, s.x, y);
@@ -538,20 +538,27 @@ export function createRenderer(canvas, assets, game) {
     const m = exp.marker;
     const c = worldToScreen((m.tx + 0.5) * C.tileSize, (m.ty + 0.5) * C.tileSize);
     const size = C.tileSize * z;
+    const scoutLive = exp.launched && !exp.ended && !exp.recalling;
+    const deepFound = !!(game.state.deepIce && game.state.deepIce.unlocked);
     const scoutImg = img('scout');
-    if (scoutImg && exp.launched && !exp.recalling) {
+    if (scoutImg && scoutLive) {
       ctx.save();
-      ctx.globalAlpha = exp.ended ? 0.7 : 0.95;
+      ctx.globalAlpha = 0.95;
       ctx.drawImage(scoutImg, c.x - size / 2, c.y - size / 2, size, size);
       ctx.restore();
     }
-    ctx.save();
-    ctx.strokeStyle = '#E8F2F6';
-    ctx.lineWidth = Math.max(1.5, 2 * z);
-    ctx.beginPath();
-    ctx.arc(c.x, c.y, size * 0.42, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
+    // White hoop at (37,7) is the scout-site ring. Hide it once Deep Ice
+    // is found so it does not sit as a bare circle next to the ice pin.
+    if (scoutLive || !deepFound) {
+      ctx.save();
+      ctx.strokeStyle = '#E8F2F6';
+      ctx.globalAlpha = scoutLive ? 0.95 : 0.45;
+      ctx.lineWidth = Math.max(1.5, 2 * z);
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, size * 0.42, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
     if (exp.launched) {
       const label = exp.scoutStatus === 'lost'
         ? 'Scout: Lost'
@@ -565,31 +572,20 @@ export function createRenderer(canvas, assets, game) {
       ctx.fillText(label, c.x, c.y + size * 0.62);
       ctx.restore();
     }
-    drawEdgeBeacon(m.tx, m.ty, z);
+    drawEdgeBeacon(m.tx, m.ty, z, deepFound && !scoutLive);
   }
 
-  function drawEdgeBeacon(tx, ty, z) {
+  function drawEdgeBeacon(tx, ty, z, hideWhenFound) {
     const { w, h } = viewSize();
     const wx = (tx + 0.5) * C.tileSize;
     const wy = (ty + 0.5) * C.tileSize;
     const s = worldToScreen(wx, wy);
     const pad = 18;
     const onScreen = s.x >= pad && s.x <= w - pad && s.y >= pad && s.y <= h - pad;
-    let bx = s.x;
-    let by = s.y;
-    if (!onScreen) {
-      bx = Math.max(pad, Math.min(w - pad, s.x));
-      by = Math.max(pad, Math.min(h - pad, s.y));
-    } else {
-      // Keep a small mark on the nearer map edge even when the site is visible.
-      const toRight = w - s.x;
-      const toBottom = h - s.y;
-      const nearest = Math.min(s.x, s.y, toRight, toBottom);
-      if (nearest === s.x) bx = pad;
-      else if (nearest === toRight) bx = w - pad;
-      else if (nearest === s.y) by = pad;
-      else by = h - pad;
-    }
+    if (onScreen) return;
+    if (hideWhenFound) return;
+    const bx = Math.max(pad, Math.min(w - pad, s.x));
+    const by = Math.max(pad, Math.min(h - pad, s.y));
     const pulse = 0.65 + 0.35 * Math.sin(game.state.time * 4);
     ctx.save();
     ctx.fillStyle = '#E8F2F6';
