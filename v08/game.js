@@ -1159,9 +1159,16 @@ export function createGame() {
     const dy = wy - unit.y;
     const dist = Math.hypot(dx, dy);
     const crawl = unit.kind === 'hauler' && unit.battery <= 0;
-    const speed = crawl
+    let speed = crawl
       ? (C.strandedCrawlTilesPerSecond || 0.25)
       : C.haulerSpeedTilesPerSecond;
+    if (!crawl && unit.kind === 'hauler') {
+      const at = worldToTile(unit.x, unit.y);
+      if (!inCommandRange(at.tx, at.ty)) {
+        const mult = C.haulerOffRoadSpeedMult;
+        if (Number.isFinite(mult) && mult > 0) speed *= mult;
+      }
+    }
     const step = C.tileSize * speed * dt;
     const loaded = cargoAmount(unit) > 0.001;
     const drain = loaded ? C.haulerDrainPerTileLoaded : C.haulerDrainPerTileEmpty;
@@ -2430,6 +2437,12 @@ export function createGame() {
     return `A tunnel moves ice ${tunnelSpeedMultiple()}x faster than haulers.`;
   }
 
+  function roughGroundText() {
+    const mult = C.haulerOffRoadSpeedMult;
+    if (!Number.isFinite(mult) || mult >= 1) return '';
+    return `Rough ground: haulers drive at ${Math.round(mult * 100)}% speed`;
+  }
+
   function iceHoverText(tx, ty) {
     const t = tileAt(tx, ty);
     if (!t) return '';
@@ -2442,6 +2455,7 @@ export function createGame() {
         : 'Shallow ice — right-click to start a delivery loop';
     }
     if (t.type === TILE.ICE_MINED) return deep ? 'Deep Ice depleted' : 'Shallow ice depleted';
+    if (!inCommandRange(tx, ty)) return roughGroundText();
     return '';
   }
 

@@ -2,6 +2,56 @@
 
 Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
 
+## Shipped set (2026-10-12, criterion 2 off-road): ring 10 + off-road 0.5
+
+Rough ground outside the command ring. `haulerOffRoadSpeedMult` applies to every hauler, loaded or empty, using the same `inCommandRange` tile test as placement. Dig stays 16 s/tile. Tunnel cargo stays 4 tiles/s (4×). Radius was 9; 9 never opened a 12% tunnel lead, so the approved 9–11 band moved to 10.
+
+Sweep of radius × dig × off-road (best placement per strategy):
+
+| Radius | Dig | Off-road | Pass | 1 (P1<H2) | 2 (T%) | 5 (≥4:00) | Notes |
+|---|---:|---:|:---:|:---:|:---:|:---:|---|
+| 9 | 16 | 0.50 | 4/5 | yes | 8.9% | yes | Best at ring 9. T% under the 12% floor. |
+| 9 | 16 | 0.60 | 3/5 | no | 12.9% | yes | Only ring-9 row over 12%; print-1 loses. |
+| 9 | 16 | 0.65 | 4/5 | yes | 4.6% | yes | Starting guess. |
+| 10 | 16 | **0.50** | **5/5** | yes | **23.9%** | yes | Shipped. Print-2 6:43, 2-digger 5:06. |
+| 10 | 16 | 0.55 | 5/5 | yes | 22.8% | yes | Also 5/5; smaller T% margin. |
+| 10 | 16 | 0.60–0.75 | 3–4/5 | no | 13–21% | yes | Print-1 loses to two starters. |
+| 11 | 16 | 0.50–0.60 | 5/5 | yes | 22–23% | yes | Works; bigger radius than needed. |
+
+Shipped knobs: `commandRangeRadius` 10, `haulerOffRoadSpeedMult` 0.5, `digSecondsPerTilePerRover` 16. Deep Ice stays 22. Nearest legal in-range storage is **11.7 tiles** from Deep Ice (chebyshev 10) at `(26,13)`. Hard floor: ≥10.
+
+### 1x best-placement table (dt = 1/60)
+
+| Strategy | Best layout | Win | Night | Power min | Ice |
+|---|---|---:|:---:|---:|---:|
+| Haulers only (2 start) | nearest-ice | 7:56 | yes | 0 | 180 |
+| Haulers + print 1 | nearest-ice | 7:26 | yes | 0 | 188.8 |
+| Haulers + print 2 | nearest-ice | 6:43 | yes | 0 | 188.9 |
+| Tunnel, 1 digger | corr-11 | 6:48 | yes | 30 | 180 |
+| Tunnel, 2 diggers | corr-11 | 5:06 | yes | 15 | 180 |
+| Mixed (1 hauls, 1 digs) | corr-11 | 7:13 | yes | 42 | 180 |
+
+Best haulers-only: **Haulers + print 2** at 6:43.
+Best tunnel: **Tunnel, 2 diggers** at 5:06 (**23.9% faster**).
+
+### Five criteria (best placement)
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Haulers + print 1 beats haulers only | **Pass.** 7:26 vs 7:56. |
+| 2 | Tunnel with 2 diggers is 20–35% faster than the best haulers-only route including prints | **Pass.** 23.9% (5:06 vs print-2 6:43). |
+| 3 | Every winning route crosses at least one night | **Pass.** First night is at 1:30. |
+| 4 | Power drops below 50 on at least one tunnel route | **Pass.** 2-digger `powerMin` 15. |
+| 5 | No route wins under 4:00 | **Pass.** Earliest win is 5:06. |
+
+Honest Playwright (1x, `canPlace` only): haulers **12:10**, 1-digger **7:17**, 2-digger (longer legal corridor) **5:15**, ring-edge 2-digger **4:50** (home 22,9 / far 35,8). No honest win under 4:00. The honest hauler script is two starters with no prints — off-road stretches that route more than the harness print-2.
+
+---
+
+# Far Rover v0.8 balance report
+
+Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
+
 The harness searches hub and storage placements (ring-edge, Player 2's `[30,12]+[29,10]` / `far[35,8] home[28,9] vault[25,6]`, and the shortest legal corridor). Each strategy is scored on its **best** legal layout. A single inner-ring home hub is not enough — that is how the old table missed Player 2's 3:02 2-digger.
 
 ```bash

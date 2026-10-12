@@ -1110,6 +1110,24 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     expect(panel.panelCoversMarker).toBe(false);
   });
 
+  test('rough-ground tooltip shows off-road speed outside the ring', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await ready(page);
+    const pos = await page.evaluate(() => {
+      const t = window.__v08Test;
+      t.setSpeed(0);
+      const C = t.config;
+      return {
+        client: t.tileClientPos(30, 19),
+        expected: `Rough ground: haulers drive at ${Math.round(C.haulerOffRoadSpeedMult * 100)}% speed`,
+      };
+    });
+    await page.mouse.move(pos.client.x, pos.client.y);
+    await page.evaluate(() => window.__v08Test.syncHud());
+    await expect(page.locator('#ice-tooltip')).toBeVisible();
+    await expect(page.locator('#ice-tooltip')).toHaveText(pos.expected);
+  });
+
   test('Notify on F2 unlocks Deep Ice and shows Ice deposit confirmed', async ({ page }) => {
     await ready(page);
     const ping = await page.evaluate(() => window.__v08Test.pingOreCell('F2'));
