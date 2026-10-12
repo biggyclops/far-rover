@@ -348,6 +348,11 @@ export function bindHud(root, game, hooks = {}) {
     const show = !!(exp.launched);
     panel.hidden = !show;
     if (!show) return;
+    const hudBottom = $('#hud-bottom');
+    if (hudBottom) {
+      const gap = Math.max(12, Math.ceil(window.innerHeight - hudBottom.getBoundingClientRect().top + 8));
+      panel.style.bottom = `${gap}px`;
+    }
     const status = $('#exp-status');
     if (status) status.textContent = `Scout: ${statusLabel(exp.scoutStatus)}`;
     const log = $('#exp-log');
@@ -360,6 +365,8 @@ export function bindHud(root, game, hooks = {}) {
         if (row.kind) li.dataset.kind = row.kind;
         log.append(li);
       }
+      const last = log.lastElementChild;
+      if (last) last.scrollIntoView({ block: 'nearest' });
     }
     const hints = $('#exp-hints');
     if (hints) {

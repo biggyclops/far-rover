@@ -1000,6 +1000,116 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     await page.click('#scout-back');
   });
 
+  test('overlay title and expedition log stay readable at 1280×800', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await ready(page);
+    await page.click('#btn-build-scout');
+    await expect(page.locator('#scout-overlay')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('#scout-hints')).toContainText('Go to ore costs 3 battery.');
+
+    const overlay = await page.evaluate(() => {
+      function box(el) {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      }
+      function overlap(a, b) {
+        return a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1;
+      }
+      function textBox(el) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const r = range.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      }
+      const title = document.getElementById('scout-overlay-title');
+      const hints = document.getElementById('scout-hints');
+      const back = document.getElementById('scout-back');
+      const battery = [...hints.querySelectorAll('p')]
+        .find((p) => /Go to ore costs 3 battery/.test(p.textContent));
+      const titleBox = box(title);
+      const hintsBox = box(hints);
+      const batteryBox = textBox(battery);
+      return {
+        overlap: overlap(titleBox, hintsBox),
+        batteryCoveredByTitle: overlap(titleBox, batteryBox),
+        batteryInsideHints:
+          batteryBox.left >= hintsBox.left - 1
+          && batteryBox.right <= hintsBox.right + 1
+          && batteryBox.top >= hintsBox.top - 1
+          && batteryBox.bottom <= hintsBox.bottom + 1,
+        titleBelowBack: titleBox.top >= back.getBoundingClientRect().bottom - 1,
+        title: titleBox,
+        hints: hintsBox,
+        battery: batteryBox,
+      };
+    });
+    expect(overlay.overlap).toBe(false);
+    expect(overlay.batteryCoveredByTitle).toBe(false);
+    expect(overlay.batteryInsideHints).toBe(true);
+    expect(overlay.titleBelowBack).toBe(true);
+
+    await page.click('#scout-back');
+    await page.evaluate(() => {
+      const t = window.__v08Test;
+      t.setSpeed(0);
+      t.launchProgram(['spectral'], [
+        { condition: { type: 'always' }, action: { type: 'go_to_ore' } },
+        { condition: { type: 'always' }, action: { type: 'explore' } },
+      ]);
+      for (let i = 0; i < 8; i++) t.tickScout(1);
+      t.unlockDeepIce();
+      const d = t.getState().deepIce;
+      t.focusTile(d.tx, d.ty);
+      t.syncHud();
+    });
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+    const panel = await page.evaluate(() => {
+      function box(el) {
+        const r = el.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      }
+      function overlap(a, b) {
+        return a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1;
+      }
+      const panelEl = document.getElementById('expedition-panel');
+      const log = document.getElementById('exp-log');
+      const stuck = [...log.querySelectorAll('li')].find((li) => /Stuck:/.test(li.textContent));
+      const canvas = document.getElementById('board').getBoundingClientRect();
+      const t = window.__v08Test;
+      const d = t.getState().deepIce;
+      const s = t.tileScreenPos(d.tx, d.ty);
+      const marker = {
+        left: canvas.left + s.x - 32,
+        right: canvas.left + s.x + 32,
+        top: canvas.top + s.y - 76,
+        bottom: canvas.top + s.y + 8,
+      };
+      const pr = box(panelEl);
+      const stuckBox = box(stuck);
+      const logBox = box(log);
+      const range = document.createRange();
+      range.selectNodeContents(stuck);
+      const text = range.getBoundingClientRect();
+      return {
+        stuckText: stuck?.textContent || '',
+        stuckVisible: stuckBox.bottom <= logBox.bottom + 2 && stuckBox.top >= logBox.top - 2,
+        stuckTextInside:
+          text.bottom <= logBox.bottom + 2
+          && text.top >= logBox.top - 2
+          && text.right <= logBox.right + 2
+          && text.left >= logBox.left - 2,
+        panelCoversMarker: overlap(pr, marker),
+        panel: pr,
+        marker,
+      };
+    });
+    expect(panel.stuckText).toMatch(/or move it lower/);
+    expect(panel.stuckVisible).toBe(true);
+    expect(panel.stuckTextInside).toBe(true);
+    expect(panel.panelCoversMarker).toBe(false);
+  });
+
   test('Notify on F2 unlocks Deep Ice and shows Ice deposit confirmed', async ({ page }) => {
     await ready(page);
     const ping = await page.evaluate(() => window.__v08Test.pingOreCell('F2'));
