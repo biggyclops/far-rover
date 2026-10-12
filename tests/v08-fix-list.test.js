@@ -1,7 +1,7 @@
 // Headless coverage for the M1 fix-list + Player 2 v2 bugs.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createGame, TILE } from '../v08/game.js';
+import { createGame, TILE, REGOLITH_HELP, IDLE_CARGO_HELP, DIG_REGOLITH_HELP } from '../v08/game.js';
 import { CONFIG as C } from '../v08/config.js';
 import * as Sim from '../v08/engine.js';
 import {
@@ -990,6 +990,141 @@ function runUntilOutcome(sensors, rules, place) {
   assert.ok(haulerLayouts.some((l) => l.id === 'hub-vault' || l.drops), 'hauler search includes vault drops');
   assert.ok(haulerLayouts.some((l) => l.id === 'nearest-ice'));
   console.log(`ok  r4 harness ports P2 layout search and delay sweep ${REACTION_DELAYS.join('/')}`);
+}
+
+{
+  const g = createGame();
+  g.selectUnits(g.state.units.map((u) => u.id));
+  const home = g.placeBuilding('tunnel-hub', 14, 21, false);
+  const far = g.placeBuilding('tunnel-hub', 22, 21, false);
+  g.completeBuilding(home.id);
+  g.completeBuilding(far.id);
+  const tiles = g.startDigCorridor();
+  assert.ok(tiles?.length);
+  const storage = g.placeBuilding('storage', 21, 18, false);
+  assert.ok(storage && !storage.complete);
+  const [h1, h2] = g.state.units.filter((u) => u.kind === 'hauler');
+  const digSpot = g.tileCenter(tiles[0].tx, tiles[0].ty);
+  h1.x = digSpot.x;
+  h1.y = digSpot.y;
+  h1.battery = C.haulerBattery;
+  const buildSpot = g.tileCenter(storage.tx, storage.ty + 1);
+  h2.x = buildSpot.x;
+  h2.y = buildSpot.y;
+  h2.battery = C.haulerBattery;
+  g.assignOrder([h1], { type: 'dig' }, digSpot);
+  g.assignOrder([h2], { type: 'build', buildingId: storage.id }, buildSpot);
+  for (const b of g.state.buildings) {
+    if (b.powerCap > 0) b.power = 0;
+  }
+  g.state.time = C.startDaylightRemainingSec + 1;
+  assert.equal(g.isDay(), false);
+  advance(g, 1.2);
+  assert.equal(h1.blockedReason, 'Need power');
+  assert.equal(h1.order?.type, 'dig');
+  assert.equal(h2.order?.type, 'build');
+  g.habitat().power = 100;
+  g.state.time = 0;
+  advance(g, 1.2);
+  assert.equal(h1.blockedReason, null);
+  assert.equal(h1.order?.type, 'dig');
+  assert.equal(h2.order?.type, 'build');
+  h1.battery = C.haulerBattery;
+  g.assignOrder([h1], { type: 'charge', buildingId: g.habitat().id });
+  const habSpot = g.tileCenter(g.habitat().tx + 1, g.habitat().ty + 1);
+  h1.x = habSpot.x;
+  h1.y = habSpot.y;
+  advance(g, 1 / 60);
+  assert.notEqual(h1.order?.type, 'charge');
+  assert.equal(h1.order?.type, 'dig');
+  assert.equal(h1.status, 'dig');
+  console.log('ok  r4.10 0-power night resumes dig/build; full battery never sits on charge');
+}
+
+{
+  const lost = {
+    outcome: Sim.OUTCOMES.LOST_BATTERY,
+    iceConfirmed: true,
+    col: 5,
+    row: 3,
+    tick: 40,
+    rules: [],
+    trace: [{ actionResult: { confirmedIce: true, cell: 'F2' } }],
+    lastNotify: { confirmedIce: true, cell: 'F2' },
+  };
+  const line = explainScoutResult(lost);
+  assert.equal(
+    line,
+    'Ice deposit confirmed at F2! The scout then ran out of battery 9 tiles from the lander. Its job is done.',
+  );
+  assert.doesNotMatch(line, /threshold/);
+  const plain = explainScoutResult({
+    outcome: Sim.OUTCOMES.LOST_BATTERY,
+    iceConfirmed: false,
+    col: 5,
+    row: 3,
+    tick: 40,
+    rules: [],
+    trace: [],
+  });
+  assert.match(plain, /higher Return threshold/);
+  console.log('ok  r4.11 confirmed-then-lost is a success line with the real tile and distance');
+}
+
+{
+  const g = createGame();
+  g.habitat().regolith = 0;
+  assert.equal(g.affordReason('storage'), REGOLITH_HELP);
+  assert.equal(g.affordReason('hauler'), REGOLITH_HELP);
+  g.selectUnits([g.state.units[0].id]);
+  assert.equal(g.placeBuilding('storage', 21, 18, false), null);
+  assert.equal(g.state.toast?.text, REGOLITH_HELP);
+  g.habitat().regolith = 80;
+  const u = g.state.units[0];
+  u.order = null;
+  u.lastOrder = null;
+  u.resumeOrder = null;
+  u.blockedReason = null;
+  u.cargo.ice = 10;
+  u.status = 'idle';
+  assert.equal(g.unitTask(u), IDLE_CARGO_HELP);
+  assert.match(g.hubPayoffText(), new RegExp(DIG_REGOLITH_HELP));
+  console.log('ok  r4.12 regolith help, Dig/hub yield, idle-with-cargo line');
+}
+
+{
+  const g = createGame();
+  assert.equal(g.placementRejectReason('storage', 2, 2), 'Cannot place: outside command range');
+  g.selectUnits([g.state.units[0].id]);
+  assert.equal(g.placeBuilding('storage', 2, 2, false), null);
+  assert.equal(g.state.toast?.text, 'Cannot place: outside command range');
+  g.state.buildGhost = { type: 'storage', tx: 2, ty: 2 };
+  assert.equal(g.iceHoverText(2, 2), 'Cannot place: outside command range');
+  g.state.buildGhost = null;
+  assert.equal(g.placementRejectReason('storage', -1, 0), 'Cannot place: off the map');
+  assert.equal(g.placementRejectReason('solar', C.habitatTileX, C.habitatTileY), 'Cannot place: blocked by a building');
+  assert.equal(g.placementRejectReason('storage', C.shallowIceTileX, C.shallowIceTileY), 'Cannot place: blocked by ice');
+  const crater = [];
+  const pit = [];
+  for (let ty = 0; ty < C.mapHeight; ty++) {
+    for (let tx = 0; tx < C.mapWidth; tx++) {
+      const t = g.tileAt(tx, ty);
+      if (t?.type === TILE.CRATER_S && !crater.length) crater.push({ tx, ty });
+      if (t?.type === TILE.PIT && !pit.length) pit.push({ tx, ty });
+    }
+  }
+  assert.ok(crater.length);
+  assert.equal(g.placementRejectReason('solar', crater[0].tx, crater[0].ty), 'Cannot place: blocked by crater');
+  assert.ok(pit.length);
+  assert.equal(g.placementRejectReason('solar', pit[0].tx, pit[0].ty), 'Cannot place: blocked by a pit');
+  const home = g.placeBuilding('tunnel-hub', 14, 21, false);
+  g.completeBuilding(home.id);
+  assert.match(g.placementRejectReason('tunnel-hub', 17, 21), /at least 6 tiles apart/);
+  assert.equal(g.placementRejectReason('vault', 21, 18), 'Cannot place: vault must sit beside a hub');
+  const far = g.placeBuilding('tunnel-hub', 22, 21, false);
+  g.completeBuilding(far.id);
+  assert.equal(g.placementRejectReason('tunnel-hub', 16, 16), 'Cannot place: hub limit reached');
+  console.log('ok  r4.14 every illegal placement names the reason');
 }
 
 console.log('v08 fix-list node tests passed');

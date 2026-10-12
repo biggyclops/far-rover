@@ -2,6 +2,112 @@
 
 Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
 
+## Shipped set (2026-10-12, r4 + P1 10–14): orthogonal tunnels, dig 15 s, Scout program, UX/resume
+
+Player 1's round 4 report (items 10–14) is on this set. None of those items change numbers, so the harness tables below are the same as the r4 ship. Criteria use the **fastest legal win**. Root demo still 5/46/45.
+
+Player 2's 3:34 win used a 7-tile diagonal-touch line (`far (34,8)`, `home (25,11)`, y=10 x=27..33) that only corner-touched the hubs. Round 4 makes that line illegal and ports P2's full layout search (including diagonal attempts, vault drops, and reaction delays `[0, 2, 3, 4, 6, 10]`).
+
+Shipped knobs: `commandRangeRadius` 10, `haulerOffRoadSpeedMult` 0.5, `deepIceTilesFromStartStorage` 21, `digSecondsPerTilePerRover` **15**. Vault command range uses the full 3×3 footprint; storage/hubs still use the building center.
+
+### 1x best-placement table (dt = 1/60, delay 0)
+
+| Strategy | Best layout | Win | Night | Power min | Ice |
+|---|---|---:|:---:|---:|---:|
+| Haulers only (2 start) | nearest-ice | 7:26 | yes | 0 | 180 |
+| Haulers + print 1 | nearest-ice | 6:53 | yes | 0 | 188.8 |
+| Haulers + print 2 | nearest-ice | 6:07 | yes | 0 | 198.9 |
+| Tunnel, 1 digger | corr-10 | 6:14 | yes | 27 | 180 |
+| Tunnel, 2 diggers | corr-10 | 4:46 | yes | 18 | 180 |
+| Mixed (1 hauls, 1 digs) | corr-10 | 6:42 | yes | 39 | 180 |
+
+Best haulers-only: **Haulers + print 2** at 6:07.
+Best tunnel: **Tunnel, 2 diggers** at 4:46 (**22.1% faster**).
+
+### Five criteria (worst case = fastest legal win)
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Haulers + print 1 beats haulers only | **Pass.** 6:53 vs 7:26. |
+| 2 | Tunnel with 2 diggers is 20–35% faster than the best haulers-only route including prints | **Pass.** 22.1% (4:46 vs print-2 6:07). |
+| 3 | Every winning route crosses at least one night | **Pass.** First night is at 1:30. |
+| 4 | Power drops below 50 on at least one tunnel route | **Pass.** 2-digger `powerMin` 18. |
+| 5 | No route wins under 4:00 | **Pass.** Earliest legal win is 4:46. P2's 3:34 diagonal is rejected. |
+
+### Tunnel lead across reaction delays
+
+Best 2-digger layout `corr-10` vs print-2 `nearest-ice`:
+
+| Delay | 2-digger | Print-2 | Lead |
+|---|---:|---:|---:|
+| 0 s | 4:46 | 6:07 | 22.1% |
+| 2 s | 4:52 | 6:15 | 22.0% |
+| 3 s | 4:55 | 6:20 | 22.2% |
+| 4 s | 4:57 | 6:13 | 20.4% |
+| 6 s | 5:06 | 6:31 | 21.5% |
+| 10 s | 5:10 | 6:29 | 20.5% |
+
+Lead holds **20.4–22.2%** across the sweep.
+
+### Drop distance (including vault)
+
+Nearest legal in-range drop is **10.77 tiles** from Deep Ice: storage at `(25,11)` (chebyshev 10). The harness also searches vaults beside ring-edge hubs (all 3×3 tiles must sit in command range). No vault is closer than that storage. Floor: ≥10.
+
+### Honest Playwright (1x, `canPlace` only)
+
+| Route | Time | Notes |
+|---|---:|---|
+| Haulers (storage next to habitat) | **11:57** | Naive floor without the tip. |
+| Naive starter following the tip | **7:30** | First storage at ring-edge `(25,11)`. |
+| 1-digger (longer legal corridor) | **6:41** | |
+| 2-digger (longer legal corridor) | **4:56** | |
+| Ring-edge 2-digger | **4:32** | home `(22,9)` / far `(34,8)`, corr-10. |
+
+No honest win under 4:00. The habitat-side naive run is ~12 minutes; following the new tip cuts it to **7:30**.
+
+### Fourteen r4 calls
+
+| # | Call | Status |
+|---|---|---|
+| 1 | Straight orthogonal hub-to-hub tunnels; no diagonals / corner-only | **Done.** P2 3:34 plan is illegal. |
+| 2 | Dig 15 s/tile | **Done.** |
+| 3 | Vault command range by footprint; drop ≥10 including vaults | **Done.** 10.77 storage; vaults not closer. |
+| 4 | Re-arm Dig keeps progress, adds diggers, no re-charge; unarmed right-click on an unfinished tile adds a digger | **Done.** |
+| 5 | Scout keeps running while the overlay is open and the base is paused | **Done.** |
+| 6 | Relaunch opens a panel titled "Scout program" | **Done.** |
+| 7 | "In transit" is ice in hubs on a finished tunnel only | **Done.** |
+| 8 | First storage after Deep Ice unlock shows the ring-edge tip | **Done.** |
+| 9 | Helpful trace-only result line | **Done.** |
+| 10 | After a 0-power night, paused haulers resume dig/build; 100% battery never sits on Charge | **Done.** |
+| 11 | Confirmed-then-lost is a success line with the real tile and distance; no threshold advice | **Done.** |
+| 12 | Regolith help on blocked actions + Print hauler; Dig/hub yield; idle-with-cargo line | **Done.** |
+| 13 | Fixed-height bottom toolbar; button positions stay put across status changes | **Done.** |
+| 14 | Every illegal placement names the reason | **Done.** |
+
+### Scout (unchanged by the tunnel rules)
+
+- Hosted starter does **not** unlock Deep Ice. Ends Lander, tick 46.
+- 4-rule confirm still confirms at tick 21.
+- Root demo still **5 / 46 / 45**.
+- 1-rule: **0 / 49**. 2-rule: **0 / 2401**.
+
+### Screenshots
+
+Playwright writes these under `/opt/cursor/artifacts/screenshots/`:
+
+- `need-power-resume.png` — haulers back on dig/build after a 0-power night
+- `confirmed-then-lost.png` — success line at F2, 9 tiles from the lander
+- `print-hauler-tooltip.png` / `idle-cargo.png` — regolith help and idle-cargo card
+- `toolbar-fixed.png` — 72px toolbar after status/log changes
+- `place-reject.png` — "Cannot place: outside command range"
+- `storage-tip.png` — ring-edge storage tip (item 8)
+
+---
+
+# Far Rover v0.8 balance report
+
+Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
+
 ## Shipped set (2026-10-12, r4): orthogonal tunnels, dig 15 s, Scout program
 
 Player 2's 3:34 win used a 7-tile diagonal-touch line (`far (34,8)`, `home (25,11)`, y=10 x=27..33) that only corner-touched the hubs. `placements.js` used to pair hubs in the same row/column, so the harness never tried it. Round 4 makes that line illegal and ports P2's full layout search (including diagonal attempts, vault drops, and reaction delays `[0, 2, 3, 4, 6, 10]`). Criteria use the **fastest legal win**.
