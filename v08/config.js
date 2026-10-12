@@ -91,10 +91,10 @@ export const CONFIG = {
   shadowOffsetPx: [3, 3], // +3,+3 at 64px game zoom (+6,+6 at 128 source), lower-right
   shadowSpriteRotates: true,
   scoutBeaconMark: true, // Proposed (Game Designer) — small beacon on the scout (M3)
-  glowUnitSize: 128, // Pixel — glow-unit.png, additive under units at night
-  glowBuildingSize: 256, // Pixel — glow-building.png, additive under buildings at night
-  glowUnitIntensity: 0.85, // Pixel night preview
-  glowBuildingIntensity: 0.5, // Pixel — 40–60%; full strength washes to white
+  glowUnitSize: 128, // Pixel — glow-unit.png, additive pool under units at night (0.5x → 64px core, drawn larger as a ground pool)
+  glowBuildingSize: 256, // Pixel — glow-building.png, additive pool around buildings at night
+  glowUnitIntensity: 0.62, // warm pool under the hauler; drawn under the sprite so it cannot wash to a white blob
+  glowBuildingIntensity: 0.52, // soft floodlight on the ground around the pad; under the sprite so the solar stays a dark panel
   nightGlowAdditive: true,
   tunnelCornerJoins: 'east-south', // Pixel — rotate utile-tunnel-corner for the other corners (M2)
 

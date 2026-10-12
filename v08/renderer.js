@@ -65,6 +65,8 @@ export function createRenderer(canvas, assets, game) {
 
   function drawImg(image, x, y, w, h) {
     if (!image) return;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(image, x, y, w, h);
   }
 
@@ -220,7 +222,8 @@ export function createRenderer(canvas, assets, game) {
       const dw = n * C.tileSize * z;
       if (pass === 'glow' && night && C.nightGlowAdditive) {
         const c = worldToScreen(wx + n * C.tileSize / 2, wy + n * C.tileSize / 2);
-        drawGlow(c.x, c.y, dw * 1.15, 'glow-building', C.glowBuildingIntensity);
+        const pool = (C.glowBuildingSize || 256) * z;
+        drawGlow(c.x, c.y, pool, 'glow-building', C.glowBuildingIntensity);
       }
       if (pass === 'shadow') {
         realism?.drawBuildingShadow(ctx, b, z, night);
@@ -231,8 +234,8 @@ export function createRenderer(canvas, assets, game) {
         continue;
       }
       if (pass === 'sprite') {
-        if (realism?.drawBuildingSprite(ctx, b, z)) {
-          /* relit, centred */
+        if (realism?.drawBuildingSprite(ctx, b, z, night)) {
+          /* relit, centred at compose.py 0.5x */
         } else {
           const key = (!b.complete && C.showBuildSpriteWhileConstructing) ? `${b.type}-build` : b.type;
           drawImg(img(key) || img(b.type), s.x, s.y, dw, dw);
@@ -274,7 +277,10 @@ export function createRenderer(canvas, assets, game) {
     const s = worldToScreen(u.x, u.y);
     const size = C.tileSize * z;
     if (pass === 'glow') {
-      if (night && C.nightGlowAdditive) drawGlow(s.x, s.y, size * 1.2, 'glow-unit', C.glowUnitIntensity);
+      if (night && C.nightGlowAdditive) {
+        const pool = (C.glowUnitSize || 128) * z;
+        drawGlow(s.x, s.y, pool, 'glow-unit', C.glowUnitIntensity);
+      }
       return;
     }
     if (pass === 'shadow') {
@@ -286,7 +292,7 @@ export function createRenderer(canvas, assets, game) {
       return;
     }
     if (realism) {
-      realism.drawUnitBody(ctx, u, z);
+      realism.drawUnitBody(ctx, u, z, night);
       return;
     }
     const loaded = (u.cargo.ice + u.cargo.regolith) > 0.05;
@@ -776,6 +782,8 @@ export function createRenderer(canvas, assets, game) {
     if (now < autoCenterUntil && !game.state.camera.userMoved && !game.state.camPan) centerOnHabitat();
     clampCamera();
     ctx.clearRect(0, 0, w, h);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     drawBackdrop(w, h);
     const z = game.state.camera.zoom;
     const night = !game.isDay();
@@ -792,14 +800,17 @@ export function createRenderer(canvas, assets, game) {
       drawBuildings(z, night, 'contact', view);
       for (const u of game.state.units) drawUnit(u, z, night, 'contact');
     }
+    // Night tint the ground first, then additive floodlight pools, then crisp sprites on top.
+    // Drawing glow after the sprites (the old order) turned the solar into a blown-out square
+    // and the idle haulers into white blobs.
+    if (night) drawNightTint();
+    if (night && view === 'surface') {
+      drawBuildings(z, night, 'glow', view);
+      for (const u of game.state.units) drawUnit(u, z, night, 'glow');
+    }
     drawBuildings(z, night, 'sprite', view);
     if (view === 'surface') {
       for (const u of game.state.units) drawUnit(u, z, night, 'sprite');
-    }
-    if (night) drawNightTint();
-    drawBuildings(z, night, 'glow', view);
-    if (view === 'surface') {
-      for (const u of game.state.units) drawUnit(u, z, night, 'glow');
     }
     if (view === 'surface') drawCommandRange(z);
     if (view === 'surface') {

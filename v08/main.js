@@ -320,6 +320,11 @@ const debugHooks = {
   },
   viewSize: () => renderer.viewSize(),
   hudSafeInsets: () => renderer.hudSafeInsets(),
+  setZoom: (z) => {
+    game.state.camera.zoom = z;
+    renderer.centerOnHabitat();
+    renderer.clampCamera();
+  },
   centerOnTile: (tx, ty) => {
     renderer.focusTile(tx, ty);
   },

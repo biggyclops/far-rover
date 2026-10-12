@@ -64,6 +64,8 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
       const dw = ch.w * z;
       const dh = ch.h * z;
       if (sx + dw < -2 || sy + dh < -2 || sx > w + 2 || sy > h + 2) continue;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(ch.canvas, sx, sy, dw, dh);
     }
     return true;
@@ -80,6 +82,8 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
     const size = 768 * 0.55 * z;
     ctx.save();
     ctx.globalAlpha = 0.82;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(apron, s.x - size / 2, s.y - size / 2, size, size);
     ctx.restore();
   }
@@ -102,15 +106,28 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
 
   function drawRelitLayer(ctx, image, sx, sy, scale, pivot, canvas) {
     if (!image) return;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     const size = canvas * scale;
     ctx.drawImage(image, sx - pivot * scale, sy - pivot * scale, size, size);
   }
 
+  function withNightSprite(ctx, night, draw) {
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    if (night) ctx.filter = 'brightness(0.68) saturate(0.94)';
+    draw();
+    ctx.restore();
+  }
+
   function buildingScale(n, z) {
+    // compose.py: 0.5x of the 256px relit building at zoom 1 (2×64 footprint).
     return (n * C.tileSize * z) / BUILDING_ANCHOR.obj;
   }
 
   function unitScale(z) {
+    // compose.py: 0.5x of the 128px relit unit at zoom 1 (64px tile).
     return (C.tileSize * z) / UNIT_ANCHOR.obj;
   }
 
@@ -134,15 +151,17 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
     drawRelitLayer(ctx, img(`${b.type}-contact`), s.x, s.y, scale, BUILDING_ANCHOR.pivot, BUILDING_ANCHOR.canvas);
   }
 
-  function drawBuildingSprite(ctx, b, z) {
+  function drawBuildingSprite(ctx, b, z, night) {
     if (!BUILDING_KEYS.has(b.type)) return false;
     const n = C.buildingFootprint;
     const s = worldToScreen((b.tx + n / 2) * C.tileSize, (b.ty + n / 2) * C.tileSize);
-    const dest = n * C.tileSize * z;
+    const dest = BUILDING_ANCHOR.obj * buildingScale(n, z);
     const key = (!b.complete && C.showBuildSpriteWhileConstructing) ? `${b.type}-build` : b.type;
     const body = img(key) || img(b.type);
     if (!body) return false;
-    ctx.drawImage(body, s.x - dest / 2, s.y - dest / 2, dest, dest);
+    withNightSprite(ctx, night, () => {
+      ctx.drawImage(body, s.x - dest / 2, s.y - dest / 2, dest, dest);
+    });
     return true;
   }
 
@@ -171,17 +190,17 @@ export function createRealism(assets, game, worldToScreen, viewSize) {
     drawRelitLayer(ctx, c, s.x, s.y, scale, UNIT_ANCHOR.pivot, UNIT_ANCHOR.canvas);
   }
 
-  function drawUnitBody(ctx, u, z) {
+  function drawUnitBody(ctx, u, z, night) {
     const loaded = (u.cargo.ice + u.cargo.regolith) > 0.05;
     const body = u.kind === 'scout' ? img('scout') : (loaded ? img('hauler-loaded') : img('hauler'));
     if (!body) return;
     const s = worldToScreen(u.x, u.y);
-    const dest = C.tileSize * z;
-    ctx.save();
-    ctx.translate(s.x, s.y);
-    ctx.rotate(u.facing || 0);
-    ctx.drawImage(body, -dest / 2, -dest / 2, dest, dest);
-    ctx.restore();
+    const dest = UNIT_ANCHOR.obj * unitScale(z);
+    withNightSprite(ctx, night, () => {
+      ctx.translate(s.x, s.y);
+      ctx.rotate(u.facing || 0);
+      ctx.drawImage(body, -dest / 2, -dest / 2, dest, dest);
+    });
   }
 
   return {
