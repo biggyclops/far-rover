@@ -444,6 +444,15 @@ function thinkHaulers(game, mem, units, meta) {
   tendHaul(game, units, ice);
 }
 
+function buildersOn(game, building) {
+  if (!building) return [];
+  return haulersOf(game).filter((u) => orderType(u) === 'build' && u.order?.buildingId === building.id);
+}
+
+function pickOne(units, excludeIds) {
+  return units.find((u) => !excludeIds.has(u.id)) || null;
+}
+
 function thinkTunnel(game, mem, units, meta) {
   const crew = buildersOf(units);
   if (meta.extraHaulers > 0) {
@@ -454,32 +463,92 @@ function thinkTunnel(game, mem, units, meta) {
   if (!game.state.deepIce.unlocked) return;
   if (!mem.layout?.far) mem.layout = resolveTunnelLayout(game, mem.layout);
 
+  let farHub = mem.farHub ? game.buildingById(mem.farHub) : null;
+  let homeHub = mem.homeHub ? game.buildingById(mem.homeHub) : null;
+  const assigned = new Set([
+    ...buildersOn(game, farHub).map((u) => u.id),
+    ...buildersOn(game, homeHub).map((u) => u.id),
+  ]);
+
+  // Place far with one hauler. Selecting the whole crew sent both starters
+  // on the Deep Ice walk, then think returned until far finished — home sat
+  // idle ~31 s. That serial walk is why the harness was 4:46 vs Player 2's
+  // 4:04 at the same (22,9)/(34,8) hubs.
   if (!mem.farHub) {
-    const far = placeFarHub(game, crew, mem.layout);
-    if (far) mem.farHub = far.id;
-    else if (!afford(game, 'tunnel-hub')) mineRegolith(game, crew);
-    return;
+    if (!afford(game, 'tunnel-hub')) {
+      mineRegolith(game, crew);
+      return;
+    }
+    const one = pickOne(crew, assigned);
+    if (!one) return;
+    const far = placeFarHub(game, [one], mem.layout);
+    if (far) {
+      mem.farHub = far.id;
+      farHub = far;
+      assigned.add(one.id);
+    }
   }
-  const farHub = game.buildingById(mem.farHub);
-  if (keepBuilding(game, units, farHub) !== 'ready') return;
 
-  if (!mem.homeHub) {
-    const home = placeHomeHub(game, crew, farHub, mem.layout);
-    if (home) mem.homeHub = home.id;
-    else if (!afford(game, 'tunnel-hub')) mineRegolith(game, crew);
-    return;
+  // Place home with a second hauler in the same think. A 1-hauler crew still
+  // waits until far is complete.
+  if (!mem.homeHub && farHub) {
+    let one = pickOne(crew, assigned);
+    if (!one && farHub.complete) one = pickOne(crew, new Set());
+    if (one) {
+      if (!afford(game, 'tunnel-hub')) {
+        mineRegolith(game, [one]);
+      } else {
+        const home = placeHomeHub(game, [one], farHub, mem.layout);
+        if (home) {
+          mem.homeHub = home.id;
+          homeHub = home;
+          assigned.add(one.id);
+        }
+      }
+    }
   }
-  const homeHub = game.buildingById(mem.homeHub);
-  if (keepBuilding(game, units, homeHub) !== 'ready') return;
 
-  if (!mem.vault) {
-    const vault = placeVault(game, crew, homeHub, mem.layout);
-    if (vault) mem.vault = vault.id;
-    else if (!afford(game, 'vault')) mineRegolith(game, crew);
-    return;
+  if (farHub && !farHub.complete) {
+    const onFar = buildersOn(game, farHub);
+    const fallback = crew.filter((u) => !buildersOn(game, homeHub).some((h) => h.id === u.id)).slice(0, 1);
+    keepBuilding(game, onFar.length ? onFar : fallback, farHub);
   }
-  const vault = game.buildingById(mem.vault);
-  if (keepBuilding(game, units, vault) !== 'ready') return;
+  if (homeHub && !homeHub.complete) {
+    const onHome = buildersOn(game, homeHub);
+    const fallback = crew.filter((u) => !buildersOn(game, farHub).some((h) => h.id === u.id)).slice(0, 1);
+    keepBuilding(game, onHome.length ? onHome : fallback, homeHub);
+  }
+
+  // Home finishes first (~20 s walk). Send that hauler to the vault while
+  // far is still walking. Waiting for far, then sending the Deep Ice
+  // hauler, added ~32 s and was the rest of 4:46 vs 4:04.
+  const farBusy = new Set(buildersOn(game, farHub).map((u) => u.id));
+  if (homeHub?.complete && !mem.vault) {
+    if (!afford(game, 'vault')) {
+      const miner = pickOne(crew, farBusy);
+      if (miner) mineRegolith(game, [miner]);
+    } else {
+      const vaultAt = mem.layout?.vault || { tx: homeHub.tx - 3, ty: homeHub.ty };
+      const dest = tileWorld(game, vaultAt.tx, vaultAt.ty);
+      const free = crew.filter((u) => !farBusy.has(u.id));
+      free.sort((a, b) => (
+        Math.hypot(a.x - dest.x, a.y - dest.y) - Math.hypot(b.x - dest.x, b.y - dest.y)
+      ));
+      const one = free[0];
+      if (one) {
+        const vaultB = placeVault(game, [one], homeHub, mem.layout);
+        if (vaultB) mem.vault = vaultB.id;
+      }
+    }
+  }
+  const vault = mem.vault ? game.buildingById(mem.vault) : null;
+  if (vault && !vault.complete) {
+    const onVault = buildersOn(game, vault);
+    const fallback = crew.filter((u) => !farBusy.has(u.id)).slice(0, 1);
+    keepBuilding(game, onVault.length ? onVault : fallback, vault);
+  }
+
+  if (!farHub?.complete || !homeHub?.complete || !vault?.complete) return;
 
   if (!iceCapReady(game)) {
     ensureStorages(game, mem, crew.slice(0, 1), 1);

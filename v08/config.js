@@ -127,7 +127,7 @@ export const CONFIG = {
   tunnelHubMinSeparationTiles: 6, // Proposed (Game Designer) — no 1-tile corridors
   hubIceCapacity: 20, // Proposed (Game Designer) — transit buffer at each hub
   hubRegolithCapacity: 20, // Proposed (Game Designer)
-  digSecondsPerTilePerRover: 15, // Proposed (Game Designer) — r5: 2-digger corr-10 is 4:46 (4:45–4:55 band); raising dig shrinks the lead vs print-3
+  digSecondsPerTilePerRover: 17, // Proposed (Game Designer) — r6: 15 s/tile with parallel hubs is 4:11; 17 s keeps ≥15 s over the 4:00 floor
   digPowerPerTile: 3, // Proposed (Game Designer)
   digRegolithYieldPerTile: 2, // Proposed (Game Designer)
   tunnelCargoTilesPerSecond: 4, // Proposed (Game Designer) — hub-to-hub, no rover
