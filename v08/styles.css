@@ -267,6 +267,9 @@ body.scout-open .orbital-ops .rules-panel {
 body.scout-open .orbital-left .sensor-layers-panel {
   display: none;
 }
+body.scout-open .live-sensors {
+  grid-template-columns: 1fr;
+}
 body.scout-open .orbital-ops .minimap {
   display: block;
   left: auto;
