@@ -150,7 +150,15 @@ export function bindHud(root, game, hooks = {}) {
     if (dig) dig.title = DIG_REGOLITH_HELP;
   }
 
+  function syncHudBottomVar() {
+    const hudBottom = $('#hud-bottom');
+    if (!hudBottom) return;
+    const h = Math.round(hudBottom.getBoundingClientRect().height);
+    document.documentElement.style.setProperty('--hud-bottom-h', `${h}px`);
+  }
+
   function sync() {
+    syncHudBottomVar();
     const tot = game.totals();
     const goal = game.storedForGoal();
     const transit = game.transitIce();
@@ -369,6 +377,7 @@ export function bindHud(root, game, hooks = {}) {
     if (!show) return;
     const hudBottom = $('#hud-bottom');
     if (hudBottom) {
+      syncHudBottomVar();
       const gap = Math.max(12, Math.ceil(window.innerHeight - hudBottom.getBoundingClientRect().top + 8));
       panel.style.bottom = `${gap}px`;
     }
@@ -504,6 +513,9 @@ export function bindHud(root, game, hooks = {}) {
       ctx.fill();
     }
   }
+
+  window.addEventListener('resize', syncHudBottomVar);
+  syncHudBottomVar();
 
   return { sync, setBuild, setArmed };
 }

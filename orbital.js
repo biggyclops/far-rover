@@ -428,6 +428,7 @@ export class OrbitalRenderer {
     this.landerFwdImg = greyscaleCopy(this.landerFwdImg);
     this.camRocks = greyscaleCopy(this.camRocks);
     this._camTexReady = false;
+    this._lunarGround = null;
   }
 
   _warmGpu() {

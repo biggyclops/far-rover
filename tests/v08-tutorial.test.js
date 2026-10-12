@@ -347,6 +347,8 @@ test.describe('Far Rover v0.8 tutorial', () => {
       await page.click('.speed-btn[data-speed="pause"]');
       await page.waitForFunction(() => window.__orbitalRenderer?.ready && window.__orbitalRenderer?.lunar, null, { timeout: 15000 });
       await page.evaluate(() => {
+        window.__orbitalRenderer.setCamMode('photo');
+        window.__orbitalRenderer.lastCam = 0;
         window.__v08Test.tickScout(9);
         window.__v08Test.syncHud();
       });
@@ -438,6 +440,27 @@ test.describe('Far Rover v0.8 tutorial', () => {
           .filter(Boolean);
         const camCanvas = document.getElementById('rover-cam-canvas');
         const mapCanvas = document.querySelector('.operate-view .game-canvas');
+        const groundMean = (canvas) => {
+          if (!canvas) return { r: 0, g: 0, b: 0, chroma: 0 };
+          const ctx = canvas.getContext('2d');
+          const y0 = Math.floor(canvas.height * 0.45);
+          const { data, width, height } = ctx.getImageData(0, y0, canvas.width, canvas.height - y0);
+          let r = 0;
+          let g = 0;
+          let b = 0;
+          let chroma = 0;
+          let n = 0;
+          for (let i = 0; i < data.length; i += 16) {
+            if (data[i + 3] < 12) continue;
+            r += data[i];
+            g += data[i + 1];
+            b += data[i + 2];
+            chroma += Math.max(data[i], data[i + 1], data[i + 2]) - Math.min(data[i], data[i + 1], data[i + 2]);
+            n++;
+          }
+          if (!n) return { r: 0, g: 0, b: 0, chroma: 0 };
+          return { r: r / n, g: g / n, b: b / n, chroma: chroma / n };
+        };
         return {
           overlaps,
           clips,
@@ -447,7 +470,10 @@ test.describe('Far Rover v0.8 tutorial', () => {
           sat: document.querySelector('.hud-sat')?.textContent || '',
           camChroma: meanChroma(camCanvas),
           mapChroma: meanChroma(mapCanvas),
+          ground: groundMean(camCanvas),
           lunar: !!window.__orbitalRenderer?.lunar,
+          lunarGround: !!window.__orbitalRenderer?._lunarGround,
+          camMode: window.__orbitalRenderer?.camMode || '',
           vw: innerWidth,
           vh: innerHeight,
         };
@@ -462,6 +488,11 @@ test.describe('Far Rover v0.8 tutorial', () => {
       expect(report.clips, `${size.w}x${size.h} clips ${report.clips.join(', ')}`).toEqual([]);
       expect(report.camChroma, `${size.w}x${size.h} rover cam should be grey, chroma ${report.camChroma}`).toBeLessThan(40);
       expect(report.mapChroma, `${size.w}x${size.h} orbital feed should be grey, chroma ${report.mapChroma}`).toBeLessThan(45);
+      expect(report.camMode, `${size.w}x${size.h} cam mode`).toBe('photo');
+      expect(report.lunarGround, `${size.w}x${size.h} lunar ground plate`).toBe(true);
+      expect(report.ground.chroma, `${size.w}x${size.h} PHOTO ground chroma ${report.ground.chroma}`).toBeLessThan(28);
+      expect(Math.abs(report.ground.r - report.ground.g), `${size.w}x${size.h} PHOTO not Mars-red`).toBeLessThan(18);
+      expect(Math.abs(report.ground.r - report.ground.b), `${size.w}x${size.h} PHOTO not Mars-warm`).toBeLessThan(22);
       await page.screenshot({ path: `/opt/cursor/artifacts/screenshots/live-panel-layout-${size.w}x${size.h}.png`, fullPage: true });
     }
   });

@@ -193,16 +193,105 @@ function isLunar(renderer) {
   return !!renderer?.lunar;
 }
 
+function hash01(i) {
+  const x = Math.sin(i * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function clampByte(n) {
+  return n < 0 ? 0 : n > 255 ? 255 : n;
+}
+
+// Grey cratered rocky plate. Never wrap the Apollo 15 rolling hills — those
+// tile into dune-like ridges. Stamp only the rocky foreground crop.
+function ensureLunarGround(renderer) {
+  if (renderer._lunarGround) return renderer._lunarGround;
+  const w = 512;
+  const h = 512;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const x = c.getContext('2d');
+  const img = x.createImageData(w, h);
+  const d = img.data;
+  for (let y = 0; y < h; y++) {
+    for (let px = 0; px < w; px++) {
+      const i = (y * w + px) * 4;
+      const n = (hash01(px * 19.3 + y * 7.1) - 0.5) * 26
+        + (hash01(px * 3.1 + y * 5.7) - 0.5) * 10;
+      const spec = hash01(px * 91.2 + y * 13.4);
+      const rock = spec > 0.97 ? 18 : spec > 0.94 ? -22 : 0;
+      const v = 118 + n + rock;
+      d[i] = clampByte(v);
+      d[i + 1] = clampByte(v - 1);
+      d[i + 2] = clampByte(v - 3);
+      d[i + 3] = 255;
+    }
+  }
+  x.putImageData(img, 0, 0);
+  for (let i = 0; i < 22; i++) {
+    const cx = (hash01(i * 3.17) * w);
+    const cy = (hash01(i * 5.91 + 2.2) * h);
+    const r = 7 + hash01(i * 8.4) * 28;
+    const g = x.createRadialGradient(cx - r * 0.22, cy - r * 0.18, r * 0.08, cx, cy, r);
+    g.addColorStop(0, 'rgba(48, 48, 50, 0.62)');
+    g.addColorStop(0.42, 'rgba(82, 80, 78, 0.28)');
+    g.addColorStop(0.78, 'rgba(158, 156, 152, 0.38)');
+    g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    x.fillStyle = g;
+    x.beginPath();
+    x.ellipse(cx, cy, r, r * 0.68, 0, 0, Math.PI * 2);
+    x.fill();
+  }
+  for (let i = 0; i < 40; i++) {
+    const rx = hash01(i * 11.3 + 9) * w;
+    const ry = hash01(i * 6.7 + 4) * h;
+    const rw = 2 + hash01(i * 2.9) * 7;
+    x.fillStyle = `rgba(${70 + (i % 40)}, ${68 + (i % 36)}, ${64 + (i % 30)}, 0.7)`;
+    x.beginPath();
+    x.ellipse(rx, ry, rw, rw * 0.62, hash01(i) * 1.2, 0, Math.PI * 2);
+    x.fill();
+  }
+  const src = renderer.camNear;
+  const sw = src?.naturalWidth || src?.width || 0;
+  const sh = src?.naturalHeight || src?.height || 0;
+  if (src && sw > 8 && sh > 8) {
+    x.save();
+    x.globalAlpha = 0.42;
+    x.filter = 'grayscale(1) contrast(1.08)';
+    x.drawImage(src, 0, sh * 0.70, sw, sh * 0.30, 0, 0, w, h);
+    x.restore();
+  }
+  renderer._lunarGround = c;
+  return c;
+}
+
+function drawLunarSky(ctx, renderer, w, horizon) {
+  ctx.fillStyle = '#050506';
+  ctx.fillRect(0, 0, w, horizon + 2);
+  const sky = renderer.camSky;
+  if (!sky) return;
+  const sw = sky.naturalWidth || sky.width || 0;
+  const sh = sky.naturalHeight || sky.height || 0;
+  if (!sw || !sh) return;
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(sky, 0, 0, sw, sh * 0.48, 0, 0, w, Math.max(8, horizon * 0.72));
+  ctx.restore();
+}
+
 function drawSkyPhoto(ctx, renderer, w, h, pan, bob) {
-  const sky = renderer.camSky || (isLunar(renderer) ? null : renderer.mastcamImg);
+  if (isLunar(renderer)) {
+    drawLunarSky(ctx, renderer, w, h * 0.38 + bob * 0.12);
+    return;
+  }
+  const sky = renderer.camSky || renderer.mastcamImg;
   const far = renderer.camFar || renderer.mastcamImg;
   const pano = renderer.camPano;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  if (isLunar(renderer) && !sky) {
-    ctx.fillStyle = '#050506';
-    ctx.fillRect(0, 0, w, h * 0.42);
-  } else if (sky) {
+  if (sky) {
     blitWrapFeather(ctx, renderer, sky, -pan * 52, -6 + bob * 0.12, w * 1.38, h * 0.38, 0, 0.55);
   } else {
     const g = ctx.createLinearGradient(0, 0, 0, h * 0.4);
@@ -276,24 +365,40 @@ function drawCraterOverlay(ctx, renderer, w, h, horizon) {
   o.beginPath();
   o.ellipse(ocx, ocy, rw, rh, 0, 0, Math.PI * 2);
   o.clip();
-  const ground = renderer.camNear || renderer.mastcamImg;
+  const lunar = isLunar(renderer);
+  const ground = lunar
+    ? ensureLunarGround(renderer)
+    : (renderer.camNear || renderer.mastcamImg);
   if (ground) {
     o.drawImage(ground, ocx - rw * 1.25, ocy - rh * 0.08, rw * 2.5, rh * 2.15);
   }
-  const plate = renderer.camCrater;
+  // Mars cam-crater is a dune-filled bowl; skip it on the Moon.
+  const plate = lunar ? null : renderer.camCrater;
   if (plate) {
     o.drawImage(plate, ocx - rw, ocy - rh, rw * 2, rh * 2);
   }
   const farWall = o.createLinearGradient(ocx, ocy - rh * 0.72, ocx, ocy + rh * 0.1);
-  farWall.addColorStop(0, 'rgba(10, 5, 2, 0.38)');
-  farWall.addColorStop(0.45, 'rgba(32, 14, 6, 0.12)');
-  farWall.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  if (lunar) {
+    farWall.addColorStop(0, 'rgba(8, 8, 10, 0.5)');
+    farWall.addColorStop(0.45, 'rgba(28, 28, 30, 0.16)');
+    farWall.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  } else {
+    farWall.addColorStop(0, 'rgba(10, 5, 2, 0.38)');
+    farWall.addColorStop(0.45, 'rgba(32, 14, 6, 0.12)');
+    farWall.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  }
   o.fillStyle = farWall;
   o.fillRect(0, 0, ow, oh);
   const nearLit = o.createRadialGradient(ocx - rw * 0.12, ocy + rh * 0.42, rh * 0.04, ocx, ocy + rh * 0.22, rh * 0.85);
-  nearLit.addColorStop(0, 'rgba(236, 198, 148, 0.22)');
-  nearLit.addColorStop(0.55, 'rgba(180, 120, 70, 0.06)');
-  nearLit.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  if (lunar) {
+    nearLit.addColorStop(0, 'rgba(210, 210, 208, 0.2)');
+    nearLit.addColorStop(0.55, 'rgba(140, 140, 138, 0.06)');
+    nearLit.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  } else {
+    nearLit.addColorStop(0, 'rgba(236, 198, 148, 0.22)');
+    nearLit.addColorStop(0.55, 'rgba(180, 120, 70, 0.06)');
+    nearLit.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  }
   o.fillStyle = nearLit;
   o.fillRect(0, 0, ow, oh);
   o.restore();
@@ -364,7 +469,9 @@ function drawLanderBillboard(ctx, renderer, w, h, horizon) {
   o.drawImage(img, 0, 0, bw, bh);
   if (fog > 0.02) {
     o.globalCompositeOperation = 'source-atop';
-    o.fillStyle = `rgba(210, 168, 118, ${fog})`;
+    o.fillStyle = isLunar(renderer)
+      ? `rgba(150, 150, 152, ${fog})`
+      : `rgba(210, 168, 118, ${fog})`;
     o.fillRect(0, 0, bw, bh);
     o.globalCompositeOperation = 'source-over';
   }
@@ -373,7 +480,7 @@ function drawLanderBillboard(ctx, renderer, w, h, horizon) {
 }
 
 function drawRockBillboards(ctx, renderer, w, h, horizon, craterHit) {
-  if ((renderer.camMode || 'photo') === 'photo') return;
+  if ((renderer.camMode || 'photo') === 'photo' && !isLunar(renderer)) return;
   const img = renderer.camRocks;
   if (!img) return;
   const col = renderer.roverCol;
@@ -441,13 +548,45 @@ function driveAmt(renderer) {
     + Math.hypot(renderer.roverCol - LANDER_COL, renderer.roverRow - LANDER_ROW);
 }
 
+function drawLunarPhoto(ctx, renderer, w, h, t) {
+  const heading = renderer.heading;
+  const pan = heading + Math.PI / 2;
+  const moving = !!(renderer.anim && renderer.anim.moving);
+  const bob = (moving && !renderer.reduceMotion ? Math.sin(t * 16) * 2.6 : Math.sin(t * 2.1) * 0.6);
+  const drive = driveAmt(renderer);
+  const horizon = h * 0.36 + bob * 0.18;
+  ctx.fillStyle = '#050506';
+  ctx.fillRect(0, 0, w, h);
+  drawLunarSky(ctx, renderer, w, horizon);
+  const ground = ensureLunarGround(renderer);
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  drawPerspGround(ctx, renderer, ground, w, h, horizon + 8, pan, drive, 0.52, 6);
+  blitWrapFeather(
+    ctx, renderer, ground,
+    -pan * 210 - drive * 54,
+    horizon + h * 0.06 + bob * 0.7,
+    w * 1.55, h * 0.72,
+    0.22, 0
+  );
+  ctx.restore();
+  const craterHit = drawCraterOverlay(ctx, renderer, w, h, horizon);
+  drawRockBillboards(ctx, renderer, w, h, horizon, craterHit);
+  drawLanderBillboard(ctx, renderer, w, h, horizon);
+}
+
 function drawPhoto(ctx, renderer, w, h, t) {
+  if (isLunar(renderer)) {
+    drawLunarPhoto(ctx, renderer, w, h, t);
+    return;
+  }
   const heading = renderer.heading;
   const pan = heading + Math.PI / 2;
   const moving = !!(renderer.anim && renderer.anim.moving);
   const bob = (moving && !renderer.reduceMotion ? Math.sin(t * 16) * 3.2 : Math.sin(t * 2.1) * 0.8);
   const drive = driveAmt(renderer);
-  ctx.fillStyle = isLunar(renderer) ? '#0a0a0c' : '#2a1c12';
+  ctx.fillStyle = '#2a1c12';
   ctx.fillRect(0, 0, w, h);
   drawSkyPhoto(ctx, renderer, w, h, pan, bob);
   const mid = renderer.camMid || renderer.mastcamImg;
@@ -594,6 +733,10 @@ function drawPerspGround(ctx, renderer, img, w, h, horizon, pan, drive, squish, 
 }
 
 function drawHybrid(ctx, renderer, w, h, t) {
+  if (isLunar(renderer)) {
+    drawLunarPhoto(ctx, renderer, w, h, t);
+    return;
+  }
   const heading = renderer.heading;
   const pan = heading + Math.PI / 2;
   const moving = !!(renderer.anim && renderer.anim.moving);
@@ -615,6 +758,10 @@ function drawHybrid(ctx, renderer, w, h, t) {
 }
 
 function drawVoxel(ctx, renderer, w, h, t) {
+  if (isLunar(renderer)) {
+    drawLunarPhoto(ctx, renderer, w, h, t);
+    return;
+  }
   const heading = renderer.heading;
   const pan = heading + Math.PI / 2;
   const moving = !!(renderer.anim && renderer.anim.moving);

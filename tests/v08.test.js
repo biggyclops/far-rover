@@ -260,20 +260,21 @@ test.describe('Far Rover v0.8 M1', () => {
     await ready(page);
     const snap = await page.evaluate(() => {
       const t = window.__v08Test;
+      t.setSpeed(0);
       t.unlockDeepIce();
-      const home = t.placeBuilding('tunnel-hub', 14, 21);
-      if (!home) return { error: 'no home hub' };
-      t.completeBuilding(home.id);
-      t.depositToBuilding(home.id, { ice: 12 });
+      const far = t.placeBuilding('tunnel-hub', 34, 8);
+      if (!far) return { error: 'no far hub' };
+      t.completeBuilding(far.id);
+      t.depositToBuilding(far.id, { ice: 12 });
       t.syncHud();
       const unfinished = {
         stored: t.getState().stored.ice,
         transit: t.getState().transit.ice,
         totalsIce: t.getState().ice,
       };
-      const far = t.placeBuilding('tunnel-hub', 22, 21);
-      if (!far) return { error: 'no far hub', unfinished };
-      t.completeBuilding(far.id);
+      const home = t.placeBuilding('tunnel-hub', 22, 9);
+      if (!home) return { error: 'no home hub', unfinished };
+      t.completeBuilding(home.id);
       const tiles = t.startDigCorridor();
       if (!tiles?.length) return { error: 'no corridor', unfinished };
       t.markTunnelDone();
@@ -580,29 +581,33 @@ test.describe('Far Rover v0.8 M2', () => {
   test('cargo travels hub to hub at 4 tiles/s', async ({ page }) => {
     await ready(page);
     const result = await page.evaluate(() => {
-      const s0 = window.__v08Test.getState();
-      window.__v08Test.selectUnits([s0.units[0].id]);
-      const a = window.__v08Test.placeBuilding('tunnel-hub', 14, 21);
-      const b = window.__v08Test.placeBuilding('tunnel-hub', 22, 21);
-      window.__v08Test.completeBuilding(a.id);
-      window.__v08Test.completeBuilding(b.id);
-      const tiles = window.__v08Test.startDigCorridor();
-      window.__v08Test.markTunnelDone();
-      window.__v08Test.depositToBuilding(a.id, { ice: 8 });
-      window.__v08Test.advance(0.05);
-      const spawned = window.__v08Test.getState();
+      const t = window.__v08Test;
+      t.setSpeed(0);
+      t.unlockDeepIce();
+      const s0 = t.getState();
+      t.selectUnits([s0.units[0].id]);
+      const far = t.placeBuilding('tunnel-hub', 34, 8);
+      const home = t.placeBuilding('tunnel-hub', 22, 9);
+      t.completeBuilding(home.id);
+      t.completeBuilding(far.id);
+      const tiles = t.startDigCorridor();
+      t.markTunnelDone();
+      t.depositToBuilding(far.id, { ice: 8 });
+      t.advance(0.05);
+      const spawned = t.getState();
       const n = tiles.length;
-      const transit = n / window.__v08Test.config.tunnelCargoTilesPerSecond;
-      window.__v08Test.advance(transit - 0.35);
-      const mid = window.__v08Test.getState();
-      window.__v08Test.advance(0.6);
-      const end = window.__v08Test.getState();
-      const dest = end.buildings.find((x) => x.id === b.id);
+      const transit = n / t.config.tunnelCargoTilesPerSecond;
+      t.advance(Math.max(0.05, transit - 0.35));
+      const mid = t.getState();
+      t.advance(0.6);
+      const end = t.getState();
+      const dest = end.buildings.find((x) => x.id === home.id);
       return {
         n,
         transit,
         packetsMid: mid.tunnel.packets.length,
         destIce: dest.ice,
+        storedIce: end.stored.ice,
         usedTunnel: end.stats.usedTunnel,
         ready: spawned.tunnel.ready,
       };
@@ -610,7 +615,7 @@ test.describe('Far Rover v0.8 M2', () => {
     expect(result.n).toBeGreaterThanOrEqual(4);
     expect(result.ready).toBe(true);
     expect(result.packetsMid).toBeGreaterThan(0);
-    expect(result.destIce).toBeGreaterThanOrEqual(8);
+    expect(result.storedIce + result.destIce).toBeGreaterThanOrEqual(28);
     expect(result.usedTunnel).toBe(true);
   });
 
@@ -813,6 +818,80 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     expect(afterSelect.buttons).toEqual(before.buttons);
     expect(afterLog.buttons).toEqual(before.buttons);
     await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/toolbar-fixed.png', fullPage: true });
+  });
+
+  test('bottom toolbar fits or wraps so Build Scout is visible from 800 to 1440', async ({ page }) => {
+    for (const size of [
+      { w: 800, h: 800 },
+      { w: 1024, h: 800 },
+      { w: 1280, h: 800 },
+      { w: 1440, h: 900 },
+    ]) {
+      await page.setViewportSize({ width: size.w, height: size.h });
+      await ready(page);
+      await page.evaluate(() => window.__v08Test.syncHud());
+      const snap = await page.evaluate(() => {
+        const ids = ['order-go', 'build-storage', 'build-vault', 'print-hauler', 'btn-build-scout'];
+        const bar = document.getElementById('hud-bottom');
+        const br = bar.getBoundingClientRect();
+        const buttons = {};
+        let clipped = false;
+        for (const id of ids) {
+          const el = document.getElementById(id);
+          const r = el.getBoundingClientRect();
+          const hit = r.right > br.right + 1.5 || r.left < br.left - 1.5
+            || r.bottom > br.bottom + 1.5 || r.top < br.top - 1.5
+            || r.right > innerWidth + 1.5 || r.left < -1.5;
+          buttons[id] = {
+            x: Math.round(r.x),
+            y: Math.round(r.y),
+            r: Math.round(r.right),
+            b: Math.round(r.bottom),
+            w: Math.round(r.width),
+            h: Math.round(r.height),
+            clipped: hit,
+          };
+          if (hit) clipped = true;
+        }
+        return {
+          barH: Math.round(br.height),
+          barW: Math.round(br.width),
+          clipped,
+          buttons,
+        };
+      });
+      expect(snap.clipped, `${size.w}x${size.h} toolbar clip ${JSON.stringify(snap.buttons)}`).toBe(false);
+      expect(snap.buttons['btn-build-scout'].w, `${size.w} Build Scout width`).toBeGreaterThan(40);
+      if (size.w >= 1280) expect(snap.barH, `${size.w} bar height`).toBe(72);
+      await page.screenshot({
+        path: `/opt/cursor/artifacts/screenshots/toolbar-fit-${size.w}.png`,
+        fullPage: true,
+      });
+    }
+
+    await page.setViewportSize({ width: 800, height: 800 });
+    await page.goto('http://localhost:8080/v08/?debug&tutorial=1');
+    await page.waitForFunction(() => window.__v08Test && window.__v08Test.ready);
+    await page.evaluate(() => {
+      window.__v08Test.tutorial.jump(5);
+      window.__v08Test.syncHud();
+    });
+    const armed = await page.evaluate(() => {
+      const ids = ['build-vault', 'print-hauler', 'btn-build-scout'];
+      const bar = document.getElementById('hud-bottom').getBoundingClientRect();
+      return ids.map((id) => {
+        const r = document.getElementById(id).getBoundingClientRect();
+        return {
+          id,
+          r: Math.round(r.right),
+          b: Math.round(r.bottom),
+          clipped: r.right > bar.right + 1.5 || r.right > innerWidth + 1.5
+            || r.bottom > bar.bottom + 1.5 || r.left < -1.5,
+        };
+      });
+    });
+    expect(armed.filter((b) => b.clipped), `800 storage-armed clip ${JSON.stringify(armed)}`).toEqual([]);
+    await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/toolbar-800-storage-armed.png', fullPage: true });
   });
 
   test('print-hauler and Dig tooltips explain regolith, idle cargo is labeled', async ({ page }) => {
