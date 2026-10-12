@@ -71,12 +71,57 @@ const HOSTED_STARTER = [
 
 const FOUR_RULE_CANDIDATES = [
   {
+    name: 'sidestep / battery 8 return / on-ore notify / explore',
+    rules: [
+      rule(Sim.CONDITIONS.CRATER_IN_FRONT, Sim.ACTIONS.SIDESTEP),
+      rule(Sim.CONDITIONS.BATTERY_BELOW, Sim.ACTIONS.RETURN_CHARGE, 8),
+      rule(Sim.CONDITIONS.ON_ORE, Sim.ACTIONS.NOTIFY),
+      rule(Sim.CONDITIONS.ALWAYS, Sim.ACTIONS.EXPLORE),
+    ],
+  },
+  {
+    name: 'sidestep / battery 5 return / on-ore notify / explore',
+    rules: [
+      rule(Sim.CONDITIONS.CRATER_IN_FRONT, Sim.ACTIONS.SIDESTEP),
+      rule(Sim.CONDITIONS.BATTERY_BELOW, Sim.ACTIONS.RETURN_CHARGE, 5),
+      rule(Sim.CONDITIONS.ON_ORE, Sim.ACTIONS.NOTIFY),
+      rule(Sim.CONDITIONS.ALWAYS, Sim.ACTIONS.EXPLORE),
+    ],
+  },
+  {
+    name: 'sidestep / battery 6 return / on-ore notify / explore',
+    rules: [
+      rule(Sim.CONDITIONS.CRATER_IN_FRONT, Sim.ACTIONS.SIDESTEP),
+      rule(Sim.CONDITIONS.BATTERY_BELOW, Sim.ACTIONS.RETURN_CHARGE, 6),
+      rule(Sim.CONDITIONS.ON_ORE, Sim.ACTIONS.NOTIFY),
+      rule(Sim.CONDITIONS.ALWAYS, Sim.ACTIONS.EXPLORE),
+    ],
+  },
+  {
+    name: 'sidestep / battery 7 return / on-ore notify / explore',
+    rules: [
+      rule(Sim.CONDITIONS.CRATER_IN_FRONT, Sim.ACTIONS.SIDESTEP),
+      rule(Sim.CONDITIONS.BATTERY_BELOW, Sim.ACTIONS.RETURN_CHARGE, 7),
+      rule(Sim.CONDITIONS.ON_ORE, Sim.ACTIONS.NOTIFY),
+      rule(Sim.CONDITIONS.ALWAYS, Sim.ACTIONS.EXPLORE),
+    ],
+  },
+  {
     name: 'sidestep / battery 20 return / on-ore notify / explore',
     rules: [
       rule(Sim.CONDITIONS.CRATER_IN_FRONT, Sim.ACTIONS.SIDESTEP),
       rule(Sim.CONDITIONS.BATTERY_BELOW, Sim.ACTIONS.RETURN_CHARGE, 20),
       rule(Sim.CONDITIONS.ON_ORE, Sim.ACTIONS.NOTIFY),
       rule(Sim.CONDITIONS.ALWAYS, Sim.ACTIONS.EXPLORE),
+    ],
+  },
+  {
+    name: 'sidestep / battery 8 return / go-to-ore / on-ore notify',
+    rules: [
+      rule(Sim.CONDITIONS.CRATER_IN_FRONT, Sim.ACTIONS.SIDESTEP),
+      rule(Sim.CONDITIONS.BATTERY_BELOW, Sim.ACTIONS.RETURN_CHARGE, 8),
+      rule(Sim.CONDITIONS.ORE_NEXT_TO, Sim.ACTIONS.GO_TO_ORE),
+      rule(Sim.CONDITIONS.ON_ORE, Sim.ACTIONS.NOTIFY),
     ],
   },
   {

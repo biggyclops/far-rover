@@ -141,24 +141,46 @@ function tendCharge(game, units) {
   clickWorld(game, low, c.x, c.y);
 }
 
+function onIceJob(u, source) {
+  return orderType(u) === 'haul'
+    && source
+    && u.order?.sourceTx === source.tx
+    && u.order?.sourceTy === source.ty;
+}
+
 function tendHaul(game, units, source) {
   tendCharge(game, units);
   if (!source) return;
-  const ready = haulReady(units);
+  const ready = units.filter((u) => {
+    const t = orderType(u);
+    if (t === 'build' || t === 'dig') return false;
+    if (t === 'charge') return u.battery >= 90;
+    if (onIceJob(u, source)) return u.status === 'blocked' || !!u.blockedReason;
+    if (t === 'haul') {
+      const carryingIce = (u.cargo?.ice || 0) > 0.001;
+      if (carryingIce || u.order?.phase === 'unload' || u.order?.phase === 'mine') return false;
+      return true;
+    }
+    return true;
+  });
   if (ready.length) clickTile(game, ready, source.tx, source.ty);
 }
 
 function mineRegolith(game, units) {
   const src = regolithTile(game);
   if (!src) return;
+  const already = units.filter((u) => (
+    orderType(u) === 'haul' && u.order?.sourceTx === src.tx && u.order?.sourceTy === src.ty
+  ));
+  if (already.length) return;
   const free = units.filter((u) => {
     const t = orderType(u);
     if (t === 'build' || t === 'dig') return false;
     if (t === 'charge') return u.battery >= 90;
-    if (t === 'haul' && u.order?.sourceTx === src.tx && u.order?.sourceTy === src.ty) return false;
-    return t !== 'haul' || !!u.blockedReason;
+    if (t === 'haul') return false;
+    return true;
   });
-  if (free.length) clickTile(game, free, src.tx, src.ty);
+  if (free.length) clickTile(game, free.slice(0, 1), src.tx, src.ty);
 }
 
 function keepBuilding(game, units, building) {
@@ -294,36 +316,53 @@ export function createBrain(strategyId) {
   };
 }
 
+function emptyCrew(units) {
+  return units.filter((u) => {
+    const t = orderType(u);
+    if ((u.cargo?.ice || 0) > 0.001) return false;
+    if (t === 'build' || t === 'dig') return false;
+    if (t === 'charge' && u.battery < 90) return false;
+    return true;
+  });
+}
+
 function thinkHaulers(game, mem, units, meta) {
   const hab = game.habitat();
-  const wantStorage = iceCapReady(game) ? 0 : 2;
-  const storageSt = wantStorage ? ensureStorages(game, mem, units, wantStorage) : 'ready';
-  const havePad = !!(mem.storage0 && game.buildingById(mem.storage0)?.complete);
+  const ice = iceSource(game);
+  const pads = ['storage0', 'storage1'].filter((k) => game.buildingById(mem[k])?.complete).length;
+  const miners = emptyCrew(units);
 
   if (meta.extraHaulers > 0) {
-    const printerCrew = buildersOf(units).slice(0, 1);
-    const rest = units.filter((u) => !printerCrew.includes(u));
-    const printerSt = ensurePlaced(game, mem, printerCrew, 'printer', 'printer', hab.tx - 4, hab.ty);
-    if (printerSt === 'ready' && mem.printed < meta.extraHaulers) {
-      const p = game.buildingById(mem.printer);
-      if (p && !p.printing) {
-        if (game.totals().regolith + 1e-6 < game.C.printerHaulerCostRegolith) {
-          mineRegolith(game, printerCrew);
-        } else if (game.totals().power + 1e-6 >= game.C.printerHaulerCostPower) {
-          if (game.startPrint()) mem.printed += 1;
-        }
+    const p = mem.printer && game.buildingById(mem.printer);
+    if (!p) {
+      ensurePlaced(game, mem, units, 'printer', 'printer', hab.tx - 4, hab.ty);
+      return;
+    }
+    if (!p.complete) {
+      keepBuilding(game, units, p);
+      return;
+    }
+    if (mem.printed < meta.extraHaulers && !p.printing) {
+      if (game.totals().regolith + 1e-6 < game.C.printerHaulerCostRegolith) {
+        mineRegolith(game, miners.slice(0, 1));
+      } else if (game.totals().power + 1e-6 >= game.C.printerHaulerCostPower) {
+        if (game.startPrint()) mem.printed += 1;
       }
     }
-    if (havePad) tendHaul(game, rest.length ? rest : units, iceSource(game));
-    if (storageSt !== 'ready') return;
-    if (mem.printed < meta.extraHaulers) return;
-  } else if (storageSt !== 'ready') {
-    if (havePad) tendHaul(game, haulReady(units), iceSource(game));
-    return;
   }
 
-  if (!iceCapReady(game)) ensureStorages(game, mem, buildersOf(units).slice(0, 1), 3);
-  tendHaul(game, units, iceSource(game));
+  if (pads < 2 && !iceCapReady(game)) {
+    const crew = pads === 0 ? units : miners.slice(0, 1);
+    const st = ensureStorages(game, mem, crew.length ? crew : units, 2);
+    if (st !== 'ready' && pads === 0) return;
+    const iceCrew = pads === 0
+      ? []
+      : units.filter((u) => !crew.includes(u));
+    if (iceCrew.length) tendHaul(game, iceCrew, ice);
+    if (st !== 'ready') return;
+  }
+
+  tendHaul(game, units, ice);
 }
 
 function thinkTunnel(game, mem, units, meta) {
@@ -389,8 +428,11 @@ function thinkMixed(game, mem, units, meta) {
         if (home) mem.homeHub = home.id;
       } else if (keepBuilding(game, haulerB, game.buildingById(mem.homeHub)) === 'ready') {
         if (!mem.vault) {
-          const vault = placeVault(game, haulerB, game.buildingById(mem.homeHub));
-          if (vault) mem.vault = vault.id;
+          if (!afford(game, 'vault')) mineRegolith(game, haulerB);
+          else {
+            const vault = placeVault(game, haulerB, game.buildingById(mem.homeHub));
+            if (vault) mem.vault = vault.id;
+          }
         } else if (keepBuilding(game, haulerB, game.buildingById(mem.vault)) === 'ready') {
           if (!game.tunnelReady()) tendDig(game, haulerB, meta.diggers);
         }
