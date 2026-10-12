@@ -21,6 +21,7 @@ import {
   recordHostedRunIfNeeded,
   setLastTickResult,
   peekNextPose,
+  playPoseAnimation,
 } from '../ui.js';
 
 function ensureDemoCss() {
@@ -324,7 +325,14 @@ export function bindScout(root, game, hooks = {}) {
     }
     const period = operateOpen ? (1 / Math.max(1, getOperateSpeed() || 1)) : 1;
     scoutAcc += dt;
+    let fromCol = lastSim.col;
+    let fromRow = lastSim.row;
+    let ticked = 0;
     while (scoutAcc >= period && lastSim && !lastSim.outcome) {
+      if (!ticked) {
+        fromCol = lastSim.col;
+        fromRow = lastSim.row;
+      }
       scoutAcc -= period;
       const result = hostedTickAndResume(lastSim);
       setLastTickResult(result);
@@ -332,9 +340,14 @@ export function bindScout(root, game, hooks = {}) {
       applyNarration(lastSim, result);
       lastSim = getGameState() || lastSim;
       game.updateScoutPaper(paperSnapshot(lastSim, statusFor(lastSim), peekNextPose()));
+      ticked += 1;
     }
     if (lastSim?.outcome) finishIfNeeded();
-    if (operateOpen) updateOperateView();
+    if (operateOpen) {
+      // Display-only glide: engine pose is already at the new tile.
+      if (ticked) playPoseAnimation(fromCol, fromRow);
+      updateOperateView();
+    }
   }
 
   backBtn?.addEventListener('click', () => {
@@ -492,6 +505,7 @@ export function bindScout(root, game, hooks = {}) {
     playConfirmedThenLost,
     explainResult: (sim) => explainScoutResult(sim || lastSim),
     pump,
+    resetPump: () => { scoutAcc = 0; },
     launchProgram,
     tickScout,
     confirmOnOre,

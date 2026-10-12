@@ -2251,7 +2251,7 @@ export function getLastTickResult() {
   return lastTickResult;
 }
 
-export { peekNextPose };
+export { peekNextPose, playPoseAnimation };
 
 export function isOperatePaused() {
   return isPaused;
