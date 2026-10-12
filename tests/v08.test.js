@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const V08 = 'http://localhost:8080/v08/?debug';
+const ARTIFACTS = '/opt/cursor/artifacts';
 
 async function ready(page) {
   await page.goto(V08);
@@ -1105,6 +1108,150 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     expect(art.src).toMatch(/\/assets\/art\/hirise-board\.jpg$/);
     await page.click('#scout-back');
     await expect(page.locator('#scout-overlay')).toBeHidden();
+  });
+
+  test('hosted scout glides tile-to-tile at 1x 4x and 16x', async ({ page }) => {
+    await ready(page);
+    await page.evaluate(async () => {
+      window.__v08Test.setSpeed(0);
+      window.__v08Test.launchProgram(['distance', 'spectral'], [
+        { condition: { type: 'always' }, action: { type: 'explore' } },
+      ]);
+      await window.__v08Test.openOperate();
+    });
+    await expect(page.locator('.operate-view')).toBeVisible({ timeout: 15000 });
+    await page.waitForFunction(() => window.__farRoverMotion && window.__orbitalRenderer?.ready, null, { timeout: 15000 });
+    await page.click('.speed-btn[data-speed="pause"]');
+
+    const result = await page.evaluate(async () => {
+      const ui = await import('../ui.js');
+      const m = window.__farRoverMotion;
+      const speeds = [1, 4, 16];
+      const traces = [];
+
+      function analyze(samples, ticks) {
+        const jumps = [];
+        const stalls = [];
+        let path = 0;
+        let maxStep = 0;
+        const movingTicks = new Set(ticks.filter((t) => Math.hypot(t.toCol - t.fromCol, t.toRow - t.fromRow) > 0.5).map((t) => t.i));
+        for (let i = 1; i < samples.length; i++) {
+          const d = Math.hypot(samples[i].col - samples[i - 1].col, samples[i].row - samples[i - 1].row);
+          path += d;
+          if (d > maxStep) maxStep = d;
+          if (d > 0.4) jumps.push({ i, d, u: samples[i].u, tick: samples[i].tick });
+          const interior = samples[i].u > 4 && samples[i].u < (samples[i].periodMs - 4);
+          if (interior && d < 1e-6 && movingTicks.has(samples[i].tick)) {
+            stalls.push({ i, u: samples[i].u, tick: samples[i].tick });
+          }
+        }
+        const perTick = ticks.map((t) => {
+          const slice = samples.filter((s) => s.tick === t.i);
+          const first = slice[0];
+          const last = slice[slice.length - 1];
+          const moved = Math.hypot(t.toCol - t.fromCol, t.toRow - t.fromRow);
+          return {
+            i: t.i,
+            engineFrom: { col: t.fromCol, row: t.fromRow },
+            engineTo: { col: t.toCol, row: t.toRow },
+            engineTick: t.engineTick,
+            moved,
+            firstDistFrom: first ? Math.hypot(first.col - t.fromCol, first.row - t.fromRow) : null,
+            lastDistTo: last ? Math.hypot(last.col - t.toCol, last.row - t.toRow) : null,
+            firstDistTo: first ? Math.hypot(first.col - t.toCol, first.row - t.toRow) : null,
+          };
+        });
+        return { jumps, stalls, path, maxStep, perTick, n: samples.length };
+      }
+
+      for (const speed of speeds) {
+        window.__v08Test.resetScoutPump();
+        m.freeze(true);
+        m.startLog();
+        ui.setOperateSpeed(speed);
+        const period = 1 / speed;
+        const periodMs = 1000 / speed;
+        const step = speed >= 16 ? 4 : 10;
+        const t0 = m.now();
+        const samples = [];
+        const ticks = [];
+        const fired = [];
+        for (let i = 0; i < 3; i++) {
+          const before = ui.getGameState();
+          window.__v08Test.pumpScout(period);
+          const after = ui.getGameState();
+          ticks.push({
+            i,
+            fromCol: before.col,
+            fromRow: before.row,
+            toCol: after.col,
+            toRow: after.row,
+            engineTick: after.tick,
+          });
+          const tickStart = t0 + i * periodMs;
+          for (let u = 0; u <= periodMs + 0.01; u += step) {
+            const at = Math.min(u, periodMs);
+            m.pump(tickStart + at, step);
+            const p = m.pose();
+            samples.push({
+              speed, tick: i, u: at, periodMs, col: p.col, row: p.row,
+            });
+          }
+          if (samples[samples.length - 1]?.u < periodMs - 0.01) {
+            m.pump(tickStart + periodMs, step);
+            const p = m.pose();
+            samples.push({
+              speed, tick: i, u: periodMs, periodMs, col: p.col, row: p.row,
+            });
+          }
+          fired.push({
+            i,
+            reason: document.getElementById('live-rule-reason')?.textContent || '',
+            firedLine: document.querySelector('.rule-line.fired')?.textContent || '',
+            tickLabel: document.getElementById('hud-tick')?.textContent || '',
+          });
+        }
+        ui.pauseOperate();
+        const log = m.stopLog();
+        traces.push({
+          speed,
+          periodMs,
+          ...analyze(samples, ticks),
+          samples,
+          ticks,
+          fired,
+          logN: log.length,
+        });
+      }
+      return traces;
+    });
+
+    const plotDir = ARTIFACTS;
+    fs.mkdirSync(plotDir, { recursive: true });
+    fs.writeFileSync(path.join(plotDir, 'scout-motion-trace.json'), JSON.stringify(result, null, 2));
+    fs.writeFileSync(path.join(plotDir, 'scout-motion-trace.svg'), motionTraceSvg(result));
+    fs.writeFileSync(path.join(plotDir, 'scout-motion-trace.txt'), motionTraceText(result));
+
+    expect(result.length).toBe(3);
+    for (const tr of result) {
+      expect(tr.n, `${tr.speed}x sample count`).toBeGreaterThan(8);
+      expect(tr.jumps, `${tr.speed}x snaps`).toEqual([]);
+      expect(tr.stalls, `${tr.speed}x stalls`).toEqual([]);
+      expect(tr.maxStep, `${tr.speed}x max step`).toBeLessThan(0.4);
+      expect(tr.path, `${tr.speed}x path`).toBeGreaterThan(2.2);
+      expect(tr.path, `${tr.speed}x path cap`).toBeLessThan(4.2);
+      const moving = tr.perTick.filter((t) => t.moved > 0.5);
+      expect(moving.length, `${tr.speed}x moving ticks`).toBeGreaterThanOrEqual(2);
+      for (const t of moving) {
+        expect(t.firstDistFrom, `${tr.speed}x tick ${t.i} start`).toBeLessThan(0.2);
+        expect(t.firstDistTo, `${tr.speed}x tick ${t.i} not snapped`).toBeGreaterThan(0.55);
+        expect(t.lastDistTo, `${tr.speed}x tick ${t.i} end`).toBeLessThan(0.08);
+      }
+      for (const f of tr.fired) {
+        expect(f.tickLabel).toMatch(/Tick \d+/);
+        expect(f.firedLine.toLowerCase()).toMatch(/explore/);
+      }
+    }
   });
 
   test('starter Notify does not unlock Deep Ice and never sticks', async ({ page }) => {
@@ -2273,3 +2420,54 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     console.log(`determinism win: 1x=${times.t1.toFixed(2)}s 16x=${times.t16.toFixed(2)}s drift=${(drift * 100).toFixed(2)}%`);
   });
 });
+
+function motionTraceText(traces) {
+  const lines = ['Hosted scout display pose (col, row) over each engine tick', ''];
+  for (const tr of traces) {
+    lines.push(`=== ${tr.speed}x  period=${tr.periodMs}ms  path=${tr.path.toFixed(3)}  maxStep=${tr.maxStep.toFixed(4)}  jumps=${tr.jumps.length}  stalls=${tr.stalls.length}`);
+    for (const t of tr.perTick) {
+      lines.push(`  tick ${t.i} engine ${t.engineTick}  (${t.engineFrom.col},${t.engineFrom.row}) -> (${t.engineTo.col},${t.engineTo.row})  startΔ=${t.firstDistFrom?.toFixed(3)}  endΔ=${t.lastDistTo?.toFixed(3)}`);
+    }
+    const stride = Math.max(1, Math.floor(tr.samples.length / 24));
+    for (let i = 0; i < tr.samples.length; i += stride) {
+      const s = tr.samples[i];
+      lines.push(`  t${s.tick} +${s.u.toFixed(0).padStart(4)}ms  col=${s.col.toFixed(3)}  row=${s.row.toFixed(3)}`);
+    }
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+function motionTraceSvg(traces) {
+  const W = 920;
+  const H = 280;
+  const pad = 36;
+  const gap = 16;
+  const panelH = H;
+  const height = traces.length * (panelH + gap);
+  const panels = traces.map((tr, idx) => {
+    const y0 = idx * (panelH + gap);
+    const xs = tr.samples.map((s) => s.tick * tr.periodMs + s.u);
+    const ys = tr.samples.map((s) => s.row);
+    const minX = 0;
+    const maxX = Math.max(...xs, 1);
+    const minY = Math.min(...ys) - 0.15;
+    const maxY = Math.max(...ys) + 0.15;
+    const sx = (x) => pad + ((x - minX) / (maxX - minX)) * (W - pad * 2);
+    const sy = (y) => y0 + pad + (1 - (y - minY) / (maxY - minY)) * (panelH - pad * 2);
+    const pts = tr.samples.map((s, i) => `${i ? 'L' : 'M'}${sx(xs[i]).toFixed(1)},${sy(s.row).toFixed(1)}`).join(' ');
+    const ticks = tr.perTick.map((t) => {
+      const x = sx(t.i * tr.periodMs);
+      return `<line x1="${x.toFixed(1)}" y1="${y0 + pad}" x2="${x.toFixed(1)}" y2="${y0 + panelH - pad}" stroke="#445" stroke-dasharray="3 3"/>`;
+    }).join('');
+    return `
+      <g>
+        <rect x="0" y="${y0}" width="${W}" height="${panelH}" fill="#0d1117" rx="8"/>
+        <text x="${pad}" y="${y0 + 22}" fill="#c9d1d9" font-family="ui-monospace, monospace" font-size="13">${tr.speed}×  path ${tr.path.toFixed(2)} tiles  max step ${tr.maxStep.toFixed(3)}</text>
+        ${ticks}
+        <path d="${pts}" fill="none" stroke="#58a6ff" stroke-width="2"/>
+        <text x="${pad}" y="${y0 + panelH - 10}" fill="#8b949e" font-family="ui-monospace, monospace" font-size="11">row vs time (should be a smooth glide, no cliffs)</text>
+      </g>`;
+  }).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${height}" viewBox="0 0 ${W} ${height}">${panels}</svg>`;
+}

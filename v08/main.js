@@ -333,6 +333,8 @@ const debugHooks = {
   },
   launchProgram: (sensors, rules) => scout.launchProgram(sensors, rules),
   tickScout: (n) => scout.tickScout(n),
+  pumpScout: (dt) => scout.pump(dt),
+  resetScoutPump: () => scout.resetPump(),
   confirmOnOre: () => scout.confirmOnOre(),
   pingOreCell: (cell) => scout.pingOreCell(cell),
   openOperate: () => scout.openOperate(),
