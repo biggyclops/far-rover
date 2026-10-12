@@ -270,8 +270,10 @@ export function bindHud(root, game, hooks = {}) {
       tip.hidden = !tipText;
       tip.textContent = tipText;
       if (tipText && hover) {
-        tip.style.left = `${hover.sx + 14}px`;
-        tip.style.top = `${hover.sy + 12}px`;
+        const tw = tip.offsetWidth || 220;
+        const th = tip.offsetHeight || 24;
+        tip.style.left = `${Math.max(8, Math.min(hover.sx + 14, window.innerWidth - tw - 8))}px`;
+        tip.style.top = `${Math.max(8, Math.min(hover.sy + 12, window.innerHeight - th - 8))}px`;
       }
     }
     const steps = game.objectiveProgress();
