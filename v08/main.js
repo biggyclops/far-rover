@@ -19,7 +19,19 @@ audio.bindGestures(document);
 audio.setMuted(game.state.muted);
 
 const renderer = createRenderer(canvas, assets, game);
+renderer.resize();
 renderer.centerOnHabitat();
+requestAnimationFrame(() => {
+  renderer.resize();
+  if (!game.state.camera.userMoved) renderer.centerOnHabitat();
+});
+if (typeof ResizeObserver !== 'undefined') {
+  const ro = new ResizeObserver(() => {
+    renderer.resize();
+    if (!game.state.camera.userMoved) renderer.centerOnHabitat();
+  });
+  ro.observe(canvas);
+}
 
 const scout = bindScout(document, game);
 
@@ -70,6 +82,7 @@ function frame(now) {
   if (dt > 0) {
     game.update(dt);
     scout.pump(dt);
+    renderer.recordTracks?.(dt);
   }
   audio.setDigLoop(game.isDigging());
   handleEvents(game.flushEvents());
@@ -132,6 +145,8 @@ function serialize() {
     },
     view: game.state.view,
     zoom: game.state.camera.zoom,
+    camX: game.state.camera.x,
+    camY: game.state.camera.y,
     toast: game.state.toast ? game.state.toast.text : null,
     digging: game.isDigging(),
     stats: { ...game.state.stats },

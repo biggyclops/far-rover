@@ -40,6 +40,7 @@
         <button id="speed-16" type="button">16×</button>
         <button id="view-toggle" type="button">Underground</button>
         <button id="mute-btn" type="button">Mute</button>
+        <button id="about-btn" type="button">About</button>
         <button id="btn-land-crew" type="button" hidden>Land crew</button>
       </div>
     </header>
@@ -100,6 +101,13 @@
     </div>
     <canvas id="exp-minimap" width="168" height="168"></canvas>
     <ol id="exp-log"></ol>
+  </aside>
+  <div id="ground-credit">Ground: NASA/GSFC/Arizona State University (LROC)</div>
+  <aside id="about-panel" hidden>
+    <h3>About this ground</h3>
+    <p>The 40×40 plate is a crop of the LROC South Pole Controlled NAC mosaic <strong>NAC_POLE_SOUTH_CM_345_P892S1350</strong> (NASA/GSFC/Arizona State University). Long shadows are the real low Sun, not a generated hillshade.</p>
+    <p>Credit: NASA/GSFC/Arizona State University (LROC). Wagner, Speyerer, Robinson, and the LROC Team (2015), LPSC 46, abstract #1473.</p>
+    <button id="about-close" type="button">Close</button>
   </aside>
   <div id="toast" role="status" aria-live="polite"></div>
   <div id="deposit-hint" data-testid="deposit-hint" hidden>Long haul? A tunnel moves ice 4x faster than haulers.</div>

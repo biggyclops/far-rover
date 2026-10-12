@@ -1,5 +1,6 @@
 import { CONFIG as C } from './config.js';
 import { TILE } from './game.js';
+import { createRealism } from './realism.js';
 
 function tintCanvas(img, color) {
   const c = document.createElement('canvas');
@@ -29,6 +30,8 @@ export function createRenderer(canvas, assets, game) {
       ? tintCanvas(assets.images[`order-marker-${i}`], C.playerAccent)
       : null
   ));
+  let realism = null;
+  let autoCenterUntil = (typeof performance !== 'undefined' ? performance.now() : 0) + 600;
 
   function resize() {
     const dpr = window.devicePixelRatio || 1;
@@ -53,6 +56,8 @@ export function createRenderer(canvas, assets, game) {
     const cam = game.state.camera;
     return { x: sx / cam.zoom + cam.x, y: sy / cam.zoom + cam.y };
   }
+
+  realism = createRealism(assets, game, worldToScreen, viewSize);
 
   function img(name) {
     return assets.images[name] || null;
@@ -84,12 +89,37 @@ export function createRenderer(canvas, assets, game) {
   }
 
   function drawSurfaceTiles(z) {
+    const usedPlate = realism?.drawPlate(ctx, z);
     const { x0, y0, x1, y1 } = visibleTileRange();
     for (let ty = y0; ty < y1; ty++) {
       for (let tx = x0; tx < x1; tx++) {
         const tile = game.tileAt(tx, ty);
         const s = worldToScreen(tx * C.tileSize, ty * C.tileSize);
-        drawImg(tileSprite(tile), s.x, s.y, C.tileSize * z, C.tileSize * z);
+        const dw = C.tileSize * z;
+        if (!usedPlate) {
+          drawImg(tileSprite(tile), s.x, s.y, dw, dw);
+          continue;
+        }
+        if (tile.type === TILE.CRATER_S || tile.type === TILE.PIT) {
+          ctx.save();
+          ctx.globalAlpha = 0.55;
+          drawImg(tileSprite(tile), s.x, s.y, dw, dw);
+          ctx.restore();
+        } else if (tile.type === TILE.ICE || tile.type === TILE.ICE_MINED) {
+          ctx.save();
+          ctx.fillStyle = tile.type === TILE.ICE ? 'rgba(6, 10, 16, 0.55)' : 'rgba(18, 16, 14, 0.4)';
+          ctx.beginPath();
+          ctx.arc(s.x + dw / 2, s.y + dw / 2, dw * 0.42, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          const glint = img('frost-glint');
+          if (glint && tile.type === TILE.ICE) {
+            ctx.save();
+            ctx.globalAlpha = 0.9;
+            ctx.drawImage(glint, s.x, s.y, dw, dw);
+            ctx.restore();
+          }
+        }
       }
     }
     for (let ty = 0; ty < C.mapHeight; ty++) {
@@ -97,8 +127,15 @@ export function createRenderer(canvas, assets, game) {
         const tile = game.tileAt(tx, ty);
         if (!tile.craterMAnchor) continue;
         const s = worldToScreen(tx * C.tileSize, ty * C.tileSize);
+        ctx.save();
+        ctx.globalAlpha = usedPlate ? 0.5 : 1;
         drawImg(img('crater-m'), s.x, s.y, C.tileSize * 2 * z, C.tileSize * 2 * z);
+        ctx.restore();
       }
+    }
+    if (usedPlate) {
+      realism.drawDustApron(ctx, z);
+      realism.drawTracks(ctx, z);
     }
   }
 
@@ -185,9 +222,21 @@ export function createRenderer(canvas, assets, game) {
         const c = worldToScreen(wx + n * C.tileSize / 2, wy + n * C.tileSize / 2);
         drawGlow(c.x, c.y, dw * 1.15, 'glow-building', C.glowBuildingIntensity);
       }
+      if (pass === 'shadow') {
+        realism?.drawBuildingShadow(ctx, b, z, night);
+        continue;
+      }
+      if (pass === 'contact') {
+        realism?.drawBuildingContact(ctx, b, z);
+        continue;
+      }
       if (pass === 'sprite') {
-        const key = (!b.complete && C.showBuildSpriteWhileConstructing) ? `${b.type}-build` : b.type;
-        drawImg(img(key) || img(b.type), s.x, s.y, dw, dw);
+        if (realism?.drawBuildingSprite(ctx, b, z)) {
+          /* relit, centred */
+        } else {
+          const key = (!b.complete && C.showBuildSpriteWhileConstructing) ? `${b.type}-build` : b.type;
+          drawImg(img(key) || img(b.type), s.x, s.y, dw, dw);
+        }
         if (!b.complete) {
           ctx.save();
           ctx.font = `600 ${Math.max(9, 10 * z)}px "IBM Plex Mono", ui-monospace, monospace`;
@@ -223,24 +272,27 @@ export function createRenderer(canvas, assets, game) {
 
   function drawUnit(u, z, night, pass) {
     const s = worldToScreen(u.x, u.y);
-    const loaded = (u.cargo.ice + u.cargo.regolith) > 0.05;
-    const body = u.kind === 'scout'
-      ? img('scout')
-      : (loaded ? img('hauler-loaded') : img('hauler'));
-    const sh = u.kind === 'scout' ? img('scout-shadow') : img('hauler-shadow');
     const size = C.tileSize * z;
     if (pass === 'glow') {
       if (night && C.nightGlowAdditive) drawGlow(s.x, s.y, size * 1.2, 'glow-unit', C.glowUnitIntensity);
       return;
     }
-    // Shadow rotates with the unit; offset stays screen-space so the light never moves.
-    if (sh && !(night && !C.nightMovingShadows)) {
-      ctx.save();
-      ctx.translate(s.x + C.shadowOffsetPx[0] * z, s.y + C.shadowOffsetPx[1] * z);
-      if (C.shadowSpriteRotates) ctx.rotate(u.facing);
-      ctx.drawImage(sh, -size / 2, -size / 2, size, size);
-      ctx.restore();
+    if (pass === 'shadow') {
+      realism?.drawUnitShadow(ctx, u, z, night);
+      return;
     }
+    if (pass === 'contact') {
+      realism?.drawUnitContact(ctx, u, z);
+      return;
+    }
+    if (realism) {
+      realism.drawUnitBody(ctx, u, z);
+      return;
+    }
+    const loaded = (u.cargo.ice + u.cargo.regolith) > 0.05;
+    const body = u.kind === 'scout'
+      ? img('scout')
+      : (loaded ? img('hauler-loaded') : img('hauler'));
     if (body) {
       ctx.save();
       ctx.translate(s.x, s.y);
@@ -323,17 +375,32 @@ export function createRenderer(canvas, assets, game) {
   }
 
   function drawCommandRange(z) {
-    const h = game.habitat();
-    if (!h) return;
-    const c = worldToScreen((h.tx + 1) * C.tileSize, (h.ty + 1) * C.tileSize);
+    const hab = game.habitat();
+    if (!hab) return;
+    const { w, h } = viewSize();
+    const c = worldToScreen((hab.tx + 1) * C.tileSize, (hab.ty + 1) * C.tileSize);
+    const r = C.commandRangeRadius * C.tileSize * z;
+    const maxCorner = Math.hypot(Math.max(c.x, w - c.x), Math.max(c.y, h - c.y));
     ctx.save();
     ctx.strokeStyle = C.playerAccent;
     ctx.globalAlpha = 0.7;
     ctx.lineWidth = 1.5;
     ctx.setLineDash([7, 6]);
     ctx.beginPath();
-    ctx.arc(c.x, c.y, C.commandRangeRadius * C.tileSize * z, 0, Math.PI * 2);
+    ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
     ctx.stroke();
+    if (r > maxCorner + 2) {
+      const pad = 10;
+      ctx.globalAlpha = 0.85;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(pad, pad);
+      ctx.lineTo(w - pad, pad);
+      ctx.lineTo(w - pad, h - pad);
+      ctx.lineTo(pad, h - pad);
+      ctx.closePath();
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -592,6 +659,7 @@ export function createRenderer(canvas, assets, game) {
     const dest = cameraDestForTile(tx, ty);
     game.state.camera.x = dest.x;
     game.state.camera.y = dest.y;
+    game.state.camera.userMoved = true;
     game.state.camPan = { tx, ty, t: 1.2 };
     return dest;
   }
@@ -635,6 +703,7 @@ export function createRenderer(canvas, assets, game) {
 
   function centerOnHabitat() {
     const { w, h } = viewSize();
+    if (w < 8 || h < 8) return;
     const hab = game.habitat();
     const cx = (hab.tx + 1) * C.tileSize;
     const cy = (hab.ty + 1) * C.tileSize;
@@ -657,6 +726,8 @@ export function createRenderer(canvas, assets, game) {
 
   function draw() {
     const { w, h } = resize();
+    const now = typeof performance !== 'undefined' ? performance.now() : 0;
+    if (now < autoCenterUntil && !game.state.camera.userMoved && !game.state.camPan) centerOnHabitat();
     ctx.clearRect(0, 0, w, h);
     drawBackdrop(w, h);
     const z = game.state.camera.zoom;
@@ -667,6 +738,12 @@ export function createRenderer(canvas, assets, game) {
     drawTunnelProgress(z);
     drawBoreFx(z);
     if (view === 'underground') drawPackets(z);
+    if (view === 'surface') {
+      drawBuildings(z, night, 'shadow', view);
+      for (const u of game.state.units) drawUnit(u, z, night, 'shadow');
+      drawBuildings(z, night, 'contact', view);
+      for (const u of game.state.units) drawUnit(u, z, night, 'contact');
+    }
     drawBuildings(z, night, 'sprite', view);
     if (view === 'surface') {
       for (const u of game.state.units) drawUnit(u, z, night, 'sprite');
@@ -692,8 +769,9 @@ export function createRenderer(canvas, assets, game) {
     drawBox();
   }
 
-  return {
+    return {
     draw,
+    recordTracks: (dt) => realism?.recordTracks(dt),
     resize,
     worldToScreen,
     screenToWorld,

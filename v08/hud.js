@@ -86,6 +86,14 @@ export function bindHud(root, game, hooks = {}) {
   $('#btn-land-crew')?.addEventListener('click', () => { hooks.onLandCrew?.(); });
   $('#btn-play-again')?.addEventListener('click', () => { window.location.reload(); });
   $('#exp-view-trace')?.addEventListener('click', () => { hooks.onViewTrace?.(); });
+  const aboutBtn = $('#about-btn');
+  const aboutPanel = $('#about-panel');
+  aboutBtn?.addEventListener('click', () => {
+    if (aboutPanel) aboutPanel.hidden = !aboutPanel.hidden;
+  });
+  $('#about-close')?.addEventListener('click', () => {
+    if (aboutPanel) aboutPanel.hidden = true;
+  });
 
   function refreshButtons() {
     const speed = game.state.speed;
@@ -237,8 +245,10 @@ export function bindHud(root, game, hooks = {}) {
     }
     const iceHint = $('#ice-hint');
     if (iceHint) {
-      iceHint.hidden = !hintOn;
-      iceHint.textContent = game.iceHintText();
+      const text = game.iceHintText();
+      const bannerDup = banner && !banner.hidden && banner.textContent === text;
+      iceHint.hidden = !hintOn || bannerDup;
+      iceHint.textContent = text;
     }
     const arrow = $('#scout-hint-arrow');
     if (arrow) {

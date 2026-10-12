@@ -1,0 +1,92 @@
+{
+ "habitat": {
+  "obj": 256,
+  "canvas": 512,
+  "offset": 32,
+  "pivot": 160,
+  "height_px": 65.2,
+  "shadow_len_px": 208.6,
+  "edge_alpha": 0.0
+ },
+ "solar": {
+  "obj": 256,
+  "canvas": 512,
+  "offset": 32,
+  "pivot": 160,
+  "height_px": 29.9,
+  "shadow_len_px": 95.6,
+  "edge_alpha": 0.0
+ },
+ "storage": {
+  "obj": 256,
+  "canvas": 512,
+  "offset": 32,
+  "pivot": 160,
+  "height_px": 62.2,
+  "shadow_len_px": 198.9,
+  "edge_alpha": 0.0
+ },
+ "printer": {
+  "obj": 256,
+  "canvas": 512,
+  "offset": 32,
+  "pivot": 160,
+  "height_px": 41.4,
+  "shadow_len_px": 132.5,
+  "edge_alpha": 0.0
+ },
+ "tunnel-hub": {
+  "obj": 256,
+  "canvas": 512,
+  "offset": 32,
+  "pivot": 160,
+  "height_px": 25.2,
+  "shadow_len_px": 80.6,
+  "edge_alpha": 0.0
+ },
+ "hauler": {
+  "obj": 128,
+  "canvas": 256,
+  "offset": 32,
+  "pivot": 96,
+  "height_px": 15.9,
+  "shadow_len_px": 51.0,
+  "edge_alpha": 0.0
+ },
+ "hauler-loaded": {
+  "obj": 128,
+  "canvas": 256,
+  "offset": 32,
+  "pivot": 96,
+  "height_px": 16.1,
+  "shadow_len_px": 51.6,
+  "edge_alpha": 0.0
+ },
+ "scout": {
+  "obj": 128,
+  "canvas": 256,
+  "offset": 32,
+  "pivot": 96,
+  "height_px": 23.4,
+  "shadow_len_px": 74.8,
+  "edge_alpha": 0.0
+ },
+ "hauler-rot30": {
+  "obj": 160,
+  "canvas": 288,
+  "offset": 32,
+  "pivot": 112,
+  "height_px": 15.9,
+  "shadow_len_px": 51.0,
+  "edge_alpha": 0.0
+ },
+ "hauler-loaded-rot-120": {
+  "obj": 160,
+  "canvas": 288,
+  "offset": 32,
+  "pivot": 112,
+  "height_px": 16.1,
+  "shadow_len_px": 51.6,
+  "edge_alpha": 0.0
+ }
+}
