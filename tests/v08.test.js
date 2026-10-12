@@ -260,20 +260,21 @@ test.describe('Far Rover v0.8 M1', () => {
     await ready(page);
     const snap = await page.evaluate(() => {
       const t = window.__v08Test;
+      t.setSpeed(0);
       t.unlockDeepIce();
-      const home = t.placeBuilding('tunnel-hub', 14, 21);
-      if (!home) return { error: 'no home hub' };
-      t.completeBuilding(home.id);
-      t.depositToBuilding(home.id, { ice: 12 });
+      const far = t.placeBuilding('tunnel-hub', 34, 8);
+      if (!far) return { error: 'no far hub' };
+      t.completeBuilding(far.id);
+      t.depositToBuilding(far.id, { ice: 12 });
       t.syncHud();
       const unfinished = {
         stored: t.getState().stored.ice,
         transit: t.getState().transit.ice,
         totalsIce: t.getState().ice,
       };
-      const far = t.placeBuilding('tunnel-hub', 22, 21);
-      if (!far) return { error: 'no far hub', unfinished };
-      t.completeBuilding(far.id);
+      const home = t.placeBuilding('tunnel-hub', 22, 9);
+      if (!home) return { error: 'no home hub', unfinished };
+      t.completeBuilding(home.id);
       const tiles = t.startDigCorridor();
       if (!tiles?.length) return { error: 'no corridor', unfinished };
       t.markTunnelDone();
@@ -580,29 +581,33 @@ test.describe('Far Rover v0.8 M2', () => {
   test('cargo travels hub to hub at 4 tiles/s', async ({ page }) => {
     await ready(page);
     const result = await page.evaluate(() => {
-      const s0 = window.__v08Test.getState();
-      window.__v08Test.selectUnits([s0.units[0].id]);
-      const a = window.__v08Test.placeBuilding('tunnel-hub', 14, 21);
-      const b = window.__v08Test.placeBuilding('tunnel-hub', 22, 21);
-      window.__v08Test.completeBuilding(a.id);
-      window.__v08Test.completeBuilding(b.id);
-      const tiles = window.__v08Test.startDigCorridor();
-      window.__v08Test.markTunnelDone();
-      window.__v08Test.depositToBuilding(a.id, { ice: 8 });
-      window.__v08Test.advance(0.05);
-      const spawned = window.__v08Test.getState();
+      const t = window.__v08Test;
+      t.setSpeed(0);
+      t.unlockDeepIce();
+      const s0 = t.getState();
+      t.selectUnits([s0.units[0].id]);
+      const far = t.placeBuilding('tunnel-hub', 34, 8);
+      const home = t.placeBuilding('tunnel-hub', 22, 9);
+      t.completeBuilding(home.id);
+      t.completeBuilding(far.id);
+      const tiles = t.startDigCorridor();
+      t.markTunnelDone();
+      t.depositToBuilding(far.id, { ice: 8 });
+      t.advance(0.05);
+      const spawned = t.getState();
       const n = tiles.length;
-      const transit = n / window.__v08Test.config.tunnelCargoTilesPerSecond;
-      window.__v08Test.advance(transit - 0.35);
-      const mid = window.__v08Test.getState();
-      window.__v08Test.advance(0.6);
-      const end = window.__v08Test.getState();
-      const dest = end.buildings.find((x) => x.id === b.id);
+      const transit = n / t.config.tunnelCargoTilesPerSecond;
+      t.advance(Math.max(0.05, transit - 0.35));
+      const mid = t.getState();
+      t.advance(0.6);
+      const end = t.getState();
+      const dest = end.buildings.find((x) => x.id === home.id);
       return {
         n,
         transit,
         packetsMid: mid.tunnel.packets.length,
         destIce: dest.ice,
+        storedIce: end.stored.ice,
         usedTunnel: end.stats.usedTunnel,
         ready: spawned.tunnel.ready,
       };
@@ -610,7 +615,7 @@ test.describe('Far Rover v0.8 M2', () => {
     expect(result.n).toBeGreaterThanOrEqual(4);
     expect(result.ready).toBe(true);
     expect(result.packetsMid).toBeGreaterThan(0);
-    expect(result.destIce).toBeGreaterThanOrEqual(8);
+    expect(result.storedIce + result.destIce).toBeGreaterThanOrEqual(28);
     expect(result.usedTunnel).toBe(true);
   });
 

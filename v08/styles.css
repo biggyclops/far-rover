@@ -43,6 +43,14 @@ html, body {
   inset: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+#app > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 #hud-top, #hud-bottom {
@@ -66,6 +74,10 @@ html, body {
   overflow: visible;
   flex-shrink: 0;
   row-gap: 6px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .brand {
@@ -677,6 +689,8 @@ button.unaffordable:hover { border-color: rgba(255, 255, 255, 0.18); }
   flex: 0 1 auto;
   flex-wrap: wrap;
   row-gap: 4px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 #ground-credit {
@@ -888,13 +902,26 @@ body.scout-open .battery-n {
   #hud-bottom {
     padding: 6px 10px;
     gap: 8px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
   #hud-bottom button {
     padding: 4px 8px;
   }
+  .orders, .builds {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+  }
+  .orders > *, .builds > * {
+    flex: 0 0 auto;
+  }
   .expedition-meta {
     flex-wrap: wrap;
     flex: 1 1 12rem;
+    min-width: 0;
   }
   #sel-info {
     margin-left: 0;
@@ -914,9 +941,21 @@ body.scout-open .battery-n {
     max-height: 72px;
     overflow: hidden;
     row-gap: 0;
+    gap: 8px;
+    padding: 8px 8px;
   }
   .orders, .builds {
     flex-wrap: nowrap;
     flex: 0 0 auto;
+    gap: 6px;
+  }
+  #hud-bottom button {
+    padding: 4px 7px;
+  }
+  #sel-info {
+    max-width: 22ch;
+  }
+  .expedition-meta {
+    max-width: 28ch;
   }
 }
