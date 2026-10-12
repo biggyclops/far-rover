@@ -264,7 +264,7 @@ body.scout-open .orbital-left {
 body.scout-open .orbital-ops .rules-panel {
   order: -1;
 }
-body.scout-open .orbital-left .telemetry-block {
+body.scout-open .orbital-left .sensor-layers-panel {
   display: none;
 }
 body.scout-open .orbital-ops .minimap {
