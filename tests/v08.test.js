@@ -1473,17 +1473,24 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     const result = await page.evaluate(async () => {
       const t = window.__v08Test;
       const game = await t.createDetachedGame();
-      const img = new Image();
-      img.src = new URL('../assets/v08/art/realism/ground-map.png', location.href).href;
-      await img.decode();
       const tile = t.config.tileSize;
       const mapW = t.config.mapWidth;
       const mapH = t.config.mapHeight;
       const c = document.createElement('canvas');
-      c.width = img.naturalWidth;
-      c.height = img.naturalHeight;
+      c.width = mapW * tile;
+      c.height = mapH * tile;
       const ctx = c.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(img, 0, 0);
+      const chunk = 512;
+      const rows = Math.ceil(c.height / chunk);
+      const cols = Math.ceil(c.width / chunk);
+      for (let r = 0; r < rows; r++) {
+        for (let col = 0; col < cols; col++) {
+          const img = new Image();
+          img.src = new URL(`../assets/v08/art/realism/ground/day/r${r}c${col}.webp`, location.href).href;
+          await img.decode();
+          ctx.drawImage(img, col * chunk, r * chunk);
+        }
+      }
       const { data, width } = ctx.getImageData(0, 0, c.width, c.height);
       const bad = [];
       for (let ty = 0; ty < mapH; ty++) {

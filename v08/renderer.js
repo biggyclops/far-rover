@@ -90,8 +90,8 @@ export function createRenderer(canvas, assets, game) {
     };
   }
 
-  function drawSurfaceTiles(z) {
-    const usedPlate = realism?.drawPlate(ctx, z);
+  function drawSurfaceTiles(z, night) {
+    const usedPlate = realism?.drawPlate(ctx, z, night);
     const { x0, y0, x1, y1 } = visibleTileRange();
     for (let ty = y0; ty < y1; ty++) {
       for (let tx = x0; tx < x1; tx++) {
@@ -103,13 +103,15 @@ export function createRenderer(canvas, assets, game) {
           continue;
         }
         if (tile.type === TILE.CRATER_S || tile.type === TILE.PIT) {
+          const alpha = realism?.craterOverlayAlpha(tx, ty, 0.55) ?? 0.55;
           ctx.save();
-          ctx.globalAlpha = 0.55;
+          ctx.globalAlpha = alpha;
           drawImg(tileSprite(tile), s.x, s.y, dw, dw);
           ctx.restore();
         } else if (tile.type === TILE.ICE || tile.type === TILE.ICE_MINED) {
+          const alpha = realism?.craterOverlayAlpha(tx, ty, tile.type === TILE.ICE ? 0.4 : 0.4) ?? 0.4;
           ctx.save();
-          ctx.fillStyle = tile.type === TILE.ICE ? 'rgba(6, 10, 16, 0.55)' : 'rgba(18, 16, 14, 0.4)';
+          ctx.fillStyle = tile.type === TILE.ICE ? `rgba(6, 10, 16, ${alpha})` : 'rgba(18, 16, 14, 0.4)';
           ctx.beginPath();
           ctx.arc(s.x + dw / 2, s.y + dw / 2, dw * 0.42, 0, Math.PI * 2);
           ctx.fill();
@@ -212,30 +214,30 @@ export function createRenderer(canvas, assets, game) {
     ctx.restore();
   }
 
-  function drawBuildings(z, night, pass, view) {
-    for (const b of game.state.buildings) {
-      if (!showBuilding(b, view)) continue;
-      const n = b.type === 'vault' ? C.vaultFootprint : C.buildingFootprint;
-      const wx = b.tx * C.tileSize;
-      const wy = b.ty * C.tileSize;
-      const s = worldToScreen(wx, wy);
-      const dw = n * C.tileSize * z;
-      if (pass === 'glow' && night && C.nightGlowAdditive) {
-        const c = worldToScreen(wx + n * C.tileSize / 2, wy + n * C.tileSize / 2);
-        const pool = (C.glowBuildingSize || 256) * z;
-        drawGlow(c.x, c.y, pool, 'glow-building', C.glowBuildingIntensity);
-      }
-      if (pass === 'shadow') {
-        realism?.drawBuildingShadow(ctx, b, z, night);
-        continue;
-      }
-      if (pass === 'contact') {
-        realism?.drawBuildingContact(ctx, b, z);
-        continue;
-      }
+  function drawBuildingsOne(b, z, night, pass, view) {
+    if (!showBuilding(b, view)) return;
+    const n = b.type === 'vault' ? C.vaultFootprint : C.buildingFootprint;
+    const wx = b.tx * C.tileSize;
+    const wy = b.ty * C.tileSize;
+    const s = worldToScreen(wx, wy);
+    const dw = n * C.tileSize * z;
+    if (pass === 'glow' && night && C.nightGlowAdditive) {
+      const c = worldToScreen(wx + n * C.tileSize / 2, wy + n * C.tileSize / 2);
+      const pool = (C.glowBuildingSize || 256) * z;
+      if (realism?.drawFloodlight) realism.drawFloodlight(ctx, c.x, c.y, pool, C.glowBuildingIntensity);
+      else drawGlow(c.x, c.y, pool, 'floodlight-pool', C.glowBuildingIntensity);
+    }
+    if (pass === 'shadow') {
+      realism?.drawBuildingShadow(ctx, b, z, night);
+      return;
+    }
+    if (pass === 'contact') {
+      realism?.drawBuildingContact(ctx, b, z);
+      return;
+    }
       if (pass === 'sprite') {
         if (realism?.drawBuildingSprite(ctx, b, z, night)) {
-          /* relit, centred at compose.py 0.5x */
+          realism.drawBuildingStatus?.(ctx, b, z, night);
         } else {
           const key = (!b.complete && C.showBuildSpriteWhileConstructing) ? `${b.type}-build` : b.type;
           drawImg(img(key) || img(b.type), s.x, s.y, dw, dw);
@@ -270,7 +272,10 @@ export function createRenderer(canvas, assets, game) {
           ctx.restore();
         }
       }
-    }
+  }
+
+  function drawBuildings(z, night, pass, view) {
+    for (const b of game.state.buildings) drawBuildingsOne(b, z, night, pass, view);
   }
 
   function drawUnit(u, z, night, pass) {
@@ -279,7 +284,8 @@ export function createRenderer(canvas, assets, game) {
     if (pass === 'glow') {
       if (night && C.nightGlowAdditive) {
         const pool = (C.glowUnitSize || 128) * z;
-        drawGlow(s.x, s.y, pool, 'glow-unit', C.glowUnitIntensity);
+        if (realism?.drawFloodlight) realism.drawFloodlight(ctx, s.x, s.y, pool, C.glowUnitIntensity);
+        else drawGlow(s.x, s.y, pool, 'floodlight-pool', C.glowUnitIntensity);
       }
       return;
     }
@@ -789,16 +795,17 @@ export function createRenderer(canvas, assets, game) {
     const night = !game.isDay();
     const view = game.state.view === 'underground' ? 'underground' : 'surface';
     if (view === 'underground') drawUndergroundTiles(z);
-    else drawSurfaceTiles(z);
+    else drawSurfaceTiles(z, night);
     if (view === 'surface') drawOffRoadTint(z);
     drawTunnelProgress(z);
     drawBoreFx(z);
     if (view === 'underground') drawPackets(z);
     if (view === 'surface') {
-      drawBuildings(z, night, 'shadow', view);
-      for (const u of game.state.units) drawUnit(u, z, night, 'shadow');
+      // Pixel v2: all contacts, then all shadows (multiply), then objects sorted by y.
       drawBuildings(z, night, 'contact', view);
       for (const u of game.state.units) drawUnit(u, z, night, 'contact');
+      drawBuildings(z, night, 'shadow', view);
+      for (const u of game.state.units) drawUnit(u, z, night, 'shadow');
     }
     // Night tint the ground first, then additive floodlight pools, then crisp sprites on top.
     // Drawing glow after the sprites (the old order) turned the solar into a blown-out square
@@ -808,9 +815,21 @@ export function createRenderer(canvas, assets, game) {
       drawBuildings(z, night, 'glow', view);
       for (const u of game.state.units) drawUnit(u, z, night, 'glow');
     }
-    drawBuildings(z, night, 'sprite', view);
-    if (view === 'surface') {
-      for (const u of game.state.units) drawUnit(u, z, night, 'sprite');
+    if (view === 'underground') {
+      drawBuildings(z, night, 'sprite', view);
+    } else {
+      const actors = [];
+      for (const b of game.state.buildings) {
+        if (!showBuilding(b, view)) continue;
+        const n = b.type === 'vault' ? C.vaultFootprint : C.buildingFootprint;
+        actors.push({ kind: 'building', y: (b.ty + n / 2) * C.tileSize, x: (b.tx + n / 2) * C.tileSize, b });
+      }
+      for (const u of game.state.units) actors.push({ kind: 'unit', y: u.y, x: u.x, u });
+      actors.sort((a, b) => a.y - b.y || a.x - b.x);
+      for (const a of actors) {
+        if (a.kind === 'building') drawBuildingsOne(a.b, z, night, 'sprite', view);
+        else drawUnit(a.u, z, night, 'sprite');
+      }
     }
     if (view === 'surface') drawCommandRange(z);
     if (view === 'surface') {
