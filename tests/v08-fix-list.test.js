@@ -306,6 +306,9 @@ function scriptedHaul(game) {
   assert.equal(C.deepIceTilesFromStartStorage, 21);
   assert.equal(C.haulerOffRoadSpeedMult, 0.5);
   assert.equal(C.digSecondsPerTilePerRover, 15);
+  assert.equal(C.printerHaulerSeconds, 30);
+  assert.equal(C.printerHaulerSecondsSecond, 45);
+  assert.equal(C.printerHaulerSecondsAfter, 60);
   console.log('ok  new config keys keep economy defaults');
 }
 
@@ -323,6 +326,33 @@ function setupHomeTunnel(game) {
   game.markTunnelDone();
   assert.equal(game.tunnelReady(), true);
   return { home, far, vault, hab: game.habitat() };
+}
+
+function setupDeepTunnel(game, { vault = false, storage = true } = {}) {
+  game.unlockDeepIce();
+  game.selectUnits([game.state.units[0].id]);
+  const far = game.placeBuilding('tunnel-hub', 34, 8, false);
+  const home = game.placeBuilding('tunnel-hub', 22, 9, false);
+  assert.ok(far && home, 'deep-ice hubs place');
+  game.completeBuilding(far.id);
+  game.completeBuilding(home.id);
+  let store = null;
+  if (storage) {
+    store = game.placeBuilding('storage', 21, 18, false);
+    assert.ok(store, 'storage places');
+    game.completeBuilding(store.id);
+  }
+  let v = null;
+  if (vault) {
+    v = game.placeBuilding('vault', 19, 9, false) || game.placeBuilding('vault', 22, 6, false);
+    assert.ok(v, 'vault places beside home hub');
+    game.completeBuilding(v.id);
+  }
+  const tiles = game.startDigCorridor();
+  assert.ok(tiles && tiles.length, 'corridor exists');
+  game.markTunnelDone();
+  assert.equal(game.tunnelReady(), true);
+  return { far, home, storage: store, vault: v, deep: game.state.deepIce };
 }
 
 {
@@ -936,12 +966,13 @@ function runUntilOutcome(sensors, rules, place) {
 
 {
   const g = createGame();
-  const { far } = setupHomeTunnel(g);
+  const { far } = setupDeepTunnel(g, { vault: false, storage: true });
   g.depositToBuilding(far.id, { ice: 12 });
   assert.equal(g.transitIce().ice, 12);
   const unfinished = createGame();
+  unfinished.unlockDeepIce();
   unfinished.selectUnits([unfinished.state.units[0].id]);
-  const hub = unfinished.placeBuilding('tunnel-hub', 14, 21, false);
+  const hub = unfinished.placeBuilding('tunnel-hub', 34, 8, false);
   unfinished.completeBuilding(hub.id);
   unfinished.depositToBuilding(hub.id, { ice: 12 });
   assert.equal(unfinished.transitIce().ice, 0);
@@ -985,7 +1016,7 @@ function runUntilOutcome(sensors, rules, place) {
 }
 
 {
-  assert.deepEqual(REACTION_DELAYS, [0, 2, 3, 4, 6, 10]);
+  assert.deepEqual(REACTION_DELAYS, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   const haulerLayouts = layoutsFor('haulers-plus-2');
   assert.ok(haulerLayouts.some((l) => l.id === 'hub-vault' || l.drops), 'hauler search includes vault drops');
   assert.ok(haulerLayouts.some((l) => l.id === 'nearest-ice'));
@@ -1125,6 +1156,133 @@ function runUntilOutcome(sensors, rules, place) {
   g.completeBuilding(far.id);
   assert.equal(g.placementRejectReason('tunnel-hub', 16, 16), 'Cannot place: hub limit reached');
   console.log('ok  r4.14 every illegal placement names the reason');
+}
+
+{
+  const g = createGame();
+  const { far, storage: store, deep } = setupDeepTunnel(g);
+  const u = g.state.units[0];
+  g.selectUnits([u.id]);
+  const ice = g.tileCenter(deep.tx, deep.ty);
+  assert.equal(g.issueContextual(ice.x, ice.y), true);
+  const haul = g.state.units.find((h) => h.kind === 'hauler' && h.order?.type === 'haul');
+  assert.ok(haul, 'hauler takes a haul order');
+  assert.equal(haul.order.destBuildingId, far.id, 'finished tunnel is the drop when it is the faster walk');
+  assert.notEqual(haul.order.destBuildingId, store.id);
+  const picked = g.nearestDrop(deep.tx, deep.ty, { cargo: { ice: 1, regolith: 0 } }, 'ice');
+  assert.equal(picked?.id, far.id);
+  console.log('ok  hauler uses a finished tunnel when it is the faster drop');
+}
+
+{
+  const g = createGame();
+  const { far, storage: store, deep } = setupDeepTunnel(g);
+  const u = g.state.units[0];
+  u.x = (deep.tx + 0.5) * C.tileSize;
+  u.y = (deep.ty + 0.5) * C.tileSize;
+  u.cargo.ice = 10;
+  g.assignOrder([u], {
+    type: 'haul',
+    sourceTx: deep.tx,
+    sourceTy: deep.ty,
+    destBuildingId: store.id,
+    phase: 'toDest',
+  });
+  assert.equal(u.order.destBuildingId, store.id);
+  advance(g, 1 / 60);
+  assert.equal(u.order?.type, 'haul');
+  assert.equal(u.order.destBuildingId, far.id, 'haul dest retargets onto the finished tunnel when it is faster');
+  console.log('ok  haul dest retargets onto a finished tunnel');
+}
+
+{
+  const g = createGame();
+  const { far, home } = setupDeepTunnel(g, { vault: false, storage: true });
+  const start = g.storedForGoal().ice;
+  home.ice = home.iceCap;
+  home.outboundIce = 0;
+  far.ice = far.iceCap;
+  far.outboundIce = far.iceCap;
+  assert.ok(g.transitIce().ice >= 39, `expected ~40 in hubs, got ${g.transitIce().ice}`);
+  advance(g, 12);
+  const stored = g.storedForGoal().ice;
+  const transit = g.transitIce().ice;
+  assert.ok(
+    stored + 1e-6 >= start + 40 - 0.05,
+    `tunnel ice must reach storage: start ${start} stored ${stored} transit ${transit}`,
+  );
+  assert.ok(transit < 1, `ice left in transit ${transit}`);
+  console.log(`ok  40 ice through the tunnel reaches storage (stored ${stored.toFixed(1)}, transit ${transit.toFixed(2)})`);
+}
+
+{
+  const g = createGame();
+  const hab = g.habitat();
+  hab.ice = hab.iceCap;
+  const shallow = g.tileAt(C.shallowIceTileX, C.shallowIceTileY);
+  shallow.type = TILE.ICE_MINED;
+  shallow.iceRemaining = 0;
+  const u = g.state.units[0];
+  u.cargo.ice = 10;
+  u.order = {
+    type: 'haul',
+    sourceTx: C.shallowIceTileX,
+    sourceTy: C.shallowIceTileY,
+    destBuildingId: hab.id,
+    phase: 'toDest',
+  };
+  u.lastOrder = { ...u.order, phase: 'toSource' };
+  u.resumeOrder = null;
+  g.selectUnits([u.id]);
+  const storage = g.placeBuilding('storage', 21, 18, true);
+  assert.ok(storage, 'storage places');
+  assert.equal(u.order?.type, 'build');
+  assert.equal(u.resumeOrder?.type, 'haul');
+  const goalBefore = g.storedForGoal().ice;
+  g.completeBuilding(storage.id);
+  advance(g, 1 / 60);
+  assert.equal(u.order?.type, 'haul', 'hauler resumes the haul loop after the build');
+  assert.equal(u.order?.phase, 'toDest', 'cargo still on board goes to a drop, not idle');
+  assert.notEqual(g.unitCard(u).task, 'idle');
+  const dest = g.buildingById(u.order.destBuildingId);
+  assert.ok(dest, 'resume found a drop');
+  const spot = g.tileCenter(dest.tx + 0.5, dest.ty + 2);
+  u.x = spot.x;
+  u.y = spot.y;
+  u.battery = C.haulerBattery;
+  advance(g, 2);
+  assert.ok(u.cargo.ice < 0.001, `cargo still held ${u.cargo.ice}`);
+  assert.ok(
+    g.storedForGoal().ice + 1e-6 >= goalBefore + 10 - 0.05,
+    `goal ice stuck at ${g.storedForGoal().ice} (was ${goalBefore})`,
+  );
+  console.log('ok  hauler resumes haul after storage build with empty source and delivers cargo');
+}
+
+{
+  const g = createGame();
+  assert.equal(g.nextPrintSeconds(), 30);
+  const hab = g.habitat();
+  g.addHauler((hab.tx + 3.5) * C.tileSize, (hab.ty + 3.5) * C.tileSize);
+  assert.equal(g.nextPrintSeconds(), 45);
+  g.addHauler((hab.tx + 4.5) * C.tileSize, (hab.ty + 3.5) * C.tileSize);
+  assert.equal(g.nextPrintSeconds(), 60);
+  g.addHauler((hab.tx + 5.5) * C.tileSize, (hab.ty + 3.5) * C.tileSize);
+  assert.equal(g.nextPrintSeconds(), 60);
+  g.selectUnits([g.state.units[0].id]);
+  const printer = g.placeBuilding('printer', 16, 21, false);
+  assert.ok(printer);
+  g.completeBuilding(printer.id);
+  hab.regolith = 200;
+  hab.power = 120;
+  const before = g.state.units.filter((u) => u.kind === 'hauler').length;
+  assert.equal(g.startPrint(), true);
+  assert.equal(printer.printNeeded, 60);
+  advance(g, 59);
+  assert.equal(g.state.units.filter((u) => u.kind === 'hauler').length, before);
+  advance(g, 2);
+  assert.equal(g.state.units.filter((u) => u.kind === 'hauler').length, before + 1);
+  console.log('ok  print time escalates 30 / 45 / 60');
 }
 
 console.log('v08 fix-list node tests passed');

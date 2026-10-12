@@ -393,7 +393,7 @@ export function layoutsFor(strategyId, game) {
     const all = listTunnelPlans(game);
     const best = all.filter((p) => p.id !== 'auto' && p.legal !== false);
     const auto = all.find((p) => p.id === 'auto') || { id: 'auto' };
-    return best.length ? [...best.slice(0, 2), auto] : [auto];
+    return best.length ? [...best.slice(0, 4), auto] : [auto];
   }
   const all = listStorageLayouts(game);
   const best = all.find((l) => l.id === 'nearest-ice') || all.find((l) => l.id === 'p2-ring');

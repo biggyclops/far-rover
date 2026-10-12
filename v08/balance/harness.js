@@ -8,7 +8,7 @@ import { layoutsFor, nearestLegalDrop } from './placements.js';
 
 export { STRATEGY_IDS, STRATEGY_META, CONFIG, DEFAULTS, changedFromDefaults };
 
-export const REACTION_DELAYS = [0, 2, 3, 4, 6, 10];
+export const REACTION_DELAYS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 export function formatTime(seconds) {
   if (seconds == null || !Number.isFinite(seconds)) return '—';
@@ -217,7 +217,7 @@ export function summarize(results, overrides = {}) {
 export function sweepReactionDelays(overrides = {}, opts = {}) {
   const delays = opts.delays || REACTION_DELAYS;
   const t2 = runStrategy('tunnel-2-diggers', overrides, { ...opts, delays: [0] });
-  const haulerIds = ['haulers-2', 'haulers-plus-1', 'haulers-plus-2'];
+  const haulerIds = STRATEGY_IDS.filter((id) => STRATEGY_META[id]?.family === 'haulers');
   const haulers = haulerIds.map((id) => runStrategy(id, overrides, { ...opts, delays: [0] }));
   const bestH = haulers.filter((r) => r.won).sort((a, b) => a.winTime - b.winTime)[0] || haulers[0];
   const rows = [];

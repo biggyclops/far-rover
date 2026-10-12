@@ -68,7 +68,9 @@ export const CONFIG = {
   printerHaulerCostRegolith: 25, // Proposed (Game Designer)
   printerHaulerCostRegolithStep: 0, // tried +10; dropped — print-1 already beats two starters at ring 9, and +10 does not put the tunnel in the 20–35% band
   printerHaulerCostPower: 10, // Proposed (Game Designer)
-  printerHaulerSeconds: 30, // Proposed (Game Designer)
+  printerHaulerSeconds: 30, // Proposed (Game Designer) — first printed hauler
+  printerHaulerSecondsSecond: 45, // Proposed (Game Designer) — second printed hauler
+  printerHaulerSecondsAfter: 60, // Proposed (Game Designer) — each printed hauler after the second
 
   showBuildSpriteWhileConstructing: true, // Proposed (Game Designer)
 
@@ -125,7 +127,7 @@ export const CONFIG = {
   tunnelHubMinSeparationTiles: 6, // Proposed (Game Designer) — no 1-tile corridors
   hubIceCapacity: 20, // Proposed (Game Designer) — transit buffer at each hub
   hubRegolithCapacity: 20, // Proposed (Game Designer)
-  digSecondsPerTilePerRover: 15, // Proposed (Game Designer) — r4; aligned 2-digger then holds ~19–23% across reaction delays
+  digSecondsPerTilePerRover: 15, // Proposed (Game Designer) — r5: 2-digger corr-10 is 4:46 (4:45–4:55 band); raising dig shrinks the lead vs print-3
   digPowerPerTile: 3, // Proposed (Game Designer)
   digRegolithYieldPerTile: 2, // Proposed (Game Designer)
   tunnelCargoTilesPerSecond: 4, // Proposed (Game Designer) — hub-to-hub, no rover

@@ -22,6 +22,8 @@ const SWEEP_KEYS = [
   'printerHaulerCostRegolithStep',
   'printerHaulerCostPower',
   'printerHaulerSeconds',
+  'printerHaulerSecondsSecond',
+  'printerHaulerSecondsAfter',
   'haulerUpkeepPowerPerSec',
   'haulerMinePerSecond',
   'digPowerPerTile',
