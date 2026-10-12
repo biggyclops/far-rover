@@ -758,10 +758,10 @@ button.unaffordable:hover { border-color: rgba(255, 255, 255, 0.18); }
 
 #tutorial-card {
   position: fixed;
-  top: 56px;
-  left: 14px;
+  top: 64px;
+  left: 366px;
   z-index: 50;
-  width: min(380px, calc(100vw - 28px));
+  width: min(380px, calc(100vw - 380px));
   padding: 12px 14px 10px;
   background: rgba(8, 8, 10, 0.94);
   border: 1px solid var(--warn);
@@ -780,8 +780,8 @@ button.unaffordable:hover { border-color: rgba(255, 255, 255, 0.18); }
 }
 #tutorial-fail[hidden] { display: none !important; }
 .tutorial-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 92px 92px auto;
   gap: 8px;
   align-items: center;
 }
@@ -794,6 +794,16 @@ button.unaffordable:hover { border-color: rgba(255, 255, 255, 0.18); }
   border: 1px solid var(--warn);
   border-radius: 6px;
   cursor: pointer;
+}
+#tutorial-next,
+#tutorial-show {
+  width: 92px;
+}
+#tutorial-next[hidden],
+#tutorial-show[hidden] {
+  visibility: hidden;
+  display: inline-block !important;
+  pointer-events: none;
 }
 .tutorial-actions button.link {
   background: transparent;
@@ -833,6 +843,28 @@ button.tutorial-glow,
   border-color: var(--warn) !important;
   box-shadow: 0 0 0 0 rgba(63, 216, 255, 0.55);
   animation: scout-pulse 1.2s ease-out infinite;
+}
+body.scout-open .battery-n {
+  width: 88px;
+  min-width: 88px;
+  height: 44px;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+#exp-pose {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+#exp-home-warn {
+  margin: 4px 0 0;
+  color: var(--warn);
+  font-size: 12px;
+}
+#res-haulers {
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
 }
 .rule-slot.tutorial-rule-on {
   outline: 2px solid var(--warn);

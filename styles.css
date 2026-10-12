@@ -358,13 +358,17 @@ button:disabled {
 }
 
 .battery-n {
-  width: 55px;
+  width: 88px;
+  min-width: 88px;
+  height: 44px;
   padding: 8px;
   border-radius: 5px;
   border: 1px solid var(--glass-border);
   background: rgba(15, 12, 10, 0.9);
   color: var(--text-primary);
   text-align: center;
+  font-size: 1.35rem;
+  font-weight: 600;
 }
 
 .rule-controls {

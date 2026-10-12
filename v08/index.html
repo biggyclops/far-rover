@@ -28,6 +28,9 @@
           <img src="../assets/v08/art/icon-power-orange.png" alt="" width="28" height="28">
           <span id="res-power">100 / 200</span>
         </div>
+        <div class="res" data-testid="res-haulers-wrap">
+          <span id="res-haulers">2 haulers</span>
+        </div>
       </div>
       <div class="clock">
         <span id="day-night" class="badge">Day</span>
@@ -71,7 +74,7 @@
         <span id="patches-left">Patches used: 0 · left: 1</span>
         <span id="expedition-log" data-testid="expedition-log"></span>
       </div>
-      <div id="sel-info">Click a hauler · drag a box · right-click an order</div>
+      <div id="sel-info">Click a hauler · drag a box · right-click an order · scroll to zoom</div>
     </footer>
   </div>
   <div id="goal-banner" data-testid="goal-banner">Select haulers, then right-click the ice to start a delivery loop</div>
@@ -112,12 +115,14 @@
   </div>
   <img id="scout-hint-arrow" data-testid="scout-hint-arrow" alt="" hidden src="../assets/v08/art/hint-arrow-0.png" width="64" height="64">
   <div id="ice-tooltip" data-testid="ice-tooltip" hidden></div>
-  <div id="power-alert" data-testid="power-alert" hidden>Power deficit: build solar</div>
+  <div id="power-alert" data-testid="power-alert" hidden>Power deficit: need about 1 more solar or storage</div>
   <aside id="expedition-panel" data-testid="expedition-panel" hidden>
     <div class="exp-head">
       <strong id="exp-status">Scout</strong>
       <button id="exp-view-trace" type="button">View trace</button>
     </div>
+    <p id="exp-pose" data-testid="exp-pose" hidden></p>
+    <p id="exp-home-warn" data-testid="exp-home-warn" hidden>Won't make it home</p>
     <div id="exp-hints" class="scout-hints" data-testid="exp-hints">
       <p>Deep deposits are on the far side of the site (top rows).</p>
       <p>Go to ore costs 3 battery.</p>

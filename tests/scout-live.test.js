@@ -39,6 +39,8 @@ assert.match(sidestep.reason, /Rule 1: crater ahead/);
 const ice = lives.find((l) => l.toast && /Scout: trace ice at [A-L]\d+, continuing/.test(l.toast));
 assert.ok(ice, 'starter must ping trace ice');
 assert.match(ice.toast, /Scout: trace ice at G9, continuing|Scout: trace ice at [A-L]\d+, continuing/);
+assert.equal(ice.fired, 3, 'Notify slot lights on the ping tick');
+assert.match(ice.reason, /standing on ice/);
 
 const last = liveFromTrace(state);
 assert.ok(last.reason, 'liveFromTrace reads the last tick');

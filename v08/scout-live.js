@@ -13,11 +13,21 @@ export function explainLiveTick(sim, tick) {
     return emptyLive();
   }
   const rec = tick || null;
-  const fired = rec?.ruleFired ?? 0;
+  const ping = rec?.actionResult?.ping ? rec.actionResult : null;
+  let fired = rec?.ruleFired ?? 0;
+  if (ping?.slot > 0) fired = ping.slot;
+  else if (ping && notifySlot(sim) > 0) fired = notifySlot(sim);
   const sensors = sensorsFrom(sim, rec);
-  const dimmed = dimmedIndices(sim, rec);
-  const reason = reasonFor(sim, rec);
-  const narr = toastFor(sim, rec);
+  const dimmed = dimmedIndices(sim, rec, fired);
+  const reason = reasonFor(sim, rec, fired);
+  const homeRisk = wontMakeItHome(sim, rec);
+  const narr = toastFor(sim, rec, homeRisk);
+  const poseCol = ping
+    ? (rec?.positionBefore?.col ?? sim.col)
+    : (rec?.positionAfter?.col ?? sim.col);
+  const poseRow = ping
+    ? (rec?.positionBefore?.row ?? sim.row)
+    : (rec?.positionAfter?.row ?? sim.row);
   return {
     fired,
     reason,
@@ -27,11 +37,35 @@ export function explainLiveTick(sim, tick) {
     toastKey: narr?.toastKey || null,
     iceCell: narr?.iceCell || null,
     pose: {
-      col: rec?.positionAfter?.col ?? sim.col,
-      row: rec?.positionAfter?.row ?? sim.row,
-      facing: rec?.facingAfter || sim.facing,
+      col: poseCol,
+      row: poseRow,
+      facing: rec?.facingBefore || rec?.facingAfter || sim.facing,
     },
   };
+}
+
+function notifySlot(sim) {
+  const rules = sim?.rules || [];
+  for (let i = 0; i < rules.length; i++) {
+    if (rules[i]?.action?.type === Sim.ACTIONS.NOTIFY) return i + 1;
+  }
+  return 0;
+}
+
+function tilesFromLander(col, row) {
+  if (col == null || row == null) return 0;
+  if (Sim.isOnLander(col, row)) return 0;
+  return Math.abs(col - 5) + Math.abs((row === 12 ? 12 : row) - 12);
+}
+
+function wontMakeItHome(sim, tick) {
+  if (!sim || sim.charging) return false;
+  const col = tick?.positionAfter?.col ?? sim.col;
+  const row = tick?.positionAfter?.row ?? sim.row;
+  if (col == null || row == null) return false;
+  if (Sim.isOnLander(col, row)) return false;
+  const bat = tick?.battery ?? sim.battery ?? 0;
+  return tilesFromLander(col, row) > bat;
 }
 
 function setHas(set, value) {
@@ -52,7 +86,7 @@ function emptyLive() {
     fired: 0,
     reason: '',
     dimmed: [],
-    sensors: { battery: null, inFront: '—', oreNearby: 'no', facing: '' },
+    sensors: { battery: null, inFront: '—', oreNearby: 'no', facing: '', next: '', charging: '', wontMakeItHome: false },
     toast: null,
     toastKey: null,
     iceCell: null,
@@ -62,13 +96,38 @@ function emptyLive() {
 
 function sensorsFrom(sim, tick) {
   const readings = tick?.readings || sim?.readings || {};
-  const battery = tick?.batteryAtStart ?? readings.battery ?? sim?.battery ?? null;
+  const battery = tick?.battery ?? tick?.batteryAtStart ?? readings.battery ?? sim?.battery ?? null;
+  const facing = tick?.facingAfter || tick?.facingBefore || sim?.facing || '';
+  const next = nextTileLabel(sim, tick, facing);
+  const charging = !!sim?.charging || tick?.ruleFired === -1;
   return {
     battery,
     inFront: frontLabel(sim, tick),
     oreNearby: readings.oreNextTo?.detected ? 'yes' : 'no',
-    facing: tick?.facingBefore || sim?.facing || '',
+    facing,
+    next,
+    charging: charging && battery != null ? `${battery}/20` : '',
+    wontMakeItHome: wontMakeItHome(sim, tick),
   };
+}
+
+function nextTileLabel(sim, tick, facing) {
+  const after = tick?.positionAfter;
+  const before = tick?.positionBefore;
+  if (after && before && (after.col !== before.col || after.row !== before.row)) {
+    return Sim.isOnLander(after.col, after.row) ? 'lander' : Sim.formatCell(after.col, after.row);
+  }
+  const col = after?.col ?? sim?.col;
+  const row = after?.row ?? sim?.row;
+  const dir = facing || sim?.facing;
+  if (col == null || row == null || !dir) return '';
+  const vec = Sim.DIR_VECTORS[dir];
+  if (!vec) return '';
+  const nc = col + vec[0];
+  const nr = row + vec[1];
+  if (Sim.isOnLander(nc, nr) || nr === 12) return 'lander';
+  if (nc < 0 || nc > 11 || nr < 0 || nr > 11) return 'map edge';
+  return Sim.formatCell(nc, nr);
 }
 
 function frontLabel(sim, tick) {
@@ -94,8 +153,8 @@ function frontLabel(sim, tick) {
   return `open ground (${cell})`;
 }
 
-function dimmedIndices(sim, tick) {
-  const fired = tick?.ruleFired;
+function dimmedIndices(sim, tick, firedOverride) {
+  const fired = firedOverride ?? tick?.ruleFired;
   if (!(fired > 0)) return [];
   const readings = tick?.readings || sim?.readings || {};
   const dimmed = [];
@@ -108,11 +167,18 @@ function dimmedIndices(sim, tick) {
   return dimmed;
 }
 
-function reasonFor(sim, tick) {
+function reasonFor(sim, tick, firedOverride) {
   if (!tick) return 'Waiting for the first turn.';
-  const fired = tick.ruleFired;
-  if (fired === -1) {
-    return tick.ruleReason || 'Charging at the lander.';
+  const fired = firedOverride ?? tick.ruleFired;
+  if (fired === -1 || sim?.charging) {
+    const bat = tick.battery ?? tick.batteryAtStart ?? sim?.battery ?? 0;
+    return `Charging (${bat}/20)`;
+  }
+  const ping = tick.actionResult;
+  if (ping?.ping && ping.cell) {
+    return ping.confirmedIce
+      ? `Rule ${fired}: standing on ice at ${ping.cell}, so notifying.`
+      : `Rule ${fired}: standing on ice at ${ping.cell}, so notifying.`;
   }
   if (!fired) {
     return tick.ruleReason || 'No rule was true, so the rover waited.';
@@ -160,7 +226,7 @@ function plainAction(type) {
   return type || 'acting';
 }
 
-function toastFor(sim, tick) {
+function toastFor(sim, tick, homeRisk) {
   if (!tick) return null;
   const ping = tick.actionResult;
   if (ping?.ping && ping.cell && !ping.confirmedIce) {
@@ -187,6 +253,9 @@ function toastFor(sim, tick) {
   if (act === Sim.ACTIONS.SIDESTEP) {
     const cell = tick.readings?.craterInFront?.cell || String(tick.tick);
     return { toast: 'Scout: crater ahead, sidestepping', toastKey: `sidestep:${cell}` };
+  }
+  if (homeRisk) {
+    return { toast: "Won't make it home", toastKey: 'wont-home' };
   }
   return null;
 }

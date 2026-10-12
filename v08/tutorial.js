@@ -20,7 +20,7 @@ const STEP_TEXT = {
   1: "You're commanding a new base at the Moon's south pole. Your goal: land your first new crew member. That takes 180 ice and 50 power in storage.",
   2: 'Drag a box around your two haulers to select them.',
   3: 'Right-click the ice. Your haulers will mine it and carry it home on their own, over and over.',
-  4: 'Time moves slowly up here. Press 4x to speed things up. You can pause any time with Space.',
+  4: 'Time moves slowly up here. Press 4x to speed things up. You can pause any time with Space. Scroll the mouse wheel to zoom.',
   5: 'Your habitat only holds 30 ice. Click Storage, then click near the habitat to place it.',
   6: "New buildings need a hauler to build them. Select a hauler and right-click the frame. It'll go back to hauling when it's done.",
   7: 'Buildings cost regolith (the grey number up top). When you run low, right-click open ground away from your buildings to mine more. Digging tunnels gives you regolith too.',
@@ -31,7 +31,7 @@ const STEP_TEXT = {
   12: "Change 'Battery below 12' to 'Battery below 6' so it goes farther, then Relaunch.",
   13: "Deep Ice found! It's far out on rough ground, where haulers drive at half speed. You can haul it the long way, or dig a tunnel.",
   14: 'Place a Tunnel hub at the edge of your range facing the ice, and a second hub next to the ice. They must line up in a straight row or column.',
-  15: 'Select both haulers, click Dig, then click the two hubs. Two diggers go twice as fast, and every tile gives regolith.',
+  15: 'Select both haulers and click Dig. If the hubs line up, one click on a hub starts the corridor; otherwise click each hub. Two diggers go twice as fast, and every tile gives regolith.',
   16: "When the tunnel's done, send haulers to mine Deep Ice and drop it at the far hub. It reaches home 4x faster than driving.",
   17: "You've got it, commander. Finish the job: 180 ice and 50 power, then Land crew. Tip: build solar before night, and print more haulers when you can afford them.",
 };
@@ -80,6 +80,7 @@ export function bindTutorial(root, ctx) {
   let relaunchFails = 0;
   let rulePulse = 0;
   let glowEls = [];
+  let savedSpeed = 1;
 
   function remember(choice) {
     try { localStorage.setItem(INTRO_KEY, choice); } catch { /* ignore */ }
@@ -128,9 +129,9 @@ export function bindTutorial(root, ctx) {
   function suggestHubs() {
     const ice = game.state.deepIce;
     const presets = [
-      { home: { tx: 22, ty: 9 }, far: { tx: 34, ty: 8 } },
       { home: { tx: 22, ty: 8 }, far: { tx: 34, ty: 8 } },
-      { home: { tx: 21, ty: 9 }, far: { tx: 35, ty: 8 } },
+      { home: { tx: 22, ty: 9 }, far: { tx: 34, ty: 9 } },
+      { home: { tx: 21, ty: 8 }, far: { tx: 35, ty: 8 } },
       { home: { tx: 23, ty: 9 }, far: { tx: 34, ty: 9 } },
     ];
     for (const p of presets) {
@@ -176,7 +177,7 @@ export function bindTutorial(root, ctx) {
     if (n === 2) return selectedHaulers(game).length >= 2;
     if (n === 3) {
       const loops = haulers(game).filter(inHaulLoop);
-      return loops.length >= 2 && delivered;
+      return loops.length >= 1;
     }
     if (n === 4) return game.state.speed >= 4 || nextClicked.has(4);
     if (n === 5) return storages(game).length > 0;
@@ -184,13 +185,20 @@ export function bindTutorial(root, ctx) {
     if (n === 7) return nextClicked.has(7);
     if (n === 8) return !!(scout.isOpen() && root.querySelector('.build-screen'));
     if (n === 9) return nextClicked.has(9);
-    if (n === 10) return !!game.state.expedition.ended;
+    if (n === 10) return !!game.state.expedition.launched && nextClicked.has(10);
     if (n === 11) return nextClicked.has(11);
-    if (n === 12) return !!(game.state.deepIce.unlocked || scout.getSim()?.iceConfirmed);
+    if (n === 12) return !!game.state.deepIce.unlocked;
     if (n === 13) return nextClicked.has(13);
-    if (n === 14) return hubs(game).length >= 2;
+    if (n === 14) return hubs(game).length >= 2 && game.hubsAligned();
     if (n === 15) return !!(game.isDigging() || game.state.tunnel.tiles.some((t) => t.started || t.done || t.progress > 0));
-    if (n === 16) return !!(packetHome || game.state.stats.usedTunnel);
+    if (n === 16) {
+      const ice = game.state.deepIce;
+      const haulingDeep = !!(ice?.unlocked && haulers(game).some((u) => {
+        const src = u.order || u.lastOrder || u.resumeOrder;
+        return src?.type === 'haul' && src.sourceTx === ice.tx && src.sourceTy === ice.ty;
+      }));
+      return !!(haulingDeep || packetHome || game.state.stats.usedTunnel);
+    }
     if (n === 17) return nextClicked.has(17);
     return false;
   }
@@ -223,8 +231,25 @@ export function bindTutorial(root, ctx) {
   function onEnterStep() {
     clearGlow();
     if (mode !== 'tutorial') return;
-    if (PAUSED_STEPS.has(step)) game.state.speed = 0;
-    else if (game.state.speed < 1) game.state.speed = 1;
+    if (PAUSED_STEPS.has(step) && step !== 17) {
+      if (game.state.speed > 0) savedSpeed = game.state.speed;
+      game.state.speed = 0;
+    } else if (game.state.speed === 0) {
+      game.state.speed = savedSpeed || 1;
+    }
+
+    if (step === 5) {
+      game.state.armedOrder = null;
+      game.state.buildGhost = { type: 'storage', tx: C.habitatTileX + 4, ty: C.habitatTileY };
+    } else if (step === 6) {
+      game.state.buildGhost = null;
+    } else if (step === 14) {
+      game.state.armedOrder = null;
+      game.state.buildGhost = { type: 'tunnel-hub', tx: 22, ty: 8 };
+    } else if (step === 15) {
+      game.state.buildGhost = null;
+      game.state.armedOrder = 'dig';
+    }
 
     if (step === 9) {
       scout.openBuild();
@@ -234,8 +259,10 @@ export function bindTutorial(root, ctx) {
       scout.openBuild();
     }
     if (step === 11) {
-      scout.openTrace();
-      queueMicrotask(() => scout.highlightFirstBatteryTick());
+      if (game.state.expedition.ended) {
+        scout.openTrace();
+        queueMicrotask(() => scout.highlightFirstBatteryTick());
+      }
     }
     if (step === 12) {
       scout.openBuild();
@@ -243,9 +270,6 @@ export function bindTutorial(root, ctx) {
     if (step === 13) {
       const ice = game.state.deepIce;
       if (ice?.unlocked) renderer.focusTile(ice.tx, ice.ty);
-    }
-    if (step === 17) {
-      game.state.speed = 1;
     }
   }
 
@@ -290,7 +314,9 @@ export function bindTutorial(root, ctx) {
     if (step === 3) add(tileScreen(C.shallowIceTileX, C.shallowIceTileY), 'on-ice');
     if (step === 5) {
       const spot = suggestStorage();
-      if (spot) add(tileScreen(spot.tx, spot.ty), 'on-spot');
+      if (spot && game.canPlace('storage', spot.tx, spot.ty)) {
+        add(tileScreen(spot.tx, spot.ty), 'on-spot');
+      }
     }
     if (step === 6) {
       const frame = storages(game).find((b) => !b.complete) || storages(game)[0];
@@ -303,8 +329,12 @@ export function bindTutorial(root, ctx) {
     if (step === 14) {
       const plan = suggestHubs();
       if (plan) {
-        add(tileScreen(plan.home.tx, plan.home.ty), 'on-spot');
-        add(tileScreen(plan.far.tx, plan.far.ty), 'on-spot');
+        if (game.canPlace('tunnel-hub', plan.home.tx, plan.home.ty)) {
+          add(tileScreen(plan.home.tx, plan.home.ty), 'on-spot');
+        }
+        if (game.canPlace('tunnel-hub', plan.far.tx, plan.far.ty)) {
+          add(tileScreen(plan.far.tx, plan.far.ty), 'on-spot');
+        }
       }
     }
     if (step === 15) {
@@ -328,16 +358,26 @@ export function bindTutorial(root, ctx) {
     const isText = PAUSED_STEPS.has(step);
     const isAction = ACTION_STEPS.has(step);
     if (nextBtn) {
-      nextBtn.hidden = !(isText || step === 4);
+      const showNext = isText || step === 4 || (step === 10 && game.state.expedition.launched);
+      nextBtn.hidden = !showNext;
       nextBtn.textContent = step === 17 ? 'Close' : 'Next';
     }
-    if (showBtn) showBtn.hidden = !isAction;
+    if (showBtn) {
+      const launched = !!game.state.expedition.launched;
+      const hideAfterLaunch = (step === 10 || step === 12) && launched;
+      showBtn.hidden = !isAction || hideAfterLaunch;
+    }
     const showTry = step === 12 && relaunchFails >= 2 && !stepDone(12);
     if (tryBtn) tryBtn.hidden = !showTry;
     if (failEl) {
-      failEl.hidden = !(step === 12 && relaunchFails > 0 && !stepDone(12));
-      if (!failEl.hidden) {
+      if (step === 12 && relaunchFails > 0 && !stepDone(12)) {
+        failEl.hidden = false;
         failEl.textContent = game.state.expedition.resultLine || scout.explainResult(scout.getSim()) || '';
+      } else if (step === 14 && hubs(game).length >= 2 && !game.hubsAligned()) {
+        failEl.hidden = false;
+        failEl.textContent = "Those hubs don't line up. Put them in the same row or the same column.";
+      } else {
+        failEl.hidden = true;
       }
     }
     applyHighlights();
@@ -448,10 +488,6 @@ export function bindTutorial(root, ctx) {
         game.startDigCorridor();
       }
     } else if (step === 16) {
-      for (const h of hubs(game)) {
-        if (!h.complete) game.completeBuilding(h.id);
-      }
-      if (!game.tunnelReady()) game.markTunnelDone();
       const ice = game.state.deepIce;
       if (ice?.unlocked) {
         const units = haulers(game);

@@ -157,9 +157,14 @@ export function bindHud(root, game, hooks = {}) {
     const ice = $('#res-ice');
     const reg = $('#res-regolith');
     const pwr = $('#res-power');
+    const hau = $('#res-haulers');
     if (ice) ice.textContent = `${fmt(goal.ice)} / ${fmt(goal.iceCap)}`;
     if (reg) reg.textContent = `${fmt(tot.regolith)} / ${fmt(tot.regolithCap)}`;
     if (pwr) pwr.textContent = `${fmt(tot.power)} / ${fmt(tot.powerCap)}`;
+    if (hau) {
+      const n = game.haulerCount();
+      hau.textContent = n === 1 ? '1 hauler' : `${n} haulers`;
+    }
     const tr = $('#res-transit');
     if (tr) tr.textContent = `in transit ${fmt(transit.ice)}`;
     const clk = clockLabel(game);
@@ -193,7 +198,7 @@ export function bindHud(root, game, hooks = {}) {
         const b = game.buildingById(game.state.selectedBuildingId);
         info.textContent = b ? `${b.type}${b.complete ? '' : `  building ${fmt(b.buildTime)}/${b.buildNeeded}s`}` : '';
       } else {
-        info.textContent = 'Click a hauler · drag a box · right-click an order · Tab toggles underground';
+        info.textContent = 'Click a hauler · drag a box · right-click an order · scroll to zoom · Tab toggles underground';
       }
     }
     const shown = sel[0] || (game.state.hoverUnitId ? game.unitById(game.state.hoverUnitId) : null);
@@ -239,9 +244,9 @@ export function bindHud(root, game, hooks = {}) {
     }
     const deficit = $('#power-alert');
     if (deficit) {
-      const on = game.powerDeficit();
-      deficit.hidden = !on;
-      deficit.textContent = 'Power deficit: build solar';
+      const msg = game.powerDeficitMessage();
+      deficit.hidden = !msg;
+      if (msg) deficit.textContent = msg;
     }
     applyCostLabels();
     syncExpeditionPanel();
@@ -369,6 +374,26 @@ export function bindHud(root, game, hooks = {}) {
     }
     const status = $('#exp-status');
     if (status) status.textContent = `Scout: ${statusLabel(exp.scoutStatus)}`;
+    const pose = $('#exp-pose');
+    if (pose) {
+      const paper = exp.paper || {};
+      const bits = [];
+      if (paper.facing) bits.push(`Facing ${paper.facing}`);
+      if (paper.nextCell) bits.push(`next ${paper.nextCell}`);
+      else if (paper.next && paper.next.col != null) {
+        const n = paper.next;
+        bits.push(`next ${n.row === 12 ? 'lander' : `${String.fromCharCode(65 + n.col)}${n.row + 1}`}`);
+      }
+      if (paper.charging && paper.battery != null) bits.push(`Charging (${paper.battery}/20)`);
+      pose.textContent = bits.join(' · ');
+      pose.hidden = !bits.length;
+    }
+    const warn = $('#exp-home-warn');
+    if (warn) {
+      const on = !!(exp.paper?.wontMakeItHome && exp.scoutStatus === 'running');
+      warn.hidden = !on;
+      if (on) warn.textContent = "Won't make it home";
+    }
     const log = $('#exp-log');
     if (log) {
       const lines = (exp.log || []).slice(-10);
@@ -480,5 +505,5 @@ export function bindHud(root, game, hooks = {}) {
     }
   }
 
-  return { sync };
+  return { sync, setBuild, setArmed };
 }
