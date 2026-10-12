@@ -2,6 +2,74 @@
 
 Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
 
+The harness searches hub and storage placements (ring-edge, Player 2's `[30,12]+[29,10]` / `far[35,8] home[28,9] vault[25,6]`, and the shortest legal corridor). Each strategy is scored on its **best** legal layout. A single inner-ring home hub is not enough — that is how the old table missed Player 2's 3:02 2-digger.
+
+```bash
+node v08/balance/run.js                  # current numbers, all strategies
+node v08/balance/run.js --overrides '{"goalIceInStorage":180}'
+node v08/balance/run.js --strategy tunnel-2-diggers --goal-ice-in-storage 180
+node v08/balance/run.js --report         # rewrite this file + chart.png
+```
+
+Overrides mutate the live `CONFIG` object for one run and restore it after. `startHaulers` is hardcoded to 2 inside `bootstrap()`; the harness applies that override after create, so the documented start-count key still sweeps. Deep Ice sits `deepIceTilesFromStartStorage` (22) tiles out. Sol 1 starts with 90 s of daylight (`startDaylightRemainingSec`); first night is at 1:30.
+
+## Harness is 1x only
+
+The live page integrates at `dt = 1/60` (`v08/main.js` `advance`). Player 2 measured the same scripted route at **44.8 s (1x), 45.4 s (4x), and 47.2 s (16x)** — speed changes the result. The harness therefore defaults to a fixed 1x step (`dt = 1/60`) and must not be run at 4x or 16x when the numbers are meant to match a 1x playtest.
+
+## Shipped set (2026-10-12, r3 design calls): ring 9 + dig 16s
+
+Player 2's r3 verification: a 2-digger with hubs/storage on the old ring-14 edge sat ~6 tiles from Deep Ice and won at 3:02 (criterion 5 fail). Design call: shrink `commandRangeRadius` to 10 (tune 9–11), keep Deep Ice at 22, tune dig 16–20, search placements, try +10 rising print cost.
+
+Sweep of radius × dig × print-step, judged on best placement per strategy:
+
+| Radius | Dig | Print step | Pass | 1 (P1<H2) | 2 (T%) | 5 (≥4:00) | Notes |
+|---|---:|---:|:---:|:---:|:---:|:---:|---|
+| 9 | 16 | 0 | **4/5** | yes | 4.2% | yes | Best in-band. Print-2 at nearest pad is the best hauler. |
+| 9 | 16 | 10 | 4/5 | yes | 5.3% | yes | +10 does not put T% in 20–35. Dropped. |
+| 10 | 16–20 | 0/10 | 3/5 | no | 4–13% | yes | Print-1 loses to two starters on the short pad. |
+| 11 | 16 | 0 | 3/5 | no | 18.8% | yes | Closest T% in-band; still short of 20 and c1 fails. |
+
+Shipped knobs: `commandRangeRadius` 9, `digSecondsPerTilePerRover` 16, `printerHaulerCostRegolithStep` 0. Deep Ice stays 22. Nearest legal in-range storage is **12.5 tiles** from Deep Ice (chebyshev 11) at `(25,13)`. Hard floor: ≥10.
+
+5/5 is not reachable inside the approved band once the harness is allowed to sit on the ring. Extra printed bodies win the short remaining walk; the tube's 13-tile bore cannot open a 20% gap without going under 4:00.
+
+### 1x best-placement table (dt = 1/60)
+
+| Strategy | Best layout | Win | Night | Power min | Ice |
+|---|---|---:|:---:|---:|---:|
+| Haulers only (2 start) | nearest-ice | 5:22 | yes | 0 | 180 |
+| Haulers + print 1 | nearest-ice | 5:13 | yes | 0 | 183.8 |
+| Haulers + print 2 | nearest-ice | 5:05 | yes | 0 | 203.9 |
+| Tunnel, 1 digger | corr-13 | 6:46 | yes | 27 | 180 |
+| Tunnel, 2 diggers | corr-13 | 4:52 | yes | 12 | 180 |
+| Mixed (1 hauls, 1 digs) | corr-13 | 7:58 | yes | 0 | 180 |
+
+Best haulers-only: **Haulers + print 2** at 5:05.
+Best tunnel: **Tunnel, 2 diggers** at 4:52 (**4.2% faster**).
+
+Inner / auto layouts stay slow (haulers-2 7:52, print-1 7:28, print-2 9:43) — that is the table that used to hide the ring-edge win.
+
+### Five criteria (best placement)
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Haulers + print 1 beats haulers only | **Pass.** 5:13 vs 5:22. |
+| 2 | Tunnel with 2 diggers is 20–35% faster than the best haulers-only route including prints | **Fail.** 4.2% (4:52 vs print-2 5:05). |
+| 3 | Every winning route crosses at least one night | **Pass.** First night is at 1:30. |
+| 4 | Power drops below 50 on at least one tunnel route | **Pass.** 1-digger `powerMin` 27; 2-digger 12. |
+| 5 | No route wins under 4:00 | **Pass.** Earliest win is 4:52. |
+
+### Rising print cost
+
+Tried `printerHaulerCostRegolithStep` +10. Print-1 still beats two starters at ring 9, but the tunnel lead stays ~5%. Not kept.
+
+---
+
+# Far Rover v0.8 balance report (earlier passes)
+
+Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
+
 ```bash
 node v08/balance/run.js                  # current numbers, all strategies
 node v08/balance/run.js --overrides '{"goalIceInStorage":180}'

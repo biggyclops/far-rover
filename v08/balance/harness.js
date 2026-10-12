@@ -4,6 +4,7 @@ import { createGame } from '../game.js';
 import { CONFIG, applyOverrides, restoreConfig, changedFromDefaults, DEFAULTS, expandOverrides } from './config-override.js';
 import { attachScout } from './scout.js';
 import { createBrain, STRATEGY_IDS, STRATEGY_META, haulersOf } from './strategies.js';
+import { layoutsFor, nearestLegalDrop } from './placements.js';
 
 export { STRATEGY_IDS, STRATEGY_META, CONFIG, DEFAULTS, changedFromDefaults };
 
@@ -42,74 +43,98 @@ export function withOverrides(overrides, fn) {
   }
 }
 
+function betterResult(next, best) {
+  if (!best) return true;
+  if (next.won && !best.won) return true;
+  if (!next.won && best.won) return false;
+  if (next.won && best.won) return next.winTime < best.winTime;
+  return next.ice > best.ice;
+}
+
+function runOnce(strategyId, opts, layout, applied) {
+  const dt = opts.dt ?? 1 / 60;
+  const thinkEvery = opts.thinkEvery ?? 0.5;
+  const maxSeconds = opts.maxSeconds ?? 30 * 60;
+  const game = createGame();
+  syncStartHaulers(game);
+  const scout = attachScout(game);
+  const think = createBrain(strategyId, { layout });
+  let minPower = Infinity;
+  let hitNight = false;
+  let thinkAcc = 0;
+  think(game, scout);
+
+  while (game.state.time < maxSeconds && !game.state.won) {
+    game.update(dt);
+    scout.pump(dt);
+    game.flushEvents();
+    const stored = game.storedForGoal();
+    if (stored.power < minPower) minPower = stored.power;
+    if (!game.isDay()) hitNight = true;
+    thinkAcc += dt;
+    if (thinkAcc >= thinkEvery) {
+      thinkAcc = 0;
+      think(game, scout);
+    }
+  }
+
+  if (game.canLandCrew() && !game.state.won) game.landCrew();
+  const stored = game.storedForGoal();
+  if (stored.power < minPower) minPower = stored.power;
+  if (!game.isDay()) hitNight = true;
+
+  const win = game.state.win;
+  const firstNightAt = game.C.startDaylightRemainingSec ?? game.C.daySecondsAt1x;
+  return {
+    strategy: strategyId,
+    label: STRATEGY_META[strategyId].label,
+    family: STRATEGY_META[strategyId].family,
+    layoutId: layout?.id || 'auto',
+    layout: layout || null,
+    won: !!win,
+    winTime: win ? win.time : null,
+    winTimeLabel: win ? formatTime(win.time) : 'timeout',
+    hitNight: hitNight || (win ? win.time >= firstNightAt : game.state.time >= firstNightAt),
+    powerMin: Number.isFinite(minPower) ? round1(minPower) : null,
+    ice: round1(stored.ice),
+    power: round1(stored.power),
+    iceCap: stored.iceCap,
+    logistics: win?.logistics || (game.state.stats.usedTunnel ? 'tunnel' : 'haulers only'),
+    usedTunnel: !!game.state.stats.usedTunnel,
+    deepIceUnlocked: !!game.state.deepIce.unlocked,
+    time: round1(game.state.time),
+    haulerCount: haulersOf(game).length,
+    orders: haulersOf(game).map((u) => ({
+      order: u.order?.type || null,
+      status: u.status,
+      blocked: u.blockedReason || null,
+      cargo: Math.round((u.cargo?.ice || 0) + (u.cargo?.regolith || 0)),
+      battery: Math.round(u.battery),
+    })),
+    buildings: game.state.buildings.map((b) => `${b.type}${b.complete ? '' : '*'}`),
+    drop: nearestLegalDrop(),
+    overrides: applied,
+  };
+}
+
 export function runStrategy(strategyId, overrides = {}, opts = {}) {
   // Match the live page's 1x integrator (main.js advance uses 1/60).
   // Player 2 measured 44.8 / 45.4 / 47.2 s at 1x / 4x / 16x — do not run this
   // harness at 4x or 16x if you want numbers that match a 1x playtest.
-  const dt = opts.dt ?? 1 / 60;
-  const thinkEvery = opts.thinkEvery ?? 0.5;
-  const maxSeconds = opts.maxSeconds ?? 30 * 60;
-
   return withOverrides(overrides, () => {
-    const game = createGame();
-    syncStartHaulers(game);
-    const scout = attachScout(game);
-    const think = createBrain(strategyId);
     const applied = expandOverrides(overrides);
-
-    let minPower = Infinity;
-    let hitNight = false;
-    let thinkAcc = 0;
-    think(game, scout);
-
-    while (game.state.time < maxSeconds && !game.state.won) {
-      game.update(dt);
-      scout.pump(dt);
-      game.flushEvents();
-      const stored = game.storedForGoal();
-      if (stored.power < minPower) minPower = stored.power;
-      if (!game.isDay()) hitNight = true;
-      thinkAcc += dt;
-      if (thinkAcc >= thinkEvery) {
-        thinkAcc = 0;
-        think(game, scout);
-      }
+    const layouts = opts.layout
+      ? [opts.layout]
+      : (opts.searchPlacements === false ? [{ id: 'auto' }] : layoutsFor(strategyId));
+    let best = null;
+    const tried = [];
+    for (const layout of layouts) {
+      const r = runOnce(strategyId, opts, layout, applied);
+      tried.push({ layoutId: r.layoutId, won: r.won, winTimeLabel: r.winTimeLabel, ice: r.ice });
+      if (betterResult(r, best)) best = r;
     }
-
-    if (game.canLandCrew() && !game.state.won) game.landCrew();
-    const stored = game.storedForGoal();
-    if (stored.power < minPower) minPower = stored.power;
-    if (!game.isDay()) hitNight = true;
-
-    const win = game.state.win;
-    const firstNightAt = game.C.startDaylightRemainingSec ?? game.C.daySecondsAt1x;
-    return {
-      strategy: strategyId,
-      label: STRATEGY_META[strategyId].label,
-      family: STRATEGY_META[strategyId].family,
-      won: !!win,
-      winTime: win ? win.time : null,
-      winTimeLabel: win ? formatTime(win.time) : 'timeout',
-      hitNight: hitNight || (win ? win.time >= firstNightAt : game.state.time >= firstNightAt),
-      powerMin: Number.isFinite(minPower) ? round1(minPower) : null,
-      ice: round1(stored.ice),
-      power: round1(stored.power),
-      iceCap: stored.iceCap,
-      logistics: win?.logistics || (game.state.stats.usedTunnel ? 'tunnel' : 'haulers only'),
-      usedTunnel: !!game.state.stats.usedTunnel,
-      deepIceUnlocked: !!game.state.deepIce.unlocked,
-      time: round1(game.state.time),
-      haulerCount: haulersOf(game).length,
-      orders: haulersOf(game).map((u) => ({
-        order: u.order?.type || null,
-        status: u.status,
-        blocked: u.blockedReason || null,
-        cargo: Math.round((u.cargo?.ice || 0) + (u.cargo?.regolith || 0)),
-        battery: Math.round(u.battery),
-      })),
-      buildings: game.state.buildings.map((b) => `${b.type}${b.complete ? '' : '*'}`),
-      overrides: applied,
-    };
+    if (best) best.triedLayouts = tried;
+    return best;
   });
 }
 

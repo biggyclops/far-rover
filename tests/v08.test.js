@@ -253,7 +253,55 @@ test.describe('Far Rover v0.8 M1', () => {
     await expect(page.locator('#about-btn')).toBeVisible();
     await expect(page.locator('#build-solar small')).toContainText('30 reg');
     await expect(page.locator('#print-hauler small')).toContainText('25 reg');
-    await expect(page.locator('#res-transit')).toContainText('Hubs + transit');
+    await expect(page.locator('#res-transit')).toContainText('in transit');
+  });
+
+  test('HUD ice matches the goal counter and hub ice is in transit', async ({ page }) => {
+    await ready(page);
+    const snap = await page.evaluate(() => {
+      const t = window.__v08Test;
+      t.unlockDeepIce();
+      const deep = t.getState().deepIce;
+      let hub = null;
+      for (let ty = deep.ty - 3; ty <= deep.ty + 1 && !hub; ty++) {
+        for (let tx = deep.tx - 3; tx <= deep.tx + 1 && !hub; tx++) {
+          hub = t.placeBuilding('tunnel-hub', tx, ty);
+        }
+      }
+      if (!hub) return { error: 'no hub' };
+      t.completeBuilding(hub.id);
+      t.depositToBuilding(hub.id, { ice: 12 });
+      t.syncHud();
+      const s = t.getState();
+      return {
+        stored: s.stored.ice,
+        transit: s.transit.ice,
+        totalsIce: s.ice,
+      };
+    });
+    expect(snap.error).toBeUndefined();
+    expect(snap.stored).toBe(20);
+    expect(snap.transit).toBe(12);
+    expect(snap.totalsIce).toBeGreaterThanOrEqual(32);
+    await expect(page.locator('#res-ice')).toContainText('20 / 30');
+    await expect(page.locator('#res-transit')).toContainText('in transit 12');
+  });
+
+  test('power deficit alert stays off through a funded night', async ({ page }) => {
+    await ready(page);
+    await page.evaluate(() => {
+      const t = window.__v08Test;
+      t.setTime(t.config.startDaylightRemainingSec + 2);
+      t.syncHud();
+    });
+    const s = await page.evaluate(() => window.__v08Test.getState());
+    expect(s.isNight).toBe(true);
+    await expect(page.locator('#power-alert')).toBeHidden();
+    await page.evaluate(() => {
+      window.__v08Test.setResources({ power: 0 });
+      window.__v08Test.syncHud();
+    });
+    await expect(page.locator('#power-alert')).toBeVisible();
   });
 
   test('selecting a hauler shows the unit status card', async ({ page }) => {
@@ -646,12 +694,13 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     await expect(page.locator('.build-screen')).toBeVisible();
     await expect(page.locator('.condition-select').nth(0)).toHaveValue('crater_in_front');
     await expect(page.locator('.action-select').nth(0)).toHaveValue('sidestep');
-    await expect(page.locator('.condition-select').nth(1)).toHaveValue('on_ore');
-    await expect(page.locator('.action-select').nth(1)).toHaveValue('notify');
-    await expect(page.locator('.condition-select').nth(2)).toHaveValue('ore_next_to');
-    await expect(page.locator('.action-select').nth(2)).toHaveValue('go_to_ore');
+    await expect(page.locator('.condition-select').nth(1)).toHaveValue('battery_below');
+    await expect(page.locator('.action-select').nth(1)).toHaveValue('return_charge');
+    await expect(page.locator('.condition-select').nth(2)).toHaveValue('on_ore');
+    await expect(page.locator('.action-select').nth(2)).toHaveValue('notify');
     await expect(page.locator('.condition-select').nth(3)).toHaveValue('always');
     await expect(page.locator('.action-select').nth(3)).toHaveValue('explore');
+    await expect(page.locator('#scout-overlay-title')).toHaveText('Scout expedition: trace');
     const notify = page.locator('.action-select').first().locator('option[value="notify"]');
     await expect(notify).toHaveCount(1);
     await expect(page.locator('.condition-select').nth(1).locator('option[value="on_ore"]'))
@@ -844,8 +893,8 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
       };
     });
     expect(before.toastKind).toBe('scout-result');
-    expect(before.line).toMatch(/Returned, trace ice only/);
-    await expect(page.locator('#toast')).toContainText('Returned, trace ice only');
+    expect(before.line).toMatch(/trace only/);
+    await expect(page.locator('#toast')).toContainText('trace only');
     const toastBtns = page.locator('#toast button');
     const toastCount = await toastBtns.count();
     expect(toastCount).toBeGreaterThan(0);
@@ -853,24 +902,25 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
       await toastBtns.nth(i).click();
     }
     await expect(page.locator('#scout-trace')).toBeVisible();
+    await expect(page.locator('#scout-overlay-title')).toHaveText('Scout expedition: trace');
+    await expect(page.locator('#scout-trace h2')).toContainText('trace only');
     await expect(page.locator('#scout-trace .trace-list')).toHaveAttribute('data-expanded', 'true');
+    await expect(page.locator('#relaunch-scout')).toHaveText('Relaunch scout');
     await expect(page.locator('#scout-overlay')).not.toContainText('New Tester');
     await expect(page.locator('#scout-overlay')).not.toContainText('Rerun');
-    const overlayBtns = page.locator('#scout-overlay button');
-    const overlayCount = await overlayBtns.count();
-    for (let i = 0; i < overlayCount; i++) {
-      const btn = overlayBtns.nth(i);
-      if (await btn.isVisible()) await btn.click();
-    }
+    await expect(page.locator('#scout-overlay')).not.toContainText('Success! Mission Complete');
+    await expect(page.locator('#scout-overlay')).not.toContainText('/25 tiles');
+    const paused = await page.evaluate(() => window.__v08Test.getState().speed);
+    expect(paused).toBe(0);
+    await page.click('#scout-back');
     await expect(page.locator('#scout-overlay')).toBeHidden();
     await page.click('#exp-view-trace');
     await expect(page.locator('#scout-trace')).toBeVisible();
-    const again = page.locator('#scout-overlay button');
-    const againCount = await again.count();
-    for (let i = 0; i < againCount; i++) {
-      const btn = again.nth(i);
-      if (await btn.isVisible()) await btn.click();
-    }
+    await page.click('#relaunch-scout');
+    await expect(page.locator('#scout-overlay')).toBeVisible();
+    await expect(page.locator('.build-screen')).toBeVisible();
+    await page.click('#scout-back');
+    await expect(page.locator('#scout-overlay')).toBeHidden();
     const after = await page.evaluate(() => {
       const s = window.__v08Test.getState();
       return {
@@ -1298,10 +1348,10 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     await expect(page.locator('#win-patches')).toContainText('Patches used:');
   });
 
-  async function honestTunnel(page, diggers) {
+  async function honestTunnel(page, diggers, { ringEdge = false } = {}) {
     test.setTimeout(240000);
     await ready(page);
-    const result = await page.evaluate(({ prog, diggers: n }) => {
+    const result = await page.evaluate(({ prog, diggers: n, ringEdge: edge }) => {
       const t = window.__v08Test;
       function haulers() {
         return t.getState().units.filter((u) => u.kind === 'hauler');
@@ -1391,7 +1441,9 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       const candidates = [];
       for (let tx = 0; tx < C.mapWidth - 1; tx++) candidates.push({ tx, ty: farHub.ty });
       for (let ty = 0; ty < C.mapHeight - 1; ty++) candidates.push({ tx: farHub.tx, ty });
-      candidates.sort((a, b) => Math.hypot(a.tx - hab.tx, a.ty - hab.ty) - Math.hypot(b.tx - hab.tx, b.ty - hab.ty));
+      candidates.sort((a, b) => edge
+        ? Math.hypot(a.tx - farHub.tx, a.ty - farHub.ty) - Math.hypot(b.tx - farHub.tx, b.ty - farHub.ty)
+        : Math.hypot(a.tx - hab.tx, a.ty - hab.ty) - Math.hypot(b.tx - hab.tx, b.ty - hab.ty));
       let homeHub = null;
       t.selectUnits(haulers().map((u) => u.id));
       for (const p of candidates) {
@@ -1449,8 +1501,11 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
         tunnelReady: end.tunnel.ready,
         tiles: tiles && tiles.length,
         diggers: n,
+        home: { tx: homeHub.tx, ty: homeHub.ty },
+        far: { tx: farHub.tx, ty: farHub.ty },
+        ringEdge: edge,
       };
-    }, { prog: NOTIFY_PROGRAM, diggers });
+    }, { prog: NOTIFY_PROGRAM, diggers, ringEdge });
     expect(result.error).toBeUndefined();
     expect(result.tunnelReady).toBe(true);
     expect(result.usedTunnel).toBe(true);
@@ -1472,6 +1527,11 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
 
   test('honest 2-digger tunnel route lands the crew', async ({ page }) => {
     await honestTunnel(page, 2);
+  });
+
+  test('honest ring-edge 2-digger tunnel lands the crew', async ({ page }) => {
+    const result = await honestTunnel(page, 2, { ringEdge: true });
+    console.log(`honest ring-edge 2-digger: ${result.win.time.toFixed(1)}s home (${result.home.tx},${result.home.ty}) far (${result.far.tx},${result.far.ty})`);
   });
 
   test('1x and 16x reach the crew goal within 1%', async ({ page }) => {

@@ -11,7 +11,7 @@ export const CONFIG = {
   maxZoom: 2,
   unitClickRadius: 36, // world px; ~36 CSS px at default zoom so a hauler is easy to click
   sourcePixelsPerTile: 128,
-  commandRangeRadius: 14, // Proposed (Game Designer) — command ring; Deep Ice sits ~8 tiles past it
+  commandRangeRadius: 9, // Proposed (Game Designer) — ring 9–11; Deep Ice stays ~22 so the nearest drop is ≥10
   commandRangeCosmetic: false,
 
   // Habitat footprint is 2x2. Anchor is the north-west tile.
@@ -65,6 +65,7 @@ export const CONFIG = {
   printerCostRegolith: 40, // Proposed (Game Designer)
   printerBuildSeconds: 15, // Proposed (Game Designer)
   printerHaulerCostRegolith: 25, // Proposed (Game Designer)
+  printerHaulerCostRegolithStep: 0, // tried +10; dropped — print-1 already beats two starters at ring 9, and +10 does not put the tunnel in the 20–35% band
   printerHaulerCostPower: 10, // Proposed (Game Designer)
   printerHaulerSeconds: 30, // Proposed (Game Designer)
 
@@ -123,7 +124,7 @@ export const CONFIG = {
   tunnelHubMinSeparationTiles: 6, // Proposed (Game Designer) — no 1-tile corridors
   hubIceCapacity: 20, // Proposed (Game Designer) — transit buffer at each hub
   hubRegolithCapacity: 20, // Proposed (Game Designer)
-  digSecondsPerTilePerRover: 20, // Proposed (Game Designer) — rovers stack
+  digSecondsPerTilePerRover: 16, // Proposed (Game Designer) — rovers stack; tuned 16–20 against the 5 criteria
   digPowerPerTile: 3, // Proposed (Game Designer)
   digRegolithYieldPerTile: 2, // Proposed (Game Designer)
   tunnelCargoTilesPerSecond: 4, // Proposed (Game Designer) — hub-to-hub, no rover

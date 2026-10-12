@@ -338,6 +338,21 @@ button:disabled {
   background: #0a0806;
 }
 #scout-overlay[hidden] { display: none !important; }
+#scout-overlay-title {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 31;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  background: rgba(8, 8, 10, 0.86);
+  border: 1px solid rgba(255,255,255,0.12);
+  pointer-events: none;
+}
 #scout-back {
   position: fixed;
   top: 10px;
@@ -395,6 +410,15 @@ button:disabled {
   list-style: none;
   padding: 0;
   margin: 0;
+}
+.scout-trace-card .relaunch-scout {
+  margin-top: 14px;
+  background: rgba(255, 138, 31, 0.16);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 8px 14px;
+  font: inherit;
+  cursor: pointer;
 }
 .scout-trace-card .trace-item {
   display: grid;

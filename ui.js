@@ -3,6 +3,7 @@
 
 import * as Sim from './simulation.js';
 import { runHostedScoutTick } from './v08/hosted-tick.js';
+import { explainScoutResult } from './v08/scout-explain.js';
 import { GameRenderer, MinimapRenderer, loadAssets, hasRealArt, getBackgroundImage, getIcon } from './renderer.js';
 import { shouldUse3D } from './renderer3d.js';
 import { OrbitalRenderer, warmupOrbitalArt } from './orbital.js';
@@ -329,11 +330,13 @@ export function showBuildScreen() {
 }
 
 function applyHostedNotifyPreset() {
+  // Hosted Starter is the printed starter, including its battery rule.
+  // Drill is Notify so a confirm can unlock Deep Ice.
   selectedSensors = [Sim.SENSORS.DISTANCE, Sim.SENSORS.SPECTRAL, Sim.SENSORS.CAMERA];
   rules = [
     { condition: { type: Sim.CONDITIONS.CRATER_IN_FRONT }, action: { type: Sim.ACTIONS.SIDESTEP } },
+    { condition: { type: Sim.CONDITIONS.BATTERY_BELOW, n: 12 }, action: { type: Sim.ACTIONS.RETURN_CHARGE } },
     { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
-    { condition: { type: Sim.CONDITIONS.ORE_NEXT_TO }, action: { type: Sim.ACTIONS.GO_TO_ORE } },
     { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } },
   ];
 }
@@ -1747,7 +1750,7 @@ function showEndScreen() {
   const outcome = gameState.outcome;
   const isSuccess = outcome === Sim.OUTCOMES.SUCCESS_SCAN || outcome === Sim.OUTCOMES.SUCCESS_ORE;
   
-  const outcomeText = {
+  const demoOutcomeText = {
     [Sim.OUTCOMES.SUCCESS_SCAN]: '🎉 Success! Mission Complete (Scan)',
     [Sim.OUTCOMES.SUCCESS_ORE]: '🎉 Success! Mission Complete (Ore)',
     [Sim.OUTCOMES.LOST_CRATER]: '💥 Lost: Crater Collision',
@@ -1757,12 +1760,15 @@ function showEndScreen() {
     [Sim.OUTCOMES.STUCK_LOOP]: '🚫 Stuck: Loop Detected',
     [Sim.OUTCOMES.ABORTED]: '⏹ Run Aborted'
   };
+  const outcomeText = hostedIceLabels
+    ? (explainScoutResult(gameState) || demoOutcomeText[outcome] || outcome)
+    : (demoOutcomeText[outcome] || outcome);
   
   const container = document.getElementById('game-container');
   container.innerHTML = `
     <div class="end-screen ${isSuccess ? 'success' : 'failure'}">
       <div class="end-header glass-panel">
-        <h2>${outcomeText[outcome] || outcome}</h2>
+        <h2>${outcomeText}</h2>
         <p class="end-reason">${displayEndReason()}</p>
       </div>
       
@@ -1771,10 +1777,10 @@ function showEndScreen() {
           <span class="stat-label">Ticks:</span>
           <span class="stat-value">${gameState.tick}</span>
         </div>
-        <div class="stat-item glass-panel">
+        ${hostedIceLabels ? '' : `<div class="stat-item glass-panel">
           <span class="stat-label">Tiles Scanned:</span>
           <span class="stat-value">${gameState.tilesScanned}/25</span>
-        </div>
+        </div>`}
         <div class="stat-item glass-panel">
           <span class="stat-label">Cargo:</span>
           <span class="stat-value">${gameState.cargo} (goal 3)</span>
@@ -1803,7 +1809,7 @@ function showEndScreen() {
       </div>
       
       <div class="end-actions">
-        <button id="rerun-btn" class="primary-btn glow-btn">Rerun</button>
+        <button id="rerun-btn" class="primary-btn glow-btn">${hostedIceLabels ? 'Relaunch scout' : 'Rerun'}</button>
         <button id="view-log-end-btn" class="secondary-btn">View Log</button>
       </div>
     </div>

@@ -150,7 +150,7 @@ export function bindHud(root, game, hooks = {}) {
     if (reg) reg.textContent = `${fmt(tot.regolith)} / ${fmt(tot.regolithCap)}`;
     if (pwr) pwr.textContent = `${fmt(tot.power)} / ${fmt(tot.powerCap)}`;
     const tr = $('#res-transit');
-    if (tr) tr.textContent = `Hubs + transit ${fmt(transit.ice)}`;
+    if (tr) tr.textContent = `in transit ${fmt(transit.ice)}`;
     const clk = clockLabel(game);
     const clock = $('#sol-clock');
     if (clock) clock.textContent = `Sol ${clk.sol}  ${clk.phase}  ${clk.remain}`;
@@ -231,6 +231,7 @@ export function bindHud(root, game, hooks = {}) {
       deficit.hidden = !on;
       deficit.textContent = 'Power deficit: build solar';
     }
+    applyCostLabels();
     syncExpeditionPanel();
     syncDepositHint();
     syncAfford();
