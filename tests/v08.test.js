@@ -1428,6 +1428,46 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     }
   });
 
+  test('night floodlights leave the solar and haulers readable', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await ready(page);
+    await page.evaluate(() => {
+      const t = window.__v08Test;
+      t.setSpeed(0);
+      t.setTime(150);
+      t.setZoom(1);
+    });
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const samples = await page.evaluate(() => {
+      const t = window.__v08Test;
+      const canvas = document.getElementById('board');
+      const rect = canvas.getBoundingClientRect();
+      const ctx = canvas.getContext('2d');
+      const sx = canvas.width / rect.width;
+      const sy = canvas.height / rect.height;
+      function sample(client) {
+        const x = Math.max(0, Math.min(canvas.width - 1, Math.round((client.x - rect.left) * sx)));
+        const y = Math.max(0, Math.min(canvas.height - 1, Math.round((client.y - rect.top) * sy)));
+        const { data } = ctx.getImageData(x, y, 1, 1);
+        return { r: data[0], g: data[1], b: data[2], lum: 0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2] };
+      }
+      const s = t.getState();
+      const solar = s.buildings.find((b) => b.type === 'solar');
+      return {
+        night: s.isNight,
+        zoom: s.zoom,
+        solar: sample(t.buildingClientPos(solar.id)),
+        hauler: sample(t.unitClientPos(s.units[0].id)),
+      };
+    });
+    expect(samples.night).toBe(true);
+    expect(samples.zoom).toBe(1);
+    expect(samples.solar.lum).toBeLessThan(160);
+    expect(samples.hauler.lum).toBeLessThan(190);
+    expect(samples.solar.r).toBeLessThan(200);
+    expect(samples.hauler.r).toBeLessThan(220);
+  });
+
   test('playable ground tiles are not mostly pure black', async ({ page }) => {
     await ready(page);
     const result = await page.evaluate(async () => {
