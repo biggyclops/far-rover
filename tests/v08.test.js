@@ -1125,8 +1125,7 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
 
     const result = await page.evaluate(async () => {
       const ui = await import('../ui.js');
-      const m = window.__farRoverMotion;
-      const speeds = [1, 4, 16];
+        const speeds = [1, 4, 16];
       const traces = [];
 
       function analyze(samples, ticks) {
@@ -1165,25 +1164,32 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
       }
 
       for (const speed of speeds) {
+        window.__v08Test.launchProgram(['distance', 'spectral'], [
+          { condition: { type: 'always' }, action: { type: 'explore' } },
+        ]);
+        await window.__v08Test.openOperate();
+        const motion = window.__farRoverMotion;
         window.__v08Test.resetScoutPump();
-        m.freeze(true);
-        m.startLog();
+        motion.freeze(true);
+        motion.startLog();
         ui.setOperateSpeed(speed);
         const period = 1 / speed;
         const periodMs = 1000 / speed;
         const step = speed >= 16 ? 4 : 10;
-        const t0 = m.now();
+        const t0 = motion.now();
         const samples = [];
         const ticks = [];
         const fired = [];
         for (let i = 0; i < 3; i++) {
           const before = ui.getGameState();
+          const fromCol = before.col;
+          const fromRow = before.row;
           window.__v08Test.pumpScout(period);
           const after = ui.getGameState();
           ticks.push({
             i,
-            fromCol: before.col,
-            fromRow: before.row,
+            fromCol,
+            fromRow,
             toCol: after.col,
             toRow: after.row,
             engineTick: after.tick,
@@ -1191,15 +1197,15 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
           const tickStart = t0 + i * periodMs;
           for (let u = 0; u <= periodMs + 0.01; u += step) {
             const at = Math.min(u, periodMs);
-            m.pump(tickStart + at, step);
-            const p = m.pose();
+            motion.pump(tickStart + at, step);
+            const p = motion.pose();
             samples.push({
               speed, tick: i, u: at, periodMs, col: p.col, row: p.row,
             });
           }
           if (samples[samples.length - 1]?.u < periodMs - 0.01) {
-            m.pump(tickStart + periodMs, step);
-            const p = m.pose();
+            motion.pump(tickStart + periodMs, step);
+            const p = motion.pose();
             samples.push({
               speed, tick: i, u: periodMs, periodMs, col: p.col, row: p.row,
             });
@@ -1212,7 +1218,7 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
           });
         }
         ui.pauseOperate();
-        const log = m.stopLog();
+        const log = motion.stopLog();
         traces.push({
           speed,
           periodMs,
