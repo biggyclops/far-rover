@@ -1428,6 +1428,48 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     }
   });
 
+  test('playable ground tiles are not mostly pure black', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(async () => {
+      const t = window.__v08Test;
+      const game = await t.createDetachedGame();
+      const img = new Image();
+      img.src = new URL('../assets/v08/art/realism/ground-map.png', location.href).href;
+      await img.decode();
+      const tile = t.config.tileSize;
+      const mapW = t.config.mapWidth;
+      const mapH = t.config.mapHeight;
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+      const { data, width } = ctx.getImageData(0, 0, c.width, c.height);
+      const bad = [];
+      for (let ty = 0; ty < mapH; ty++) {
+        for (let tx = 0; tx < mapW; tx++) {
+          const cell = game.tileAt(tx, ty);
+          const obstacle = cell && (cell.type === 'crater-s' || cell.type === 'pit' || cell.craterM);
+          if (obstacle) continue;
+          let black = 0;
+          const n = tile * tile;
+          for (let py = 0; py < tile; py++) {
+            const row = ((ty * tile + py) * width + tx * tile) * 4;
+            for (let px = 0; px < tile; px++) {
+              const i = row + px * 4;
+              if (data[i] <= 8 && data[i + 1] <= 8 && data[i + 2] <= 8) black++;
+            }
+          }
+          const frac = black / n;
+          if (frac > 0.6) bad.push({ tx, ty, frac, type: cell?.type || null });
+        }
+      }
+      return { bad, checked: mapW * mapH };
+    });
+    expect(result.checked).toBe(1600);
+    expect(result.bad, `dark driveable tiles: ${JSON.stringify(result.bad)}`).toEqual([]);
+  });
+
   test('honest hauler route lands the crew', async ({ page }) => {
     test.setTimeout(180000);
     await ready(page);
