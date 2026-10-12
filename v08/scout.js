@@ -1,6 +1,6 @@
 import * as Sim from './engine.js';
 import { CONFIG as C } from './config.js';
-import { runHostedScoutTick } from './hosted-tick.js';
+import { hostedTickAndResume } from './hosted-tick.js';
 import { explainScoutResult, renderTraceItems } from './scout-explain.js';
 import {
   showBuildScreen,
@@ -115,6 +115,11 @@ export function bindScout(root, game, hooks = {}) {
     const reasons = traceRoot.querySelectorAll('.trace-reason');
     items.forEach((t, i) => {
       if (reasons[i]) reasons[i].textContent = t.reason || '';
+      const li = reasons[i]?.closest('.trace-item');
+      if (li && /Battery below|Return and charge/i.test(t.reason || '')) {
+        li.classList.add('trace-battery-fire');
+        li.dataset.rule = 'battery';
+      }
     });
     traceRoot.querySelector('#relaunch-scout')?.addEventListener('click', (ev) => {
       ev.preventDefault();
@@ -256,7 +261,7 @@ export function bindScout(root, game, hooks = {}) {
     scoutAcc += dt;
     while (scoutAcc >= 1 && lastSim && !lastSim.outcome) {
       scoutAcc -= 1;
-      const result = runHostedScoutTick(lastSim);
+      const result = hostedTickAndResume(lastSim);
       handleNotify(result);
       lastSim = getGameState() || lastSim;
       game.updateScoutPaper(paperSnapshot(lastSim, statusFor(lastSim)));
@@ -291,7 +296,7 @@ export function bindScout(root, game, hooks = {}) {
     let last = null;
     for (let i = 0; i < n; i++) {
       if (lastSim.outcome) break;
-      last = runHostedScoutTick(lastSim);
+      last = hostedTickAndResume(lastSim);
       handleNotify(last);
     }
     if (lastSim?.outcome) finishIfNeeded();
@@ -387,6 +392,23 @@ export function bindScout(root, game, hooks = {}) {
     };
   }
 
+  function loadProgram(rules) {
+    setRulesForTest(rules);
+    if (overlay && !overlay.hidden) {
+      showHosted();
+      showBuildScreen();
+      retitleProgramPanel();
+    }
+  }
+
+  function highlightFirstBatteryTick() {
+    const first = traceRoot?.querySelector('.trace-battery-fire');
+    if (!first) return false;
+    first.classList.add('tutorial-trace-on');
+    first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return true;
+  }
+
   return {
     openBuild,
     openOperate,
@@ -403,6 +425,8 @@ export function bindScout(root, game, hooks = {}) {
     pingOreCell,
     applyIncomingPatch,
     handleNotify,
+    loadProgram,
+    highlightFirstBatteryTick,
     getSim: () => lastSim,
     isOpen: () => overlay && !overlay.hidden,
   };

@@ -616,3 +616,144 @@ button.unaffordable:hover { border-color: rgba(255, 255, 255, 0.18); }
 #about-panel h3 { margin-bottom: 8px; font-size: 13px; color: var(--accent); }
 #about-panel p { margin-bottom: 10px; color: var(--muted); }
 #about-close { font: inherit; padding: 4px 10px; }
+
+#tutorial-chooser {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 5, 4, 0.72);
+}
+#tutorial-chooser[hidden] { display: none !important; }
+.chooser-card {
+  width: min(440px, 92vw);
+  padding: 28px 28px 24px;
+  background: rgba(10, 9, 8, 0.96);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  text-align: center;
+}
+.chooser-card h1 {
+  font-size: 22px;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.chooser-card p {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 22px;
+}
+.chooser-card button {
+  display: block;
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 12px 16px;
+  font: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: rgba(255, 138, 31, 0.12);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.chooser-card button small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+#chooser-play {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+#tutorial-card {
+  position: fixed;
+  top: 56px;
+  left: 14px;
+  z-index: 50;
+  width: min(380px, calc(100vw - 28px));
+  padding: 12px 14px 10px;
+  background: rgba(8, 8, 10, 0.94);
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  pointer-events: auto;
+}
+#tutorial-card[hidden] { display: none !important; }
+#tutorial-text { margin-bottom: 10px; }
+#tutorial-fail {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-size: 12px;
+}
+#tutorial-fail[hidden] { display: none !important; }
+.tutorial-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.tutorial-actions button {
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  color: var(--text);
+  background: rgba(63, 216, 255, 0.12);
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.tutorial-actions button.link {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  text-decoration: underline;
+  padding: 5px 4px;
+}
+#tutorial-rings {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+.tutorial-ring {
+  position: absolute;
+  width: 72px;
+  height: 72px;
+  margin-left: -36px;
+  margin-top: -36px;
+  border: 2px solid var(--warn);
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(63, 216, 255, 0.45);
+  animation: scout-pulse 1.2s ease-out infinite;
+}
+.tutorial-ring.on-ice { border-color: var(--accent); }
+.tutorial-ring.on-spot {
+  width: 96px;
+  height: 96px;
+  margin-left: -48px;
+  margin-top: -48px;
+  border-radius: 10px;
+  border-color: #7dff9a;
+}
+button.tutorial-glow,
+.battery-n.tutorial-glow {
+  border-color: var(--warn) !important;
+  box-shadow: 0 0 0 0 rgba(63, 216, 255, 0.55);
+  animation: scout-pulse 1.2s ease-out infinite;
+}
+.rule-slot.tutorial-rule-on {
+  outline: 2px solid var(--warn);
+  outline-offset: 2px;
+  background: rgba(63, 216, 255, 0.1);
+}
+.trace-item.tutorial-trace-on {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: rgba(255, 138, 31, 0.16);
+}
