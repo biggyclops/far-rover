@@ -7,8 +7,13 @@ export const STRATEGY_IDS = [
   'haulers-2',
   'haulers-plus-1',
   'haulers-plus-2',
+  'haulers-plus-3',
+  'haulers-plus-4',
   'tunnel-1-digger',
   'tunnel-2-diggers',
+  'tunnel-3-diggers',
+  'tunnel-4-diggers',
+  'tunnel-plus-haulers',
   'mixed',
 ];
 
@@ -16,8 +21,13 @@ export const STRATEGY_META = {
   'haulers-2': { family: 'haulers', label: 'Haulers only (2 start)', extraHaulers: 0, diggers: 0, tunnel: false },
   'haulers-plus-1': { family: 'haulers', label: 'Haulers + print 1', extraHaulers: 1, diggers: 0, tunnel: false },
   'haulers-plus-2': { family: 'haulers', label: 'Haulers + print 2', extraHaulers: 2, diggers: 0, tunnel: false },
+  'haulers-plus-3': { family: 'haulers', label: 'Haulers + print 3', extraHaulers: 3, diggers: 0, tunnel: false },
+  'haulers-plus-4': { family: 'haulers', label: 'Haulers + print 4', extraHaulers: 4, diggers: 0, tunnel: false },
   'tunnel-1-digger': { family: 'tunnel', label: 'Tunnel, 1 digger', extraHaulers: 0, diggers: 1, tunnel: true },
   'tunnel-2-diggers': { family: 'tunnel', label: 'Tunnel, 2 diggers', extraHaulers: 0, diggers: 2, tunnel: true },
+  'tunnel-3-diggers': { family: 'tunnel', label: 'Tunnel, 3 diggers', extraHaulers: 1, diggers: 3, tunnel: true },
+  'tunnel-4-diggers': { family: 'tunnel', label: 'Tunnel, 4 diggers', extraHaulers: 2, diggers: 4, tunnel: true },
+  'tunnel-plus-haulers': { family: 'tunnel', label: 'Tunnel + surface haulers', extraHaulers: 1, diggers: 2, tunnel: true, surfaceHaul: true },
   mixed: { family: 'mixed', label: 'Mixed (1 hauls, 1 digs)', extraHaulers: 0, diggers: 1, tunnel: true },
 };
 
@@ -372,6 +382,35 @@ function emptyCrew(units) {
   });
 }
 
+function tendPrint(game, mem, units, meta) {
+  if (!meta.extraHaulers) return 'ready';
+  const hab = game.habitat();
+  const p = mem.printer && game.buildingById(mem.printer);
+  if (!p) {
+    ensurePlaced(game, mem, units, 'printer', 'printer', hab.tx - 4, hab.ty);
+    return 'building';
+  }
+  if (!p.complete) {
+    keepBuilding(game, units, p);
+    return 'building';
+  }
+  if (mem.printed < meta.extraHaulers && !p.printing) {
+    const printCost = typeof game.nextPrintCostRegolith === 'function'
+      ? game.nextPrintCostRegolith()
+      : game.C.printerHaulerCostRegolith;
+    if (game.totals().regolith + 1e-6 < printCost) {
+      mineRegolith(game, emptyCrew(units).slice(0, 1));
+      return 'waiting';
+    }
+    if (game.totals().power + 1e-6 >= game.C.printerHaulerCostPower) {
+      if (game.startPrint()) mem.printed += 1;
+    }
+    return 'printing';
+  }
+  if (p.printing || mem.printed < meta.extraHaulers) return 'printing';
+  return 'ready';
+}
+
 function thinkHaulers(game, mem, units, meta) {
   const hab = game.habitat();
   const ice = iceSource(game);
@@ -379,25 +418,10 @@ function thinkHaulers(game, mem, units, meta) {
   const miners = emptyCrew(units);
 
   if (meta.extraHaulers > 0) {
+    const st = tendPrint(game, mem, units, meta);
     const p = mem.printer && game.buildingById(mem.printer);
-    if (!p) {
-      ensurePlaced(game, mem, units, 'printer', 'printer', hab.tx - 4, hab.ty);
-      return;
-    }
-    if (!p.complete) {
-      keepBuilding(game, units, p);
-      return;
-    }
-    if (mem.printed < meta.extraHaulers && !p.printing) {
-      const printCost = typeof game.nextPrintCostRegolith === 'function'
-        ? game.nextPrintCostRegolith()
-        : game.C.printerHaulerCostRegolith;
-      if (game.totals().regolith + 1e-6 < printCost) {
-        mineRegolith(game, miners.slice(0, 1));
-      } else if (game.totals().power + 1e-6 >= game.C.printerHaulerCostPower) {
-        if (game.startPrint()) mem.printed += 1;
-      }
-    }
+    if (!p || !p.complete) return;
+    if (st === 'waiting' && pads < 1) return;
   }
 
   if (mem.layout?.drops) {
@@ -419,6 +443,11 @@ function thinkHaulers(game, mem, units, meta) {
 
 function thinkTunnel(game, mem, units, meta) {
   const crew = buildersOf(units);
+  if (meta.extraHaulers > 0) {
+    tendPrint(game, mem, units, meta);
+    const p = mem.printer && game.buildingById(mem.printer);
+    if (!p || !p.complete) return;
+  }
   if (!game.state.deepIce.unlocked) return;
   if (!mem.layout?.far) mem.layout = resolveTunnelLayout(game, mem.layout);
 
@@ -455,6 +484,10 @@ function thinkTunnel(game, mem, units, meta) {
 
   if (!game.tunnelReady()) {
     tendDig(game, units, meta.diggers);
+    if (meta.surfaceHaul) {
+      const hauling = units.filter((u) => orderType(u) !== 'dig' && orderType(u) !== 'build');
+      tendHaul(game, hauling, iceSource(game));
+    }
     return;
   }
 

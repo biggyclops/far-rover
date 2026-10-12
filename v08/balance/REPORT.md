@@ -2,6 +2,82 @@
 
 Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
 
+## Shipped set (2026-10-12, r5): tunnel delivery + resume-after-build, then print 30/45/60
+
+Harness numbers below were taken **after** both Player 1 bugfixes and the resume-after-build fix, with tests. Root demo still 5/46/45. No renderer / tutorial / UI files touched.
+
+**Bugfixes (before any rebalance):**
+- Haulers score drop-offs by walk time (off-road 0.5×). A finished tunnel is used whenever that walk is strictly faster; existing haul dests retarget. Out-of-range hubs are not auto-picks until the tunnel is ready.
+- Ice sent through the tunnel reaches storage. The in-range home hub overflows into habitat/storage without a vault; the far hub sends all ice, not only `outboundIce`. 20+20 hub buffers no longer sit in transit forever.
+- After any build, a hauler that was hauling resumes the loop (cargo → toDest, else remaining ice). Idle-with-cargo help is unchanged when the unit has no haul history.
+
+**Rebalance (item 1):** print time 30s / 45s / 60s, no hard cap. Dig stays **15 s/tile** because the 2-digger corr-10 is already **4:46** (band 4:45–4:55). Raising dig to 16–20 moved the 2-digger to 4:51–5:12 and shrank the lead. Fresh search: print-3, print-4, 3/4 diggers, tunnel + surface haulers; delays every second 0–10.
+
+### 1x best-placement table (dt = 1/60, delay 0)
+
+| Strategy | Best layout | Win | Night | Power min | Ice |
+|---|---|---:|:---:|---:|---:|
+| Haulers only (2 start) | nearest-ice | 7:26 | yes | 11.9 | 180 |
+| Haulers + print 1 | nearest-ice | 7:17 | yes | 12 | 180 |
+| Haulers + print 2 | nearest-ice | 5:55 | yes | 0 | 180 |
+| Haulers + print 3 | nearest-ice | 5:43 | yes | 0 | 180 |
+| Haulers + print 4 | nearest-ice | 5:43 | yes | 0 | 180 |
+| Tunnel, 1 digger | corr-10 | 6:14 | yes | 27 | 180 |
+| Tunnel, 2 diggers | corr-10 | 4:46 | yes | 18 | 180 |
+| Tunnel, 3 diggers | corr-10 | 5:07 | yes | 0 | 180 |
+| Tunnel, 4 diggers | corr-10 | 5:08 | yes | 0 | 180 |
+| Tunnel + surface haulers | corr-10 | 5:16 | yes | 0 | 180 |
+| Mixed (1 hauls, 1 digs) | corr-10 | 6:53 | yes | 39 | 180 |
+
+Best haulers-only: **Haulers + print 3** at 5:43 (print-4 ties). Best tunnel: **Tunnel, 2 diggers** at 4:46 (**16.4% faster**). 3/4 diggers are slower than 2 because they print first.
+
+### Five criteria (worst case = fastest legal win)
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Haulers + print 1 beats haulers only | **Pass.** 7:17 vs 7:26. |
+| 2 | Tunnel with 2 diggers is 20–35% faster than the best haulers-only route including prints | **FAIL.** 16.4% vs print-3 5:43. vs print-2 5:55 is 19.4%, still short of 20%. |
+| 3 | Every winning route crosses at least one night | **Pass.** First night is at 1:30. |
+| 4 | Power drops below 50 on at least one tunnel route | **Pass.** 2-digger `powerMin` 18. |
+| 5 | No route wins under 4:00 | **Pass.** Earliest legal win is 4:46. |
+
+### Dig sweep (2-digger corr-10, delay 0)
+
+| Dig s/tile | 2-digger | vs print-3 5:43 |
+|---|---:|---:|
+| **15** | **4:46** | 16.4% (in 4:45–4:55 band) |
+| 16 | 4:51 | 15.2% |
+| 17 | 4:57 | 14.0% |
+| 18 | 5:01 | 12.8% |
+| 19 | 5:06 | 11.4% |
+| 20 | 5:12 | 9.6% |
+
+A 20% lead vs print-3 5:43 would need the 2-digger at **4:34**, which is outside the 4:45–4:55 band. Escalation plus dig cannot get there, so no other knobs were changed.
+
+### Tunnel lead across reaction delays 0–10 s
+
+Best 2-digger layout `corr-10` vs print-3 `nearest-ice` (best haulers-only at delay 0):
+
+| Delay | 2-digger | Print-3 | Lead |
+|---|---:|---:|---:|
+| 0 s | 4:46 | 5:43 | 16.4% |
+| 1 s | 4:50 | 5:45 | 15.9% |
+| 2 s | 4:52 | 5:46 | 15.7% |
+| 3 s | 4:55 | 5:52 | 16.2% |
+| 4 s | 4:57 | 5:17 | 6.3% |
+| 5 s | 5:01 | 5:06 | 1.6% |
+| 6 s | 5:06 | 5:48 | 12.1% |
+| 7 s | 5:01 | 5:08 | 2.3% |
+| 8 s | 5:12 | 5:20 | 2.5% |
+| 9 s | 5:06 | 6:00 | 15.0% |
+| 10 s | 5:10 | 5:10 | 0.0% |
+
+Lead never reaches 20%. Print-3 times at delay ≥ 4 jump around because the brain thinks once per delay window; none of those rows recover the band.
+
+### Stop report (Game Designer)
+
+Print escalate 30/45/60 did slow print-4 from Player 2's 4:49 to 5:43, but print-3 still wins haulers-only at 5:43. Walk-time drop scoring (required for "use the finished tunnel when faster") also trimmed print-2 from 6:07 to 5:55. With the 2-digger pinned at 4:46, the lead is 16.4% vs the new best print route. Changing off-road, range, ice, or carry was out of scope once escalation plus dig could not open 20–35%.
+
 ## Shipped set (2026-10-12, r4 + P1 10–14): orthogonal tunnels, dig 15 s, Scout program, UX/resume
 
 Player 1's round 4 report (items 10–14) is on this set. None of those items change numbers, so the harness tables below are the same as the r4 ship. Criteria use the **fastest legal win**. Root demo still 5/46/45.

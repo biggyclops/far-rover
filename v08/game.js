@@ -988,7 +988,7 @@ export function createGame() {
       printer: { reg: C.printerCostRegolith, power: 0, time: C.printerBuildSeconds },
       'tunnel-hub': { reg: C.tunnelHubCostRegolith, power: 0, time: C.tunnelHubBuildSeconds },
       vault: { reg: C.vaultCostRegolith, power: 0, time: C.vaultBuildSeconds },
-      hauler: { reg: nextPrintCostRegolith(), power: C.printerHaulerCostPower, time: C.printerHaulerSeconds },
+      hauler: { reg: nextPrintCostRegolith(), power: C.printerHaulerCostPower, time: nextPrintSeconds() },
     };
     return costs[type] || null;
   }
@@ -1088,27 +1088,88 @@ export function createGame() {
     return room;
   }
 
+  function walkSpeedAt(tx, ty) {
+    let speed = C.haulerSpeedTilesPerSecond || 1;
+    if (!inCommandRange(tx, ty)) {
+      const mult = C.haulerOffRoadSpeedMult;
+      if (Number.isFinite(mult) && mult > 0) speed *= mult;
+    }
+    return Math.max(1e-6, speed);
+  }
+
+  function walkTimeWorld(x0, y0, x1, y1) {
+    const dist = Math.hypot(x1 - x0, y1 - y0);
+    if (dist < 1e-6) return 0;
+    const tiles = dist / C.tileSize;
+    const samples = Math.max(12, Math.ceil(tiles * 8));
+    let time = 0;
+    for (let i = 0; i < samples; i++) {
+      const t = (i + 0.5) / samples;
+      const x = x0 + (x1 - x0) * t;
+      const y = y0 + (y1 - y0) * t;
+      const at = worldToTile(x, y);
+      time += (tiles / samples) / walkSpeedAt(at.tx, at.ty);
+    }
+    return time;
+  }
+
+  function dropTravelTime(tx, ty, dest) {
+    if (!dest) return Infinity;
+    const from = tileCenter(tx, ty);
+    const to = chargeSpot(dest);
+    return walkTimeWorld(from.x, from.y, to.x, to.y);
+  }
+
+  function dropCandidateOk(b) {
+    if (!isValidDropTarget(b)) return false;
+    // Out-of-range hubs only count once the tunnel can actually move ice.
+    if (b.type === 'tunnel-hub' && !tunnelReady() && !buildingInCommandRange(b)) return false;
+    return true;
+  }
+
   function nearestDrop(tx, ty, unit, preferKind) {
     const needIce = !!(unit && unit.cargo.ice > 0.001) || preferKind === 'ice';
     const needReg = !!(unit && unit.cargo.regolith > 0.001) || preferKind === 'regolith';
     const wantIce = needIce || (!needIce && !needReg);
+    const ready = tunnelReady();
     let best = null;
-    let bestD = Infinity;
+    let bestT = Infinity;
+    let bestCheb = Infinity;
     for (const b of state.buildings) {
-      if (!isValidDropTarget(b)) continue;
+      if (!dropCandidateOk(b)) continue;
       const iceOk = buildingRoom(b, 'ice') > 1e-6;
       const regOk = buildingRoom(b, 'regolith') > 1e-6;
       if (needIce && !needReg && !iceOk) continue;
       if (needReg && !needIce && !regOk) continue;
       if (needIce && needReg && !iceOk && !regOk) continue;
       if (!needIce && !needReg && wantIce && !iceOk) continue;
-      const d = chebyshevToBuilding(tx, ty, b);
-      if (d < bestD) {
+      const t = dropTravelTime(tx, ty, b);
+      const cheb = chebyshevToBuilding(tx, ty, b);
+      const score = t + (ready && b.type === 'tunnel-hub' ? -1e-6 : 0);
+      if (score < bestT - 1e-9 || (Math.abs(score - bestT) < 1e-9 && cheb < bestCheb)) {
         best = b;
-        bestD = d;
+        bestT = score;
+        bestCheb = cheb;
       }
     }
     return best;
+  }
+
+  function retargetHaulDest(unit, order, kind) {
+    const from = (order.phase === 'toDest' || order.phase === 'unload')
+      ? worldToTile(unit.x, unit.y)
+      : { tx: order.sourceTx, ty: order.sourceTy };
+    const best = nearestDrop(from.tx, from.ty, unit, kind);
+    if (!best) return;
+    if (best.id === order.destBuildingId) return;
+    const cur = buildingById(order.destBuildingId);
+    if (cur && dropCandidateOk(cur) && (buildingRoom(cur, kind) > 1e-6 || hubPipelineHasRoom(cur))) {
+      const curT = dropTravelTime(from.tx, from.ty, cur);
+      const bestT = dropTravelTime(from.tx, from.ty, best);
+      if (bestT + 0.05 >= curT) return;
+    }
+    order.destBuildingId = best.id;
+    if (order.phase === 'unload') order.phase = 'toDest';
   }
 
   function storageBlockedReason(unit) {
@@ -1276,10 +1337,56 @@ export function createGame() {
     return o;
   }
 
+  function resumeHaulLoop(unit) {
+    if (!unit || unit.kind !== 'hauler') return false;
+    const haul = (unit.resumeOrder?.type === 'haul' && unit.resumeOrder)
+      || (unit.lastOrder?.type === 'haul' && unit.lastOrder)
+      || null;
+    if (cargoAmount(unit) > 0.001) {
+      if (!haul) return false;
+      const kind = unit.cargo.ice > 0.001 ? 'ice' : 'regolith';
+      const at = worldToTile(unit.x, unit.y);
+      const dest = nearestDrop(at.tx, at.ty, unit, kind);
+      if (!dest) return false;
+      unit.order = {
+        type: 'haul',
+        sourceTx: haul.sourceTx,
+        sourceTy: haul.sourceTy,
+        destBuildingId: dest.id,
+        phase: 'toDest',
+      };
+      unit.lastOrder = cloneOrder({ ...unit.order, phase: 'toSource' });
+      unit.resumeOrder = null;
+      unit.blockedReason = null;
+      unit.status = 'haul';
+      return true;
+    }
+    if (haul && canRepeat(haul)) {
+      unit.order = resetOrder(haul);
+      unit.lastOrder = cloneOrder(unit.order);
+      unit.resumeOrder = null;
+      unit.blockedReason = null;
+      unit.status = 'haul';
+      return true;
+    }
+    const next = defaultHaulOrder();
+    if (!next) return false;
+    if (!haul) return false;
+    unit.order = resetOrder(next);
+    unit.lastOrder = cloneOrder(unit.order);
+    unit.resumeOrder = null;
+    unit.blockedReason = null;
+    unit.status = 'haul';
+    return true;
+  }
+
   function finishOrder(unit) {
     const resume = unit.resumeOrder;
     const last = unit.lastOrder;
     unit.order = null;
+    if (resume?.type === 'haul' || last?.type === 'haul') {
+      if (resumeHaulLoop(unit)) return;
+    }
     if (resume && canRepeat(resume)) {
       unit.order = resetOrder(resume);
       if (resume.type !== 'charge') unit.lastOrder = cloneOrder(resume);
@@ -1523,7 +1630,9 @@ export function createGame() {
       insertCharge(unit);
     }
     if (unit.kind === 'hauler' && !unit.order && !unit.blockedReason) {
-      if (unit.lastOrder && canRepeat(unit.lastOrder)) {
+      if (resumeHaulLoop(unit)) {
+        // haul loop restored (cargo drop or remaining ice)
+      } else if (unit.lastOrder && canRepeat(unit.lastOrder)) {
         unit.order = resetOrder(unit.lastOrder);
       } else if (lowBattery(unit) || unit.battery <= 0) {
         insertCharge(unit);
@@ -1690,6 +1799,9 @@ export function createGame() {
       ) {
         dest = nearestDrop(order.sourceTx, order.sourceTy, unit, kind) || dest;
         if (dest) order.destBuildingId = dest.id;
+      } else {
+        retargetHaulDest(unit, order, kind);
+        dest = buildingById(order.destBuildingId) || dest;
       }
       if (!dest) {
         finishOrder(unit);
@@ -1974,7 +2086,9 @@ export function createGame() {
   }
 
   function isScoringHomeHub(hub) {
-    return !!(hub && hub.type === 'tunnel-hub' && vaultsBeside(hub).some((v) => buildingInCommandRange(v)));
+    if (!hub || hub.type !== 'tunnel-hub') return false;
+    if (vaultsBeside(hub).some((v) => buildingInCommandRange(v))) return true;
+    return tunnelReady() && buildingInCommandRange(hub);
   }
 
   function goalIceRoom(skipIds = new Set()) {
@@ -2001,13 +2115,18 @@ export function createGame() {
     return amount - left;
   }
 
-  function iceRoomAtHub(hub) {
+  function iceRoomAtHub(hub, seen = new Set()) {
+    if (!hub || hub.type !== 'tunnel-hub' || seen.has(hub.id)) return 0;
+    seen.add(hub.id);
     let room = Math.max(0, hub.iceCap - hub.ice);
     const vaults = vaultsBeside(hub);
     for (const v of vaults) room += Math.max(0, v.iceCap - v.ice);
     if (isScoringHomeHub(hub)) {
       const skip = new Set([hub.id, ...vaults.map((v) => v.id)]);
       room += goalIceRoom(skip);
+    } else if (tunnelReady()) {
+      const dest = otherHub(hub);
+      if (dest) room += iceRoomAtHub(dest, seen);
     }
     return room;
   }
@@ -2055,7 +2174,12 @@ export function createGame() {
   }
 
   function otherHub(hub) {
-    return completeHubs().find((h) => h.id !== hub.id) || null;
+    const others = completeHubs().filter((h) => h.id !== hub.id);
+    if (!others.length) return null;
+    const scoring = others.find((h) => isScoringHomeHub(h));
+    if (scoring) return scoring;
+    const inRange = others.find((h) => buildingInCommandRange(h));
+    return inRange || others[0];
   }
 
   function hubPipelineHasRoom(hub) {
@@ -2069,20 +2193,23 @@ export function createGame() {
     if (!tunnelReady()) return;
     const dest = otherHub(hub);
     if (!dest) return;
-    if (isScoringHomeHub(hub)) hub.outboundIce = 0;
-    const wantIce = hub.outboundIce || 0;
-    const wantReg = hub.outboundReg || 0;
+    if (isScoringHomeHub(hub)) {
+      hub.outboundIce = 0;
+      return;
+    }
+    const wantIce = Math.max(hub.ice || 0, hub.outboundIce || 0);
+    const wantReg = Math.max(hub.regolith || 0, hub.outboundReg || 0);
     if (wantIce <= 1e-6 && wantReg <= 1e-6) return;
     const iceRoom = iceRoomAtHub(dest);
     const regRoom = Math.max(0, dest.regolithCap - dest.regolith);
-    if (hub.ice < wantIce && !isScoringHomeHub(hub)) pullVaultsTo(hub, wantIce - hub.ice);
+    if (hub.ice < wantIce) pullVaultsTo(hub, wantIce - hub.ice);
     const ice = Math.min(hub.ice, wantIce, iceRoom);
     const reg = Math.min(hub.regolith, wantReg, regRoom);
     if (ice <= 1e-6 && reg <= 1e-6) return;
     hub.ice -= ice;
     hub.regolith -= reg;
-    hub.outboundIce = Math.max(0, wantIce - ice);
-    hub.outboundReg = Math.max(0, wantReg - reg);
+    hub.outboundIce = Math.max(0, hub.ice);
+    hub.outboundReg = Math.max(0, hub.regolith);
     state.tunnel.packets.push({
       ice,
       regolith: reg,
@@ -2108,11 +2235,9 @@ export function createGame() {
     if (p.ice > 0 || p.regolith > 0) state.stats.usedTunnel = true;
     if (p.ice > 0) {
       const vaults = dest.type === 'tunnel-hub' ? vaultsBeside(dest) : [];
-      const counted = [dest, ...vaults].some((b) => (
-        (b.type === 'habitat' || b.type === 'storage' || b.type === 'vault' || b.type === 'tunnel-hub')
-        && buildingInCommandRange(b)
-      ));
-      if (counted && vaults.some((v) => buildingInCommandRange(v))) {
+      const counted = isScoringHomeHub(dest)
+        || vaults.some((v) => buildingInCommandRange(v));
+      if (counted) {
         state.stats.goalIceByTunnel = (state.stats.goalIceByTunnel || 0) + p.ice;
       }
     }
@@ -2433,9 +2558,20 @@ export function createGame() {
     return b;
   }
 
+  function printedHaulerCount() {
+    return Math.max(0, state.units.filter((u) => u.kind === 'hauler').length - (C.startHaulers || 0));
+  }
+
   function nextPrintCostRegolith() {
-    const printed = Math.max(0, state.units.filter((u) => u.kind === 'hauler').length - (C.startHaulers || 0));
+    const printed = printedHaulerCount();
     return (C.printerHaulerCostRegolith || 0) + printed * (C.printerHaulerCostRegolithStep || 0);
+  }
+
+  function nextPrintSeconds() {
+    const n = printedHaulerCount();
+    if (n <= 0) return C.printerHaulerSeconds;
+    if (n === 1) return C.printerHaulerSecondsSecond ?? 45;
+    return C.printerHaulerSecondsAfter ?? 60;
   }
 
   function startPrint() {
@@ -2458,7 +2594,7 @@ export function createGame() {
     spendPower(C.printerHaulerCostPower);
     p.printing = true;
     p.printTime = 0;
-    p.printNeeded = C.printerHaulerSeconds;
+    p.printNeeded = nextPrintSeconds();
     return true;
   }
 
@@ -2693,6 +2829,7 @@ export function createGame() {
     updateScoutPaper,
     powerDeficit,
     isValidDropTarget,
+    nearestDrop,
     canLandCrew,
     landCrew,
     currentSol,
@@ -2709,6 +2846,7 @@ export function createGame() {
     hubPayoffText,
     transitIce,
     nextPrintCostRegolith,
+    nextPrintSeconds,
     powerDrawPerSecond,
     secondsUntilDawn,
     inCommandRange,
