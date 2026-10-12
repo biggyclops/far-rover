@@ -76,6 +76,7 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
       cam.x -= (p.x - panLast.x) / cam.zoom;
       cam.y -= (p.y - panLast.y) / cam.zoom;
       cam.userMoved = true;
+      renderer.clampCamera?.();
       panLast = p;
       return;
     }
@@ -177,6 +178,7 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
     cam.x += before.x - after.x;
     cam.y += before.y - after.y;
     cam.userMoved = true;
+    renderer.clampCamera?.();
   }, { passive: false });
 
   window.addEventListener('keydown', (ev) => {
@@ -212,10 +214,7 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
     if (keys.has('a') || keys.has('arrowleft')) cam.x -= sp;
     if (keys.has('d') || keys.has('arrowright')) cam.x += sp;
     if (cam.x !== beforeX || cam.y !== beforeY) cam.userMoved = true;
-    const maxX = C.mapWidth * C.tileSize - 40;
-    const maxY = C.mapHeight * C.tileSize - 40;
-    cam.x = Math.max(-40, Math.min(maxX, cam.x));
-    cam.y = Math.max(-40, Math.min(maxY, cam.y));
+    renderer.clampCamera?.();
   }
 
   return { pumpPan };

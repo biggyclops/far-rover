@@ -1235,6 +1235,71 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
     }
   });
 
+  test('canvas fills the viewport after the camera snaps to Deep Ice', async ({ page }) => {
+    for (const size of [{ w: 1280, h: 800 }, { w: 1920, h: 1080 }]) {
+      await page.setViewportSize({ width: size.w, height: size.h });
+      await ready(page);
+      await page.evaluate(() => {
+        window.__v08Test.setSpeed(0);
+        window.__v08Test.unlockDeepIce();
+        const d = window.__v08Test.getState().deepIce;
+        window.__v08Test.focusTile(d.tx, d.ty);
+      });
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+      const snap = await page.evaluate(() => {
+        const t = window.__v08Test;
+        const canvas = document.getElementById('board');
+        const app = document.getElementById('app');
+        const top = document.getElementById('hud-top').getBoundingClientRect();
+        const bot = document.getElementById('hud-bottom').getBoundingClientRect();
+        const r = canvas.getBoundingClientRect();
+        const s = t.getState();
+        const vs = t.viewSize();
+        const worldW = t.config.mapWidth * t.config.tileSize;
+        const worldH = t.config.mapHeight * t.config.tileSize;
+        const viewW = vs.w / s.zoom;
+        const viewH = vs.h / s.zoom;
+        const d = s.deepIce;
+        return {
+          canvasW: r.width,
+          canvasH: r.height,
+          appW: app.getBoundingClientRect().width,
+          viewW: window.innerWidth,
+          canvasTop: r.top,
+          canvasBottom: r.bottom,
+          topBottom: top.bottom,
+          botTop: bot.top,
+          camX: s.camX,
+          camY: s.camY,
+          zoom: s.zoom,
+          viewWorldW: viewW,
+          viewWorldH: viewH,
+          worldW,
+          worldH,
+          ice: t.tileScreenPos(d.tx, d.ty),
+          vs,
+        };
+      });
+      expect(snap.canvasW).toBeGreaterThan(size.w - 4);
+      expect(snap.canvasW).toBeLessThanOrEqual(size.w + 2);
+      expect(snap.canvasTop).toBeGreaterThanOrEqual(snap.topBottom - 2);
+      expect(snap.canvasBottom).toBeLessThanOrEqual(snap.botTop + 2);
+      expect(snap.canvasH).toBeGreaterThan(size.h * 0.45);
+      if (snap.viewWorldW <= snap.worldW + 1) {
+        expect(snap.camX).toBeGreaterThanOrEqual(-2);
+        expect(snap.camX + snap.viewWorldW).toBeLessThanOrEqual(snap.worldW + 2);
+      }
+      if (snap.viewWorldH <= snap.worldH + 1) {
+        expect(snap.camY).toBeGreaterThanOrEqual(-2);
+        expect(snap.camY + snap.viewWorldH).toBeLessThanOrEqual(snap.worldH + 2);
+      }
+      expect(snap.ice.x).toBeGreaterThan(-8);
+      expect(snap.ice.x).toBeLessThan(snap.vs.w + 8);
+      expect(snap.ice.y).toBeGreaterThan(-8);
+      expect(snap.ice.y).toBeLessThan(snap.vs.h + 8);
+    }
+  });
+
   test('honest hauler route lands the crew', async ({ page }) => {
     test.setTimeout(180000);
     await ready(page);

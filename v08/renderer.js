@@ -641,6 +641,34 @@ export function createRenderer(canvas, assets, game) {
     };
   }
 
+  // Keep the 40×40 plate covering the canvas. Deep Ice sits on the far
+  // east edge; centering it in the HUD play area without this clamp
+  // looks past the map and leaves a dark strip on the right.
+  function clampCamPos(x, y, zoom) {
+    const { w, h } = viewSize();
+    const z = zoom || game.state.camera.zoom || 1;
+    if (w < 8 || h < 8) return { x, y };
+    const worldW = C.mapWidth * C.tileSize;
+    const worldH = C.mapHeight * C.tileSize;
+    const viewW = w / z;
+    const viewH = h / z;
+    const cx = viewW >= worldW
+      ? (worldW - viewW) / 2
+      : Math.max(0, Math.min(worldW - viewW, x));
+    const cy = viewH >= worldH
+      ? (worldH - viewH) / 2
+      : Math.max(0, Math.min(worldH - viewH, y));
+    return { x: cx, y: cy };
+  }
+
+  function clampCamera() {
+    const cam = game.state.camera;
+    const next = clampCamPos(cam.x, cam.y, cam.zoom);
+    cam.x = next.x;
+    cam.y = next.y;
+    return next;
+  }
+
   function cameraDestForTile(tx, ty) {
     const { w, h } = viewSize();
     const z = game.state.camera.zoom || 1;
@@ -649,10 +677,11 @@ export function createRenderer(canvas, assets, game) {
     const playH = Math.max(160, h - pad.top - pad.bottom);
     const wx = (tx + 0.5) * C.tileSize;
     const wy = (ty + 0.5) * C.tileSize;
-    return {
-      x: wx - (pad.left + playW / 2) / z,
-      y: wy - (pad.top + playH / 2) / z,
-    };
+    return clampCamPos(
+      wx - (pad.left + playW / 2) / z,
+      wy - (pad.top + playH / 2) / z,
+      z,
+    );
   }
 
   function focusTile(tx, ty) {
@@ -709,6 +738,7 @@ export function createRenderer(canvas, assets, game) {
     const cy = (hab.ty + 1) * C.tileSize;
     game.state.camera.x = cx - (w / game.state.camera.zoom) / 2;
     game.state.camera.y = cy - (h / game.state.camera.zoom) / 2;
+    clampCamera();
   }
 
   function drawBackdrop(w, h) {
@@ -728,6 +758,7 @@ export function createRenderer(canvas, assets, game) {
     const { w, h } = resize();
     const now = typeof performance !== 'undefined' ? performance.now() : 0;
     if (now < autoCenterUntil && !game.state.camera.userMoved && !game.state.camPan) centerOnHabitat();
+    clampCamera();
     ctx.clearRect(0, 0, w, h);
     drawBackdrop(w, h);
     const z = game.state.camera.zoom;
@@ -777,6 +808,7 @@ export function createRenderer(canvas, assets, game) {
     screenToWorld,
     viewSize,
     centerOnHabitat,
+    clampCamera,
     tickCamPan,
     focusTile,
     cameraDestForTile,
