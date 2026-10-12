@@ -659,6 +659,7 @@ export function createRenderer(canvas, assets, game) {
     const dest = cameraDestForTile(tx, ty);
     game.state.camera.x = dest.x;
     game.state.camera.y = dest.y;
+    game.state.camera.userMoved = true;
     game.state.camPan = { tx, ty, t: 1.2 };
     return dest;
   }
@@ -726,7 +727,7 @@ export function createRenderer(canvas, assets, game) {
   function draw() {
     const { w, h } = resize();
     const now = typeof performance !== 'undefined' ? performance.now() : 0;
-    if (now < autoCenterUntil && !game.state.camera.userMoved) centerOnHabitat();
+    if (now < autoCenterUntil && !game.state.camera.userMoved && !game.state.camPan) centerOnHabitat();
     ctx.clearRect(0, 0, w, h);
     drawBackdrop(w, h);
     const z = game.state.camera.zoom;
