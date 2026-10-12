@@ -53,6 +53,19 @@ function chebyshevToBuilding(tx, ty, b) {
   return Math.max(dx, dy);
 }
 
+function orthogonalTouchesBuilding(tx, ty, b) {
+  const n = buildingFootprint(b.type);
+  const x0 = b.tx;
+  const x1 = b.tx + n - 1;
+  const y0 = b.ty;
+  const y1 = b.ty + n - 1;
+  const inX = tx >= x0 && tx <= x1;
+  const inY = ty >= y0 && ty <= y1;
+  const adjX = tx === x0 - 1 || tx === x1 + 1;
+  const adjY = ty === y0 - 1 || ty === y1 + 1;
+  return (inX && adjY) || (inY && adjX);
+}
+
 function minChebyshevBetween(type, tx, ty, b) {
   const n = buildingFootprint(type);
   let best = Infinity;
@@ -123,6 +136,7 @@ export function createGame() {
     won: false,
     win: null,
     simAcc: 0,
+    storageTipShown: false,
   };
 
   function id() {
@@ -429,13 +443,17 @@ export function createGame() {
 
   function buildingInCommandRange(b) {
     if (!b) return false;
-    const c = buildingCenterTile(b);
-    return inCommandRange(c.tx, c.ty);
+    return placementInCommandRange(b.type, b.tx, b.ty);
   }
 
   function placementInCommandRange(type, tx, ty) {
-    const c = buildingCenterTile(null, tx, ty, type);
-    return inCommandRange(c.tx, c.ty);
+    const n = buildingFootprint(type);
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        if (!inCommandRange(tx + x, ty + y)) return false;
+      }
+    }
+    return true;
   }
 
   function hubBesideDeepIceAt(tx, ty) {
@@ -481,6 +499,7 @@ export function createGame() {
   }
 
   function transitIce() {
+    if (!tunnelReady()) return { ice: 0, cap: 0 };
     let ice = 0;
     let cap = 0;
     for (const b of state.buildings) {
@@ -1794,17 +1813,54 @@ export function createGame() {
     return null;
   }
 
+  function lineTouchesHubsOrthogonally(tiles) {
+    const pair = hubs();
+    if (pair.length !== 2 || !tiles?.length) return false;
+    return pair.every((h) => tiles.some((t) => orthogonalTouchesBuilding(t.tx, t.ty, h)));
+  }
+
+  function isStraightHubTunnel(tiles) {
+    if (!tiles?.length) return false;
+    const sameRow = tiles.every((t) => t.ty === tiles[0].ty);
+    const sameCol = tiles.every((t) => t.tx === tiles[0].tx);
+    if (!sameRow && !sameCol) return false;
+    return lineTouchesHubsOrthogonally(tiles);
+  }
+
+  function applyDigTiles(tiles) {
+    if (!tiles?.length) return null;
+    const prev = new Map((state.tunnel.tiles || []).map((t) => [`${t.tx},${t.ty}`, t]));
+    const merged = tiles.map((t) => {
+      const old = prev.get(`${t.tx},${t.ty}`);
+      if (!old) return { ...t };
+      return {
+        tx: t.tx,
+        ty: t.ty,
+        kind: t.kind,
+        progress: old.progress,
+        done: old.done,
+        started: old.started,
+        diggers: old.diggers || 0,
+      };
+    });
+    state.tunnel = { tiles: merged, packets: state.tunnel.packets };
+    return merged;
+  }
+
   function startDigLine(tx0, ty0, tx1, ty1) {
     const tiles = axisTiles(tx0, ty0, tx1, ty1);
-    state.tunnel = { tiles, packets: state.tunnel.packets };
-    return tiles;
+    if (!isStraightHubTunnel(tiles)) {
+      toast('Tunnel must be a straight line that touches both hubs');
+      return null;
+    }
+    return applyDigTiles(tiles);
   }
 
   function startDigCorridor() {
     const tiles = corridorBetweenHubs();
     if (!tiles || !tiles.length) return null;
-    state.tunnel = { tiles, packets: state.tunnel.packets };
-    return tiles;
+    if (!isStraightHubTunnel(tiles)) return null;
+    return applyDigTiles(tiles);
   }
 
   function updateDigTiles(dt) {
@@ -1839,7 +1895,7 @@ export function createGame() {
   }
 
   function hubTouchesTunnel(hub) {
-    return state.tunnel.tiles.some((t) => t.done && chebyshevToBuilding(t.tx, t.ty, hub) <= 1);
+    return state.tunnel.tiles.some((t) => t.done && orthogonalTouchesBuilding(t.tx, t.ty, hub));
   }
 
   function tunnelReady() {
@@ -2155,12 +2211,12 @@ export function createGame() {
       }
       if (!state.digPick) {
         const corridor = corridorBetweenHubs();
-        if (corridor && corridor.length) {
+        if (corridor && corridor.length && isStraightHubTunnel(corridor)) {
           if (corridor.every((t) => t.done)) {
             clearArmed();
             return rejectOrder('Tunnel already dug');
           }
-          state.tunnel = { tiles: corridor, packets: state.tunnel.packets };
+          applyDigTiles(corridor);
           const mark = tileCenter(corridor[0].tx, corridor[0].ty);
           assignOrder(units, { type: 'dig' }, mark);
           clearArmed();
@@ -2170,9 +2226,10 @@ export function createGame() {
         state.orderPrompt = 'Now click the other end of the tunnel';
         return true;
       }
-      startDigLine(state.digPick.tx, state.digPick.ty, tx, ty);
-      assignOrder(units, { type: 'dig' }, tileCenter(tx, ty));
+      const line = startDigLine(state.digPick.tx, state.digPick.ty, tx, ty);
       clearArmed();
+      if (!line) return false;
+      assignOrder(units, { type: 'dig' }, tileCenter(tx, ty));
       return true;
     }
 
@@ -2247,6 +2304,14 @@ export function createGame() {
       assignOrder(units, { type: 'build', buildingId: b.id }, tileCenter(b.tx, b.ty));
       return true;
     }
+    const tun = (state.tunnel.tiles || []).find((t) => (
+      (t.tx === tx && t.ty === ty && !t.done)
+      || (t.tx === raw.tx && t.ty === raw.ty && !t.done)
+    ));
+    if (tun) {
+      assignOrder(units, { type: 'dig' }, tileCenter(tun.tx, tun.ty));
+      return true;
+    }
     if (b && (isDropBuilding(b) || isTransitDrop(b) || b.type === 'solar')) {
       return commandDropOrCharge(units, b);
     }
@@ -2295,6 +2360,10 @@ export function createGame() {
     if (assignSelected) {
       const units = selectedUnits();
       if (units.length) assignOrder(units, { type: 'build', buildingId: b.id }, tileCenter(tx, ty));
+    }
+    if (type === 'storage' && state.deepIce.unlocked && !state.storageTipShown) {
+      state.storageTipShown = true;
+      toast('Tip: build storage at the edge of command range, toward the ice.', 8, { kind: 'storage-tip' });
     }
     state.buildGhost = null;
     return b;
@@ -2531,6 +2600,8 @@ export function createGame() {
     cargoAmount,
     startDigLine,
     startDigCorridor,
+    isStraightHubTunnel,
+    orthogonalTouchesBuilding,
     toggleView,
     setView,
     isDigging,

@@ -118,7 +118,9 @@ export function explainScoutResult(sim) {
   }
 
   if (sim.outcome === Sim.OUTCOMES.SUCCESS_SCAN || sim.outcome === Sim.OUTCOMES.SUCCESS_ORE) {
-    return sim.iceConfirmed ? 'Deep Ice confirmed' : 'trace only';
+    return sim.iceConfirmed
+      ? 'Deep Ice confirmed'
+      : 'Returned with trace ice only. The big deposits are farther out (top rows). Try a higher Return threshold or a crater rule so it gets farther.';
   }
 
   return `Returned at ${cell}, turn ${sim.tick}`;

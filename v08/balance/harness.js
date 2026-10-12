@@ -8,6 +8,8 @@ import { layoutsFor, nearestLegalDrop } from './placements.js';
 
 export { STRATEGY_IDS, STRATEGY_META, CONFIG, DEFAULTS, changedFromDefaults };
 
+export const REACTION_DELAYS = [0, 2, 3, 4, 6, 10];
+
 export function formatTime(seconds) {
   if (seconds == null || !Number.isFinite(seconds)) return '—';
   const m = Math.floor(seconds / 60);
@@ -53,7 +55,8 @@ function betterResult(next, best) {
 
 function runOnce(strategyId, opts, layout, applied) {
   const dt = opts.dt ?? 1 / 60;
-  const thinkEvery = opts.thinkEvery ?? 0.5;
+  const delay = opts.reactionDelay ?? 0;
+  const thinkEvery = opts.thinkEvery ?? (delay > 0 ? delay : 0.5);
   const maxSeconds = opts.maxSeconds ?? 30 * 60;
   const game = createGame();
   syncStartHaulers(game);
@@ -91,6 +94,7 @@ function runOnce(strategyId, opts, layout, applied) {
     family: STRATEGY_META[strategyId].family,
     layoutId: layout?.id || 'auto',
     layout: layout || null,
+    reactionDelay: delay,
     won: !!win,
     winTime: win ? win.time : null,
     winTimeLabel: win ? formatTime(win.time) : 'timeout',
@@ -126,12 +130,24 @@ export function runStrategy(strategyId, overrides = {}, opts = {}) {
     const layouts = opts.layout
       ? [opts.layout]
       : (opts.searchPlacements === false ? [{ id: 'auto' }] : layoutsFor(strategyId));
+    // Default delay 0 is the fastest legal win (worst case for criterion 5).
+    // Pass delays: REACTION_DELAYS (or call sweepReactionDelays) for the lead table.
+    const delays = opts.delays
+      || [opts.reactionDelay ?? 0];
     let best = null;
     const tried = [];
     for (const layout of layouts) {
-      const r = runOnce(strategyId, opts, layout, applied);
-      tried.push({ layoutId: r.layoutId, won: r.won, winTimeLabel: r.winTimeLabel, ice: r.ice });
-      if (betterResult(r, best)) best = r;
+      for (const delay of delays) {
+        const r = runOnce(strategyId, { ...opts, reactionDelay: delay }, layout, applied);
+        tried.push({
+          layoutId: r.layoutId,
+          delay,
+          won: r.won,
+          winTimeLabel: r.winTimeLabel,
+          ice: r.ice,
+        });
+        if (betterResult(r, best)) best = r;
+      }
     }
     if (best) best.triedLayouts = tried;
     return best;
@@ -196,6 +212,48 @@ export function summarize(results, overrides = {}) {
       haulersCanWin: !!bestHaulers,
     },
   };
+}
+
+export function sweepReactionDelays(overrides = {}, opts = {}) {
+  const delays = opts.delays || REACTION_DELAYS;
+  const t2 = runStrategy('tunnel-2-diggers', overrides, { ...opts, delays: [0] });
+  const haulerIds = ['haulers-2', 'haulers-plus-1', 'haulers-plus-2'];
+  const haulers = haulerIds.map((id) => runStrategy(id, overrides, { ...opts, delays: [0] }));
+  const bestH = haulers.filter((r) => r.won).sort((a, b) => a.winTime - b.winTime)[0] || haulers[0];
+  const rows = [];
+  for (const delay of delays) {
+    const tunnel = delay === 0
+      ? t2
+      : runStrategy('tunnel-2-diggers', overrides, {
+        ...opts,
+        layout: t2.layout || { id: t2.layoutId },
+        delays: [delay],
+        reactionDelay: delay,
+      });
+    const hauler = delay === 0
+      ? bestH
+      : runStrategy(bestH.strategy, overrides, {
+        ...opts,
+        layout: bestH.layout || { id: bestH.layoutId },
+        delays: [delay],
+        reactionDelay: delay,
+      });
+    const lead = (tunnel?.won && hauler?.won)
+      ? (hauler.winTime - tunnel.winTime) / hauler.winTime
+      : null;
+    rows.push({
+      delay,
+      tunnel: tunnel?.winTime ?? null,
+      tunnelLabel: tunnel?.winTimeLabel ?? 'timeout',
+      tunnelLayout: tunnel?.layoutId,
+      haulers: hauler?.winTime ?? null,
+      haulersLabel: hauler?.winTimeLabel ?? 'timeout',
+      haulersStrategy: hauler?.strategy,
+      haulersLayout: hauler?.layoutId,
+      lead,
+    });
+  }
+  return { tunnelLayout: t2.layoutId, haulersStrategy: bestH?.strategy, haulersLayout: bestH?.layoutId, rows };
 }
 
 export function criteriaScore(summary) {

@@ -77,6 +77,19 @@ export function bindScout(root, game, hooks = {}) {
     resumeBase();
   }
 
+  function setOverlayTitle(text) {
+    const el = overlay?.querySelector('#scout-overlay-title');
+    if (el) el.textContent = text;
+  }
+
+  function retitleProgramPanel() {
+    setOverlayTitle('Scout program');
+    const h2 = hostRoot?.querySelector('.build-header h2');
+    if (h2) h2.replaceChildren(document.createTextNode('Scout program'));
+    const run = hostRoot?.querySelector('.run-indicator');
+    if (run) run.hidden = true;
+  }
+
   function showOverlay() {
     ensureDemoCss();
     if (overlay) overlay.hidden = false;
@@ -111,6 +124,7 @@ export function bindScout(root, game, hooks = {}) {
     // new session ID and can look like a full base reset).
     if (!lastSim && getGameState()) lastSim = getGameState();
     showOverlay();
+    setOverlayTitle('Scout expedition: trace');
     paintTrace(lastSim);
     stopOperateTicking();
     return true;
@@ -128,6 +142,7 @@ export function bindScout(root, game, hooks = {}) {
     showOverlay();
     showHosted();
     showBuildScreen();
+    retitleProgramPanel();
   }
 
   async function openOperate() {
@@ -138,6 +153,7 @@ export function bindScout(root, game, hooks = {}) {
       return openTrace();
     }
     showOverlay();
+    setOverlayTitle('Scout expedition: trace');
     showHosted();
     showOperateView();
     stopOperateTicking();
