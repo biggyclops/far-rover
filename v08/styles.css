@@ -185,10 +185,10 @@ button:disabled {
   left: 12px;
   right: auto;
   top: auto;
-  bottom: 86px;
+  bottom: 132px;
   z-index: 4;
   width: 240px;
-  max-height: min(380px, calc(100vh - 170px));
+  max-height: min(420px, calc(100vh - 220px));
   padding: 8px;
   background: rgba(8, 8, 10, 0.88);
   border: 1px solid rgba(255,255,255,0.12);
@@ -207,9 +207,8 @@ button:disabled {
   flex: 0 0 auto;
 }
 #expedition-panel canvas {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 1;
+  width: 128px;
+  height: 128px;
   display: block;
   background: #101216;
   flex: 0 0 auto;
@@ -218,7 +217,7 @@ button:disabled {
   margin: 6px 0 0;
   padding-left: 16px;
   flex: 1 1 auto;
-  min-height: 88px;
+  min-height: 140px;
   max-height: none;
   overflow-x: hidden;
   overflow-y: auto;
