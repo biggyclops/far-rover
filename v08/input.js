@@ -33,6 +33,13 @@ export function bindInput(canvas, game, renderer, hooks = {}) {
       return;
     }
     if (ev.button === 2) {
+      // Finish an in-progress box select first. A right-click before the
+      // left-button pointerup used to order only the previous selection
+      // (often one nearest hauler), then show both units selected.
+      if (box && game.state.boxSelect) finishSelect(ev);
+      dragging = false;
+      box = false;
+      start = null;
       const w = worldPos(ev);
       game.issueContextual(w.x, w.y);
       hooks.onOrder?.();

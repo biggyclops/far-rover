@@ -1,6 +1,7 @@
 import * as Sim from './engine.js';
 import { CONFIG as C } from './config.js';
 import { runHostedScoutTick } from './hosted-tick.js';
+import { explainScoutResult, renderTraceItems } from './scout-explain.js';
 import {
   showBuildScreen,
   prepareHostedScout,
@@ -35,6 +36,8 @@ function removeDemoCss() {
 export function bindScout(root, game, hooks = {}) {
   const overlay = root.querySelector('#scout-overlay');
   const backBtn = root.querySelector('#scout-back');
+  const traceRoot = root.querySelector('#scout-trace');
+  const hostRoot = root.querySelector('#game-container');
   let ready = false;
   let scoutAcc = 0;
   let lastSim = null;
@@ -55,6 +58,7 @@ export function bindScout(root, game, hooks = {}) {
   function hideOverlay() {
     stopOperateTicking();
     if (overlay) overlay.hidden = true;
+    if (traceRoot) traceRoot.hidden = true;
     document.body.classList.remove('scout-open');
     removeDemoCss();
   }
@@ -65,9 +69,44 @@ export function bindScout(root, game, hooks = {}) {
     document.body.classList.add('scout-open');
   }
 
+  function showHosted() {
+    if (traceRoot) traceRoot.hidden = true;
+    if (hostRoot) hostRoot.hidden = false;
+  }
+
+  function paintTrace(sim) {
+    if (!traceRoot) return;
+    const line = explainScoutResult(sim) || resultLineFor(sim) || game.state.expedition.resultLine || 'Scout';
+    const items = renderTraceItems(sim);
+    const rows = items.length
+      ? items.map((t) => `<li class="trace-item"><span class="trace-tick">Tick ${t.tick}</span><span class="trace-pos">${t.cell}${t.facing ? ` facing ${t.facing}` : ''}</span><span class="trace-battery">Battery: ${t.battery ?? ''}</span><span class="trace-reason">${t.reason}</span></li>`).join('')
+      : '<li class="trace-item">No ticks recorded.</li>';
+    traceRoot.innerHTML = `<div class="scout-trace-card"><h2>${line}</h2><ol class="trace-list" data-expanded="true">${rows}</ol></div>`;
+    traceRoot.hidden = false;
+    if (hostRoot) hostRoot.hidden = true;
+  }
+
+  function openTrace() {
+    // Paper trace only — never the demo end/log screens (those mint a
+    // new session ID and can look like a full base reset).
+    if (!lastSim && getGameState()) lastSim = getGameState();
+    showOverlay();
+    paintTrace(lastSim);
+    stopOperateTicking();
+    return true;
+  }
+
+  async function viewTrace() {
+    if ((lastSim && lastSim.outcome) || game.state.expedition.ended) {
+      return openTrace();
+    }
+    return openOperate();
+  }
+
   async function openBuild() {
     await ensureReady();
     showOverlay();
+    showHosted();
     showBuildScreen();
   }
 
@@ -75,7 +114,11 @@ export function bindScout(root, game, hooks = {}) {
     if (!lastSim && !getGameState()) return false;
     await ensureReady();
     if (!lastSim) lastSim = getGameState();
+    if (lastSim?.outcome || game.state.expedition.ended) {
+      return openTrace();
+    }
     showOverlay();
+    showHosted();
     showOperateView();
     stopOperateTicking();
     updateOperateView();
@@ -135,22 +178,7 @@ export function bindScout(root, game, hooks = {}) {
 
   function resultLineFor(sim) {
     if (!sim?.outcome) return null;
-    const cell = Sim.isOnLander(sim.col, sim.row) ? 'Lander' : Sim.formatCell(sim.col, sim.row);
-    const turn = sim.tick;
-    if (sim.hostedResultLine) return sim.hostedResultLine;
-    if (sim.outcome === Sim.OUTCOMES.LOST_CRATER) {
-      return `Lost at ${cell}, turn ${turn}: drove into a crater`;
-    }
-    if (sim.outcome === Sim.OUTCOMES.LOST_BATTERY) {
-      return `Lost at ${cell}, turn ${turn}: battery empty`;
-    }
-    if (sim.outcome === Sim.OUTCOMES.STUCK_LOOP || sim.outcome === Sim.OUTCOMES.STUCK_CHARGE || sim.outcome === Sim.OUTCOMES.STUCK_NO_MOVE) {
-      return 'Stuck';
-    }
-    if (sim.outcome === Sim.OUTCOMES.SUCCESS_SCAN || sim.outcome === Sim.OUTCOMES.SUCCESS_ORE) {
-      return sim.iceConfirmed ? 'Returned' : 'Returned, trace ice only';
-    }
-    return `Returned at ${cell}, turn ${turn}`;
+    return explainScoutResult(sim);
   }
 
   function statusFor(sim) {
@@ -227,6 +255,27 @@ export function bindScout(root, game, hooks = {}) {
     return last;
   }
 
+  function playTraceOnlyReturn() {
+    if (!lastSim) {
+      lastSim = Sim.createInitialState([Sim.SENSORS.SPECTRAL, Sim.SENSORS.DISTANCE], [
+        { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
+        { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } },
+      ]);
+      setGameStateForTest(lastSim);
+      setSelectedSensorsForTest([Sim.SENSORS.SPECTRAL, Sim.SENSORS.DISTANCE]);
+      setRulesForTest(lastSim.rules);
+      game.markExpeditionLaunched({ hasNotifyRule: true });
+    }
+    pingOreCell('D11');
+    lastSim.iceConfirmed = false;
+    lastSim.goalMet = true;
+    lastSim.col = 5;
+    lastSim.row = 12;
+    lastSim.outcome = Sim.OUTCOMES.SUCCESS_SCAN;
+    finishIfNeeded();
+    return { line: resultLineFor(lastSim), status: statusFor(lastSim) };
+  }
+
   function confirmOnOre() {
     return !!pingOreCell((C.confirmDepositTiles && C.confirmDepositTiles[0]) || 'F2').confirmed;
   }
@@ -270,7 +319,11 @@ export function bindScout(root, game, hooks = {}) {
   return {
     openBuild,
     openOperate,
+    openTrace,
+    viewTrace,
     hideOverlay,
+    playTraceOnlyReturn,
+    explainResult: (sim) => explainScoutResult(sim || lastSim),
     pump,
     launchProgram,
     tickScout,

@@ -94,12 +94,22 @@
       <strong id="exp-status">Scout</strong>
       <button id="exp-view-trace" type="button">View trace</button>
     </div>
+    <div id="exp-hints" class="scout-hints" data-testid="exp-hints">
+      <p>Deep deposits are on the far side of the site (top rows).</p>
+      <p>Go to ore costs 3 battery.</p>
+    </div>
     <canvas id="exp-minimap" width="168" height="168"></canvas>
     <ol id="exp-log"></ol>
   </aside>
   <div id="toast" role="status" aria-live="polite"></div>
+  <div id="deposit-hint" data-testid="deposit-hint" hidden>Long haul? A tunnel moves ice 4x faster than haulers.</div>
   <div id="scout-overlay" hidden>
     <button id="scout-back" type="button">Back to base</button>
+    <div id="scout-hints" class="scout-hints" data-testid="scout-hints">
+      <p>Deep deposits are on the far side of the site (top rows).</p>
+      <p>Go to ore costs 3 battery.</p>
+    </div>
+    <div id="scout-trace" data-testid="scout-trace" hidden></div>
     <div id="game-container"></div>
   </div>
   <div id="win-overlay" hidden data-testid="win-overlay">

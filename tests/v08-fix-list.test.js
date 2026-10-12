@@ -7,6 +7,7 @@ import {
   runHostedScoutTick,
   hostedNotifyMovementEqualsStripped,
 } from '../v08/hosted-tick.js';
+import { explainScoutResult } from '../v08/scout-explain.js';
 import { runStrategy } from '../v08/balance/harness.js';
 
 function advance(game, seconds, step = 1 / 60) {
@@ -390,10 +391,13 @@ function setupHomeTunnel(game) {
   g.queueNotifyPing({ confirmed: false, kind: 'trace-ice', text: 'x' });
   advance(g, 2.1);
   const steps = g.objectiveProgress();
-  assert.equal(steps.buildScout, true);
+  assert.equal(steps.buildScout, false);
   assert.equal(g.state.deepIce.unlocked, false);
   assert.match(g.goalBanner(), /DEEP ice deposit/);
-  console.log('ok  Notify step ticks on the first ping');
+  g.unlockDeepIce();
+  assert.equal(g.objectiveProgress().buildScout, true);
+  assert.match(g.goalBanner(), /Haul Deep Ice home/);
+  console.log('ok  Deep Ice goal ticks only on unlock, not trace ice');
 }
 
 {
@@ -473,6 +477,133 @@ function setupHomeTunnel(game) {
   assert.equal(state.iceConfirmed, true);
   assert.equal(second.tickRecord.actionResult?.confirmedIce, true);
   console.log('ok  Go to ore drills I2 then Notify confirms on a later tick');
+}
+
+function runUntilOutcome(sensors, rules, place) {
+  const state = Sim.createInitialState(sensors, rules);
+  if (place) place(state);
+  let guard = 0;
+  while (!state.outcome && guard++ < 80) {
+    Sim.runTick(state);
+  }
+  return state;
+}
+
+{
+  const state = runUntilOutcome(
+    [Sim.SENSORS.SPECTRAL],
+    [
+      { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.GO_TO_ORE } },
+      { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } },
+    ],
+    (s) => { s.col = 5; s.row = 11; s.facing = Sim.DIRECTIONS.NORTH; },
+  );
+  assert.equal(state.outcome, Sim.OUTCOMES.STUCK_NO_MOVE);
+  const line = explainScoutResult(state);
+  assert.match(line, /^Stuck: Go to ore fired but no ore was next to the rover/);
+  assert.match(line, /rules below it never got a turn/);
+  assert.match(line, /only true near ore|move it lower/);
+  console.log('ok  stuck reason: Go to ore with no adjacent ore');
+}
+
+{
+  const state = runUntilOutcome(
+    [Sim.SENSORS.DISTANCE],
+    [{ condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.WAIT } }],
+    (s) => { s.battery = 0; s.col = 5; s.row = 9; },
+  );
+  assert.equal(state.outcome, Sim.OUTCOMES.LOST_BATTERY);
+  const line = explainScoutResult(state);
+  assert.match(line, /^Lost: battery ran out \d+ tiles? from the lander/);
+  assert.match(line, /higher Return threshold/);
+  console.log('ok  lost reason: battery empty');
+}
+
+{
+  const state = runUntilOutcome(
+    [Sim.SENSORS.DISTANCE],
+    [{ condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } }],
+    (s) => { s.col = 5; s.row = 7; },
+  );
+  assert.equal(state.outcome, Sim.OUTCOMES.LOST_CRATER);
+  const line = explainScoutResult(state);
+  assert.match(line, /^Lost: drove into a crater/);
+  assert.match(line, /Crater in front|Sidestep/);
+  console.log('ok  lost reason: crater');
+}
+
+{
+  const state = Sim.createInitialState(
+    [Sim.SENSORS.DISTANCE],
+    [{ condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.RETURN_CHARGE } }],
+  );
+  state.col = 5;
+  state.row = 12;
+  state.leftLanderSinceCharge = false;
+  state.chargeWithoutLeaving = true;
+  const stuck = Sim.checkStuckConditions(state, false, false, false, {});
+  state.outcome = stuck.outcome;
+  state.endReason = stuck.reason;
+  const line = explainScoutResult(state);
+  assert.equal(state.outcome, Sim.OUTCOMES.STUCK_CHARGE);
+  assert.match(line, /^Stuck: Return and charge fired without leaving the lander/);
+  console.log('ok  stuck reason: charged without leaving');
+}
+
+{
+  const state = {
+    outcome: Sim.OUTCOMES.STUCK_LOOP,
+    col: 2,
+    row: 4,
+    tick: 12,
+    rules: [{ condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.WAIT } }],
+    trace: [{ tick: 12, ruleFired: 1, ruleReason: 'Rule 1: always → Wait: waiting', actionResult: { waited: true } }],
+  };
+  const line = explainScoutResult(state);
+  assert.match(line, /^Stuck: the rover looped/);
+  console.log('ok  stuck reason: loop');
+}
+
+{
+  const state = {
+    outcome: Sim.OUTCOMES.STUCK_NO_MOVE,
+    col: 5,
+    row: 12,
+    tick: 3,
+    rules: [],
+    endReason: 'No rule was true, so the rover never moved.',
+    trace: [{ tick: 3, ruleFired: 0, ruleReason: 'No rule matched: rover did nothing' }],
+  };
+  assert.match(explainScoutResult(state), /^Stuck: no rule was true/);
+  console.log('ok  stuck reason: no rule true');
+}
+
+{
+  const state = {
+    outcome: Sim.OUTCOMES.ABORTED,
+    col: 4,
+    row: 4,
+    tick: 8,
+    rules: [],
+    trace: [],
+  };
+  assert.match(explainScoutResult(state), /ended early/);
+  console.log('ok  aborted reason string');
+}
+
+{
+  const g = createGame();
+  g.unlockDeepIce();
+  const deep = g.state.deepIce;
+  const hx = C.habitatTileX + 1;
+  const hy = C.habitatTileY + 1;
+  const euclid = Math.hypot(deep.tx - hx, deep.ty - hy);
+  assert.ok(Math.abs(euclid - C.deepIceTilesFromStartStorage) < 1.25, `deep ice ${euclid.toFixed(2)} tiles from storage, config ${C.deepIceTilesFromStartStorage}`);
+  assert.equal(g.tunnelSpeedMultiple(), 4);
+  assert.match(g.tunnelPayoffText(), /4x faster than haulers/);
+  assert.match(g.hubPayoffText(), /4x faster than haulers/);
+  assert.match(g.iceHoverText(deep.tx, deep.ty), /4x faster than haulers/);
+  console.log(`ok  Deep Ice at (${deep.tx},${deep.ty}) is ${euclid.toFixed(2)} tiles from storage; tunnel ${g.tunnelSpeedMultiple()}x`);
 }
 
 {

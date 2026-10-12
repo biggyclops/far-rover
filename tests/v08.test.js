@@ -716,6 +716,8 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     await expect(page.locator('#toast')).not.toHaveClass(/show/);
     await expect(page.locator('#goal-banner')).toBeVisible();
     await expect(page.locator('#goal-banner')).toContainText('Haul Deep Ice home:');
+    await expect(page.locator('#deposit-hint')).toContainText(/tunnel moves ice 4x faster than haulers/);
+    await expect(page.locator('#build-hub')).toHaveAttribute('title', /4x faster than haulers/);
     const vis = await page.evaluate(() => {
       const s = window.__v08Test.getState();
       const d = s.deepIce;
@@ -801,6 +803,7 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     });
     const after = await page.evaluate(() => window.__v08Test.getState());
     expect(after.deepIce.unlocked).toBe(false);
+    expect(after.objectives.buildScout).toBe(false);
     expect(after.toast).toMatch(/Trace ice/);
     expect(after.toastKind).toBe('trace-ice');
     expect(after.expedition.log.some((t) => t.includes('Trace ice'))).toBe(true);
@@ -814,6 +817,134 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     await expect(page.locator('#hosted-notify-ping')).toContainText('Trace ice');
     await expect(page.locator('#hosted-notify-ping')).toHaveClass(/trace-ice/);
     await expect(page.locator('.notify-ping-badge')).toContainText('Trace ice');
+  });
+
+  test('toast buttons after a trace-only return do not reset the base', async ({ page }) => {
+    await ready(page);
+    const before = await page.evaluate(() => {
+      const t = window.__v08Test;
+      t.setSpeed(0);
+      const b = t.placeBuilding('storage', 22, 21);
+      t.completeBuilding(b.id);
+      t.setResources({ ice: 24, regolith: 90, power: 110 });
+      t.advance(8, { scout: false });
+      const ret = t.playTraceOnlyReturn();
+      t.syncHud();
+      const s = t.getState();
+      return {
+        time: s.time,
+        ice: s.stored.ice,
+        buildings: s.buildings.map((x) => ({ id: x.id, type: x.type })),
+        line: ret.line,
+        toast: s.toast,
+        toastKind: s.toastKind,
+        url: location.href,
+      };
+    });
+    expect(before.toastKind).toBe('scout-result');
+    expect(before.line).toMatch(/Returned, trace ice only/);
+    await expect(page.locator('#toast')).toContainText('Returned, trace ice only');
+    const toastBtns = page.locator('#toast button');
+    const toastCount = await toastBtns.count();
+    expect(toastCount).toBeGreaterThan(0);
+    for (let i = 0; i < toastCount; i++) {
+      await toastBtns.nth(i).click();
+    }
+    await expect(page.locator('#scout-trace')).toBeVisible();
+    await expect(page.locator('#scout-trace .trace-list')).toHaveAttribute('data-expanded', 'true');
+    await expect(page.locator('#scout-overlay')).not.toContainText('New Tester');
+    await expect(page.locator('#scout-overlay')).not.toContainText('Rerun');
+    const overlayBtns = page.locator('#scout-overlay button');
+    const overlayCount = await overlayBtns.count();
+    for (let i = 0; i < overlayCount; i++) {
+      const btn = overlayBtns.nth(i);
+      if (await btn.isVisible()) await btn.click();
+    }
+    await expect(page.locator('#scout-overlay')).toBeHidden();
+    await page.click('#exp-view-trace');
+    await expect(page.locator('#scout-trace')).toBeVisible();
+    const again = page.locator('#scout-overlay button');
+    const againCount = await again.count();
+    for (let i = 0; i < againCount; i++) {
+      const btn = again.nth(i);
+      if (await btn.isVisible()) await btn.click();
+    }
+    const after = await page.evaluate(() => {
+      const s = window.__v08Test.getState();
+      return {
+        time: s.time,
+        ice: s.stored.ice,
+        buildings: s.buildings.map((x) => ({ id: x.id, type: x.type })),
+        url: location.href,
+      };
+    });
+    expect(after.url).toBe(before.url);
+    expect(after.buildings.some((b) => b.type === 'storage')).toBe(true);
+    expect(after.ice).toBe(before.ice);
+    expect(after.time).toBeGreaterThanOrEqual(before.time);
+  });
+
+  test('first right-click after a box select orders every hauler', async ({ page }) => {
+    await ready(page);
+    await page.evaluate(() => window.__v08Test.setSpeed(0));
+    const box = await page.evaluate(() => {
+      const s = window.__v08Test.getState();
+      const a = window.__v08Test.unitClientPos(s.units[0].id);
+      const b = window.__v08Test.unitClientPos(s.units[1].id);
+      return {
+        x0: Math.min(a.x, b.x) - 36,
+        y0: Math.min(a.y, b.y) - 36,
+        x1: Math.max(a.x, b.x) + 36,
+        y1: Math.max(a.y, b.y) + 36,
+      };
+    });
+    await page.mouse.move(box.x0, box.y0);
+    await page.mouse.down();
+    await page.mouse.move(box.x1, box.y1, { steps: 8 });
+    const ice = await page.evaluate(() => {
+      const C = window.__v08Test.config;
+      return window.__v08Test.tileClientPos(C.shallowIceTileX, C.shallowIceTileY);
+    });
+    await page.mouse.click(ice.x, ice.y, { button: 'right' });
+    await page.mouse.up();
+    const s = await page.evaluate(() => window.__v08Test.getState());
+    const hauling = s.units.filter((u) => u.kind === 'hauler' && u.order === 'haul');
+    expect(s.selectedIds.length).toBe(2);
+    expect(hauling.length).toBe(2);
+  });
+
+  test('stuck scout toast spells out the Go to ore miss', async ({ page }) => {
+    await ready(page);
+    const snap = await page.evaluate(() => {
+      const t = window.__v08Test;
+      t.launchProgram(['spectral'], [
+        { condition: { type: 'always' }, action: { type: 'go_to_ore' } },
+        { condition: { type: 'always' }, action: { type: 'explore' } },
+      ]);
+      for (let i = 0; i < 8; i++) t.tickScout(1);
+      t.syncHud();
+      return t.getState();
+    });
+    expect(snap.toastKind).toBe('scout-result');
+    expect(snap.toast).toMatch(/Stuck: Go to ore fired but no ore was next to the rover/);
+    await expect(page.locator('#toast')).toContainText('Stuck: Go to ore fired but no ore');
+    await page.click('#toast button');
+    await expect(page.locator('#scout-trace')).toBeVisible();
+    await expect(page.locator('#scout-trace h2')).toContainText('Stuck: Go to ore fired but no ore');
+    await expect(page.locator('#scout-trace .trace-list')).toHaveAttribute('data-expanded', 'true');
+    const ticks = await page.locator('#scout-trace .trace-item').count();
+    expect(ticks).toBeGreaterThan(1);
+  });
+
+  test('scout panel shows the moved editor hints', async ({ page }) => {
+    await ready(page);
+    await page.click('#btn-build-scout');
+    await expect(page.locator('#scout-overlay')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('#scout-hints')).toContainText('Deep deposits are on the far side of the site (top rows).');
+    await expect(page.locator('#scout-hints')).toContainText('Go to ore costs 3 battery.');
+    await expect(page.locator('.reference-col li').filter({ hasText: /Go to ore/ }))
+      .not.toContainText('costs 3');
+    await page.click('#scout-back');
   });
 
   test('Notify on F2 unlocks Deep Ice and shows Ice deposit confirmed', async ({ page }) => {

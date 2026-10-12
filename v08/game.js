@@ -2398,13 +2398,29 @@ export function createGame() {
 
   bootstrap();
 
+  function tunnelSpeedMultiple() {
+    const walk = C.haulerSpeedTilesPerSecond || 1;
+    const cargo = C.tunnelCargoTilesPerSecond || walk;
+    return Math.round((cargo / walk) * 10) / 10;
+  }
+
+  function tunnelPayoffText() {
+    return `Long haul? A tunnel moves ice ${tunnelSpeedMultiple()}x faster than haulers.`;
+  }
+
+  function hubPayoffText() {
+    return `A tunnel moves ice ${tunnelSpeedMultiple()}x faster than haulers.`;
+  }
+
   function iceHoverText(tx, ty) {
     const t = tileAt(tx, ty);
     if (!t) return '';
+    const b = buildingAtTile(tx, ty);
+    if (b && b.type === 'tunnel-hub') return hubPayoffText();
     const deep = state.deepIce.unlocked && state.deepIce.tx === tx && state.deepIce.ty === ty;
     if (t.type === TILE.ICE) {
       return deep
-        ? 'Deep Ice — right-click to start a delivery loop'
+        ? `Deep Ice — right-click to start a delivery loop. ${tunnelPayoffText()}`
         : 'Shallow ice — right-click to start a delivery loop';
     }
     if (t.type === TILE.ICE_MINED) return deep ? 'Deep Ice depleted' : 'Shallow ice depleted';
@@ -2439,7 +2455,6 @@ export function createGame() {
     const minedShallow = !shallow
       || shallow.type === TILE.ICE_MINED
       || (shallow.iceRemaining + 1e-6) < C.shallowIceAmount;
-      const notifyReady = state.stats.notifies > 0 || state.deepIce.unlocked;
     const deep = state.deepIce;
     const deepTile = deep.unlocked ? tileAt(deep.tx, deep.ty) : null;
     const hauledDeep = !!(deep.unlocked && deepTile && (
@@ -2447,7 +2462,7 @@ export function createGame() {
     ));
     return {
       mineShallow: minedShallow,
-      buildScout: notifyReady,
+      buildScout: !!deep.unlocked,
       haulDeep: hauledDeep,
       landCrew: !!(state.won || canLandCrew()),
     };
@@ -2516,6 +2531,9 @@ export function createGame() {
     showScoutHint,
     iceHintText,
     objectiveProgress,
+    tunnelSpeedMultiple,
+    tunnelPayoffText,
+    hubPayoffText,
     transitIce,
     inCommandRange,
     buildingInCommandRange,

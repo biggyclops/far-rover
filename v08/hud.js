@@ -126,7 +126,7 @@ export function bindHud(root, game, hooks = {}) {
       if (!el) continue;
       const reason = game.affordReason(type);
       el.classList.toggle('unaffordable', !!reason);
-      el.title = reason || '';
+      el.title = reason || (type === 'tunnel-hub' ? game.hubPayoffText() : '');
       el.disabled = type === 'hauler' && reason === 'Need an idle printer';
     }
   }
@@ -199,7 +199,11 @@ export function bindHud(root, game, hooks = {}) {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.textContent = 'View trace';
-          btn.addEventListener('click', () => hooks.onViewTrace?.());
+          btn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            hooks.onViewTrace?.();
+          });
           toast.append(btn);
         }
       }
@@ -220,6 +224,7 @@ export function bindHud(root, game, hooks = {}) {
       deficit.textContent = 'Power deficit: build solar';
     }
     syncExpeditionPanel();
+    syncDepositHint();
     syncAfford();
     const exp = game.state.expedition;
     const buildScout = $('#btn-build-scout');
@@ -345,7 +350,38 @@ export function bindHud(root, game, hooks = {}) {
         log.append(li);
       }
     }
+    const hints = $('#exp-hints');
+    if (hints) {
+      hints.hidden = false;
+      hints.innerHTML = '<p>Deep deposits are on the far side of the site (top rows).</p><p>Go to ore costs 3 battery.</p>';
+    }
     drawExpeditionMini(exp.paper);
+  }
+
+  function syncDepositHint() {
+    const hint = $('#deposit-hint');
+    if (!hint) return;
+    const deep = game.state.deepIce;
+    if (!deep?.unlocked || game.state.won) {
+      hint.hidden = true;
+      return;
+    }
+    hint.textContent = game.tunnelPayoffText();
+    const pos = hooks.tileScreenPos?.(deep.tx, deep.ty);
+    const canvas = root.querySelector('#board');
+    const rect = canvas?.getBoundingClientRect();
+    if (!pos || !rect) {
+      hint.hidden = false;
+      return;
+    }
+    const x = rect.left + pos.x;
+    const y = rect.top + pos.y;
+    const onScreen = pos.x > 8 && pos.y > 8 && pos.x < rect.width - 8 && pos.y < rect.height - 8;
+    hint.hidden = !onScreen;
+    if (onScreen) {
+      hint.style.left = `${Math.round(x + 18)}px`;
+      hint.style.top = `${Math.round(y - 10)}px`;
+    }
   }
 
   function drawExpeditionMini(paper) {
