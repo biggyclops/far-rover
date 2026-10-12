@@ -292,6 +292,10 @@ const debugHooks = {
     const u = game.unitById(id);
     if (u) { u.x = x; u.y = y; }
   },
+  setFacing: (id, facing) => {
+    const u = game.unitById(id);
+    if (u) u.facing = facing;
+  },
   launchProgram: (sensors, rules) => scout.launchProgram(sensors, rules),
   tickScout: (n) => scout.tickScout(n),
   confirmOnOre: () => scout.confirmOnOre(),

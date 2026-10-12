@@ -1,0 +1,107 @@
+{
+  "metersPerPixel": 1.0,
+  "plateSize": 2560,
+  "chunk": 512,
+  "placedFor": {
+    "commandRangeRadius": 10,
+    "defaultZoom": 0.75,
+    "deepIceTile": [
+      37,
+      7
+    ],
+    "note": "Gameplay Deep Ice still resolves from config (21 tiles \u2192 (36,7) after #42). Visual plate is framed for the v2 brief."
+  },
+  "credit": "NASA/GSFC/Arizona State University, LROC NAC NAC_POLE_SOUTH_CM_345_P892S1350",
+  "gameplayOverlays": [
+    {
+      "type": "crater-s",
+      "tx": 9,
+      "ty": 5,
+      "mean": 105.09,
+      "darkFrac": 0.03,
+      "overlap": false,
+      "overlayAlpha": 0.55
+    },
+    {
+      "type": "crater-s",
+      "tx": 33,
+      "ty": 13,
+      "mean": 89.87,
+      "darkFrac": 0.037,
+      "overlap": false,
+      "overlayAlpha": 0.55
+    },
+    {
+      "type": "crater-s",
+      "tx": 4,
+      "ty": 29,
+      "mean": 46.65,
+      "darkFrac": 0.093,
+      "overlap": true,
+      "overlayAlpha": 0.28
+    },
+    {
+      "type": "crater-s",
+      "tx": 31,
+      "ty": 32,
+      "mean": 89.66,
+      "darkFrac": 0.038,
+      "overlap": false,
+      "overlayAlpha": 0.55
+    },
+    {
+      "type": "crater-s",
+      "tx": 22,
+      "ty": 8,
+      "mean": 158.38,
+      "darkFrac": 0.041,
+      "overlap": false,
+      "overlayAlpha": 0.55
+    },
+    {
+      "type": "crater-s",
+      "tx": 13,
+      "ty": 20,
+      "mean": 146.62,
+      "darkFrac": 0.005,
+      "overlap": false,
+      "overlayAlpha": 0.55
+    },
+    {
+      "type": "pit",
+      "tx": 12,
+      "ty": 30,
+      "mean": 105.03,
+      "darkFrac": 0.124,
+      "overlap": false,
+      "overlayAlpha": 0.55
+    },
+    {
+      "type": "pit",
+      "tx": 28,
+      "ty": 26,
+      "mean": 100.36,
+      "darkFrac": 0.035,
+      "overlap": false,
+      "overlayAlpha": 0.55
+    },
+    {
+      "type": "crater-m",
+      "tx": 33,
+      "ty": 24,
+      "mean": 110.42,
+      "darkFrac": 0.15,
+      "overlap": false,
+      "overlayAlpha": 0.55
+    },
+    {
+      "type": "ice",
+      "tx": 25,
+      "ty": 16,
+      "mean": 64.68,
+      "darkFrac": 0.041,
+      "overlap": false,
+      "overlayAlpha": 0.4
+    }
+  ]
+}

@@ -21,9 +21,9 @@
   (sub-solar longitude about 345 deg, i.e. from image-up) comes from the UPPER LEFT, then resample to 1.5 m per output pixel (INTER_AREA).
   Tone: median sunlit regolith goes to about 0.40-0.5, a toe crush makes the shadowed / PSR floors pure black, plus a filmic highlight
   shoulder, a little local contrast and an unsharp mask. No hillshade was synthesised: the long shadows are the real ones from about 1-2 deg sun.
-- The full 40x40 map ground plate (2560x2560, world coordinates, 1 output px = 1.5 m, so 3.84 km square) is ground-map-2560-gray.png.
-  The mockups crop it at the live camera. About 8.6% of it is black (real shadow, plus a no-data wedge in one corner of the source region).
-  In the game plate (`ground-map.png`) those no-data wedges are filled from neighboring sunlit NAC ground (line reflection plus a brightness-matched copy) so the 40×40 map has no empty corner. Real crater floors and PSRs are left black.
+- The live plate is shipped as 512 px WebP chunks in `ground/day` and `ground/night` (Earthshine fill; floodlights are runtime).
+  1 world px = 1 plate px. Credit: NASA/GSFC/Arizona State University, LROC NAC NAC_POLE_SOUTH_CM_345_P892S1350.
+  No-data wedges stay filled from neighboring sunlit NAC ground. Real crater floors and PSRs stay dark; driveable photo-shadow floors stay lifted.
 - compose.py: the composite. Relit sprites, shadows, contacts, dust apron, haul tracks and frost glint come from relit/ (the second
   worker), drawn at 0.5x. Shadows are composited as one max-alpha layer. The HUD comes from the live page, captured in headless Chrome
   (cdpshot.py) with the canvas hidden: live-opaque*.png and hud-overlay*.png.

@@ -1,0 +1,59 @@
+{
+  "version": 2,
+  "drawScale": 0.5,
+  "credit": "NASA/GSFC/Arizona State University, LROC NAC NAC_POLE_SOUTH_CM_345_P892S1350",
+  "building": {
+    "canvas": 360,
+    "pivot": [
+      112,
+      112
+    ],
+    "keys": [
+      "habitat",
+      "solar",
+      "printer",
+      "storage",
+      "tunnel-hub"
+    ],
+    "layers": [
+      "contact",
+      "shadow",
+      "object"
+    ],
+    "buildSuffix": "-build"
+  },
+  "unit": {
+    "frame": 176,
+    "pivot": [
+      78,
+      78
+    ],
+    "headings": 16,
+    "stepDeg": 22.5,
+    "from": "north",
+    "clockwise": true,
+    "keys": [
+      "hauler",
+      "hauler-loaded",
+      "scout"
+    ],
+    "shadowRotate": false
+  },
+  "decals": [
+    "dust-apron",
+    "haul-tracks",
+    "track-curve",
+    "frost-glint",
+    "floodlight-pool",
+    "status-light"
+  ],
+  "drawOrder": [
+    "contacts",
+    "shadows-multiply",
+    "objects-y-sorted"
+  ],
+  "night": [
+    "floodlight-pool additive on ground before sprites",
+    "status-light on completed buildings"
+  ]
+}
