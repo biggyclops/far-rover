@@ -303,7 +303,7 @@ function scriptedHaul(game) {
   assert.equal(C.startDaylightRemainingSec, 90);
   assert.equal(C.tunnelHubMinSeparationTiles, 6);
   assert.equal(C.deepIceTilesFromStartStorage, 21);
-  assert.equal(C.haulerOffRoadSpeedMult, 0.55);
+  assert.equal(C.haulerOffRoadSpeedMult, 0.5);
   console.log('ok  new config keys keep economy defaults');
 }
 
