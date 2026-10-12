@@ -41,7 +41,7 @@ export const CONFIG = {
 
   // --- Hauler (M1) ---
   haulerSpeedTilesPerSecond: 1, // Proposed (Game Designer)
-  haulerCarry: 15, // Proposed (Game Designer)
+  haulerCarry: 10, // Proposed (Game Designer)
   haulerBattery: 100, // Proposed (Game Designer)
   haulerDrainPerTileLoaded: 1, // Proposed (Game Designer)
   haulerDrainPerTileEmpty: 0.5, // Proposed (Game Designer)
@@ -123,7 +123,7 @@ export const CONFIG = {
   tunnelHubMinSeparationTiles: 6, // Proposed (Game Designer) — no 1-tile corridors
   hubIceCapacity: 20, // Proposed (Game Designer) — transit buffer at each hub
   hubRegolithCapacity: 20, // Proposed (Game Designer)
-  digSecondsPerTilePerRover: 24, // Proposed (Game Designer) — rovers stack
+  digSecondsPerTilePerRover: 20, // Proposed (Game Designer) — rovers stack
   digPowerPerTile: 3, // Proposed (Game Designer)
   digRegolithYieldPerTile: 2, // Proposed (Game Designer)
   tunnelCargoTilesPerSecond: 4, // Proposed (Game Designer) — hub-to-hub, no rover

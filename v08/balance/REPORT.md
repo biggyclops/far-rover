@@ -1,5 +1,75 @@
 # Far Rover v0.8 balance report
 
+Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, print, Dig, right-click via `issueContextual`, launch scout, land crew. No `assignOrder` dest shortcuts, `setResources`, teleports, or forced completes.
+
+```bash
+node v08/balance/run.js                  # current numbers, all strategies
+node v08/balance/run.js --overrides '{"goalIceInStorage":180}'
+node v08/balance/run.js --strategy tunnel-2-diggers --goal-ice-in-storage 180
+node v08/balance/run.js --report         # rewrite this file + chart.png
+```
+
+Overrides mutate the live `CONFIG` object for one run and restore it after. `startHaulers` is hardcoded to 2 inside `bootstrap()`; the harness applies that override after create, so the documented start-count key still sweeps. Deep Ice sits `deepIceTilesFromStartStorage` (22) tiles out, 8 past the command ring. Sol 1 starts with 90 s of daylight (`startDaylightRemainingSec`); first night is at 1:30.
+
+## Harness is 1x only
+
+The live page integrates at `dt = 1/60` (`v08/main.js` `advance`). Player 2 measured the same scripted route at **44.8 s (1x), 45.4 s (4x), and 47.2 s (16x)** — speed changes the result. The harness therefore defaults to a fixed 1x step (`dt = 1/60`) and must not be run at 4x or 16x when the numbers are meant to match a 1x playtest.
+
+## Shipped set (2026-10-11, post-#32): carry 10 + dig 20s
+
+Round 2 (#32) put Deep Ice 22 tiles out (only legal order target past the ring), required building centers inside the ring, made hubs UI drop targets with 6-tile separation, paused printers/charging at 0 power (haulers keep driving), and started Sol 1 with 90 s of daylight. The old harness timed out on every hauler route (drops outside the ring, charge-at-0-power, printed haulers with no ice job). Rewriting the brains onto `issueContextual` brought shared routes next to honest Playwright: haulers 6:36 vs 6:38, 1-digger 9:30 vs 9:12, 2-digger 6:25 vs 6:10.
+
+At those honest times extra prints were too good (print-1 5:19, print-2 4:58) and the 2-digger tunnel was only 2.7% faster than two starters. Smallest 5/5 set: two knobs.
+
+| Key | Was (live after #30) | Shipped | Why |
+|---|---:|---:|---|
+| `haulerCarry` | 15 | 10 | Extra printed bodies were winning the 22-tile walk. Carry 10 makes print-1 beat two starters without letting print-2 undercut the tube. |
+| `digSecondsPerTilePerRover` | 24 | 20 | Smallest dig nudge that puts the 2-digger line 20–35% ahead of the best hauler route (print-1). Carry 10 alone was 16.2%. |
+
+Deep Ice distance was left at 22 — 26+ made the far-hub / in-range home-hub corridor fail. Section 5's 50-reg print still loses criterion 1 (print-1 6:40 vs two starters 6:36).
+
+### 1x route table (dt = 1/60)
+
+| Strategy | Win | Night | Power min | Ice |
+|---|---:|:---:|---:|---:|
+| Haulers only (2 start) | 7:52 | yes | 0 | 180 |
+| Haulers + print 1 | 7:28 | yes | 0 | 188.8 |
+| Haulers + print 2 | 9:43 | yes | 0 | 220 |
+| Tunnel, 1 digger | 8:25 | yes | 30 | 180 |
+| Tunnel, 2 diggers | 5:45 | yes | 15 | 180 |
+| Mixed (1 hauls, 1 digs) | 9:31 | yes | 0 | 180 |
+
+Best haulers-only: **Haulers + print 1** at 7:28.
+Best tunnel: **Tunnel, 2 diggers** at 5:45 (**22.9% faster**).
+
+Honest Playwright at the same numbers is reported in the PR after the live UI pass.
+
+### Five criteria
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Haulers + print 1 beats haulers only | **Pass.** 7:28 vs 7:52. |
+| 2 | Tunnel with 2 diggers is 20–35% faster than the best haulers-only route including prints | **Pass.** 22.9% (5:45 vs 7:28). |
+| 3 | Every winning route crosses at least one night | **Pass.** First night is at 1:30. |
+| 4 | Power drops below 50 on at least one tunnel route | **Pass.** 1-digger `powerMin` 30; 2-digger 15. |
+| 5 | No route wins under 4:00 | **Pass.** Earliest win is 5:45. |
+
+### Printer spam (10 min)
+
+Keep-printing run at the shipped knobs: power hits 0, printers pause while starved, hauler count caps at **7**. Not unbounded.
+
+### Scout (hosted tick, Notify option b)
+
+Paper map through `runHostedScoutTick`. Hazard auto-pauses waste one tick then continue (same as a player hitting Resume). Drill on F2/I2 only samples.
+
+- **Starter + On ice: Notify** does **not** unlock Deep Ice. Ends `success-scan` at **Lander on tick 46** (resume) / **tick 48** (live page, no resume). Two trace-ice pings. Never stands on F2 or I2.
+- **4-rule that confirms:** crater → sidestep; battery below **8** → return/charge; on ore → notify; always → explore. **Confirms on tick 21** (under GD’s ~60). Battery-below-20 loops at F12 because start/restore battery is 20. N=5..8 confirm; 8 is the highest that still works.
+- **Simple programs:** **0 / 49** one-rule and **0 / 2401** two-rule programs confirm F2/I2. You need sidestep + notify + explore, and the battery-return *turn* at H3 is what steers onto F2.
+
+---
+
+# Far Rover v0.8 balance report (earlier passes)
+
 Headless harness under `v08/balance/`. It imports the real `createGame()` sim and the real scout engine (`v08/engine.js` → `simulation.js`). Strategies issue only player orders: place, build, print, dig, haul, charge, launch scout, land crew. No `setResources`, teleports, or forced completes.
 
 ```bash
