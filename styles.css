@@ -949,6 +949,47 @@ button:disabled {
   border-left-color: var(--accent);
 }
 
+.rule-line.checked-false {
+  opacity: 0.42;
+}
+
+.live-rule-reason {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--accent);
+  background: rgba(230, 126, 34, 0.14);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  min-height: 1.2em;
+}
+
+.live-sensors {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+  font-size: 0.75rem;
+}
+
+.live-sensor {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted, #9aa3ad);
+}
+
+.live-sensor strong {
+  color: var(--text, #e8f2f6);
+  font-weight: 600;
+}
+
+.live-sensor-cam {
+  grid-column: 1 / -1;
+}
+
 .rule-indicator {
   color: var(--accent);
   font-size: 0.75rem;

@@ -1420,9 +1420,9 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
       ]);
     });
     await page.click('#launch-btn');
-    await expect(page.locator('#scout-overlay')).toBeHidden();
-    await page.evaluate(() => window.__v08Test.openOperate());
+    await expect(page.locator('#scout-overlay')).toBeVisible();
     await expect(page.locator('.operate-view')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.speed-btn[data-speed="1"]')).toHaveClass(/active/);
     await page.click('#end-run-btn');
     await expect(page.locator('.end-reason')).toContainText("No Notify fired: add 'On ice tile: Notify'.");
   });

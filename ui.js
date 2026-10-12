@@ -4,6 +4,7 @@
 import * as Sim from './simulation.js';
 import { runHostedScoutTick } from './v08/hosted-tick.js';
 import { explainScoutResult } from './v08/scout-explain.js';
+import { explainLiveTick, liveFromTrace } from './v08/scout-live.js';
 import { GameRenderer, MinimapRenderer, loadAssets, hasRealArt, getBackgroundImage, getIcon } from './renderer.js';
 import { shouldUse3D } from './renderer3d.js';
 import { OrbitalRenderer, warmupOrbitalArt } from './orbital.js';
@@ -615,7 +616,7 @@ function createBoardRenderer(container, state) {
     new URLSearchParams(location.search).get('renderer') === '2d');
   if (!force2d) {
     try {
-      const r = new OrbitalRenderer(container, state);
+      const r = new OrbitalRenderer(container, state, { lunar: hostedIceLabels });
       r.setPlaybackSpeed(currentSpeed || 1);
       r.setPausedHint?.(isPaused);
       r.onFrame = onRendererFrame;
@@ -683,7 +684,7 @@ function showOperateView() {
             <span class="hud-brand">FAR ROVER</span>
             <span class="hud-ops">//  ORBITAL OPS</span>
           </div>
-          <div class="hud-sat">FR-SAT 1  ·  HiRISE-CLASS  ·  NADIR</div>
+          <div class="hud-sat">${hostedIceLabels ? 'FR-SAT 1  ·  LROC NAC  ·  NADIR' : 'FR-SAT 1  ·  HiRISE-CLASS  ·  NADIR'}</div>
         </div>
         <div class="hud-center">
           <span class="tick-indicator" id="hud-tick">Tick ${gameState.tick}</span>
@@ -718,7 +719,9 @@ function showOperateView() {
         </div>
         <div class="rules-panel glass-panel">
           <h3>Rover Rules</h3>
+          <p class="live-rule-reason" id="live-rule-reason" data-testid="live-rule-reason"></p>
           <div class="rule-display" id="rule-display"></div>
+          ${hostedIceLabels ? '' : '<div class="live-sensors" id="live-sensors" data-testid="live-sensors"></div>'}
           <div id="hosted-notify-ping" class="hosted-notify-ping" data-testid="hosted-notify-ping" hidden></div>
         </div>
       </div>
@@ -726,7 +729,8 @@ function showOperateView() {
       <div class="info-panel">
         <div class="sensors-panel glass-panel">
           <h3>Sensor Readings</h3>
-          <div class="sensor-readings" id="sensor-readings"></div>
+          ${hostedIceLabels ? '<div class="live-sensors" id="live-sensors" data-testid="live-sensors"></div>' : ''}
+          <div class="sensor-readings" id="sensor-readings"${hostedIceLabels ? ' hidden' : ''}></div>
         </div>
         <div class="controls-panel glass-panel">
           <button class="pause-btn" id="pause-btn">${isPaused ? 'Resume' : 'Pause'}</button>
@@ -757,14 +761,16 @@ function showOperateView() {
       </div>
 
       <div class="tracking-strip" id="tracking-strip">${trackingText(gameState)}</div>
-      <div class="credits-line">Terrain: NASA/JPL-Caltech/UArizona HiRISE PIA23289 · Rover cam: NASA/JPL-Caltech/ASU/MSSS Mastcam-Z PIA23727, Navcam PIA24422, PIA24543</div>
+      <div class="credits-line">${hostedIceLabels
+        ? 'Terrain: NASA/GSFC/ASU LROC NAC_POLE_SOUTH_CM_345_P892S1350 · Rover cam: NASA Apollo 15 AS15-82-11057 (public domain)'
+        : 'Terrain: NASA/JPL-Caltech/UArizona HiRISE PIA23289 · Rover cam: NASA/JPL-Caltech/ASU/MSSS Mastcam-Z PIA23727, Navcam PIA24422, PIA24543'}</div>
       <div class="battery-gauge visual-hidden" aria-hidden="true">
         <div class="battery-fill" id="battery-fill" style="width: ${gameState.battery * 5}%"></div>
       </div>
 
-      <div class="minimap glass-panel" id="minimap">
+      <div class="minimap glass-panel" id="minimap" data-testid="minimap">
         <div class="minimap-label">Surface map</div>
-        <canvas id="minimap-canvas" width="108" height="117"></canvas>
+        <canvas id="minimap-canvas" width="${hostedIceLabels ? 216 : 108}" height="${hostedIceLabels ? 234 : 117}"></canvas>
       </div>
 
       ${pendingAutoPause && !pendingAutoPause.resumed ? renderAutoPauseToast() : ''}
@@ -780,6 +786,7 @@ function showOperateView() {
   // Initialize minimap renderer
   const minimapCanvas = document.getElementById('minimap-canvas');
   minimapRenderer = new MinimapRenderer(minimapCanvas, gameState);
+  minimapRenderer.lunar = hostedIceLabels;
   
   renderRuleDisplay();
   renderSensorReadings();
@@ -845,6 +852,7 @@ function renderStuckToast() {
 function renderMinimap() {
   if (minimapRenderer) {
     minimapRenderer.updateState(gameState);
+    minimapRenderer.nextPose = peekNextPose();
     minimapRenderer.render();
   }
 }
@@ -887,15 +895,23 @@ function renderHostedNotifyPing() {
   el.classList.toggle('trace-ice', !ping.confirmedIce);
 }
 
+function currentTickRecord() {
+  if (lastTickResult?.tickRecord) return lastTickResult.tickRecord;
+  const trace = gameState?.trace || [];
+  return trace[trace.length - 1] || null;
+}
+
 function renderRuleDisplay() {
   const display = document.getElementById('rule-display');
   if (!display) return;
   const ping = hostedIceLabels ? latestNotifyPing() : null;
+  const live = gameState ? explainLiveTick(gameState, currentTickRecord()) : liveFromTrace(gameState);
+  const dimmed = new Set(live.dimmed || []);
   
   let html = '';
   for (let i = 0; i < 4; i++) {
     const rule = gameState.rules[i];
-    const isFired = lastTickResult?.tickRecord?.ruleFired === i + 1;
+    const isFired = live.fired === i + 1;
     
     if (rule && rule.condition && rule.action) {
       const condText = formatConditionForDisplay(rule.condition);
@@ -905,7 +921,8 @@ function renderRuleDisplay() {
       const badge = pinged
         ? `<span class="notify-ping-badge ${ping.confirmedIce ? 'ice-confirm' : 'trace-ice'}">${ping.label}</span>`
         : '';
-      html += `<div class="rule-line ${isFired ? 'fired' : ''} ${pinged ? 'notified' : ''}">
+      const dim = dimmed.has(i) ? 'checked-false' : '';
+      html += `<div class="rule-line ${isFired ? 'fired' : ''} ${dim} ${pinged ? 'notified' : ''}" data-rule="${i + 1}" data-testid="rule-line-${i + 1}">
         <span class="rule-indicator">${isFired ? '▶' : ''}</span>
         <span class="rule-text">${condText} : <span class="action-name">${actText}</span></span>
         ${badge}
@@ -913,7 +930,39 @@ function renderRuleDisplay() {
     }
   }
   display.innerHTML = html || '<div class="no-rules">No rules defined</div>';
+  const reasonEl = document.getElementById('live-rule-reason');
+  if (reasonEl) {
+    reasonEl.textContent = live.reason || 'Waiting for the first turn.';
+  }
+  renderLiveSensors(live.sensors);
   renderHostedNotifyPing();
+}
+
+function renderLiveSensors(sensors = {}) {
+  const el = document.getElementById('live-sensors');
+  if (!el) return;
+  const battery = sensors.battery == null ? '—' : String(sensors.battery);
+  const front = sensors.inFront || '—';
+  const ore = sensors.oreNearby === 'yes' ? 'yes' : 'no';
+  const rows = [
+    ['live-battery', 'Battery', battery],
+    ['live-front', 'In front', front],
+    ['live-ore', 'Ore nearby', ore],
+    ['live-cam', 'Rover cam', 'forward view'],
+  ];
+  el.replaceChildren();
+  for (const [id, label, value] of rows) {
+    const row = document.createElement('div');
+    row.className = id === 'live-cam' ? 'live-sensor live-sensor-cam' : 'live-sensor';
+    row.id = id;
+    row.dataset.testid = id;
+    const span = document.createElement('span');
+    span.textContent = label;
+    const strong = document.createElement('strong');
+    strong.textContent = value;
+    row.append(span, strong);
+    el.append(row);
+  }
 }
 
 function formatConditionForDisplay(condition) {
@@ -2190,6 +2239,16 @@ export { showOperateView, updateOperateView, pause as pauseOperate, setSpeed as 
 export function getOperateSpeed() {
   return currentSpeed;
 }
+
+export function setLastTickResult(result) {
+  lastTickResult = result;
+}
+
+export function getLastTickResult() {
+  return lastTickResult;
+}
+
+export { peekNextPose };
 
 export function isOperatePaused() {
   return isPaused;

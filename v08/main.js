@@ -336,6 +336,7 @@ const debugHooks = {
   playTraceOnlyReturn: () => scout.playTraceOnlyReturn(),
   playConfirmedThenLost: () => scout.playConfirmedThenLost(),
   explainScoutResult: (sim) => scout.explainResult(sim),
+  getLive: () => scout.getLive(),
   queuePatch: (slot, condition, action) => game.queuePatch(slot, condition, action),
   startRecall: () => game.startRecall(),
   notePatchApplied: (ok) => game.notePatchApplied(ok),

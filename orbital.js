@@ -175,6 +175,19 @@ function loadImage(src) {
 }
 
 const ART_BASE = new URL('assets/art/', import.meta.url).href;
+const V08_ART_BASE = new URL('assets/v08/art/', import.meta.url).href;
+
+function greyscaleCopy(img) {
+  if (!img) return null;
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth || img.width;
+  c.height = img.naturalHeight || img.height;
+  if (!c.width || !c.height) return img;
+  const x = c.getContext('2d');
+  x.filter = 'grayscale(1) contrast(1.08)';
+  x.drawImage(img, 0, 0);
+  return c;
+}
 const ART_FILES = {
   full: 'hirise-board.jpg',
   seen: 'hirise-seen.jpg',
@@ -229,9 +242,10 @@ function makeGrain(size = 128) {
 }
 
 export class OrbitalRenderer {
-  constructor(container, gameState) {
+  constructor(container, gameState, opts = {}) {
     this.container = container;
     this.gameState = gameState;
+    this.lunar = !!opts.lunar;
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'game-canvas';
     this.canvas.dataset.engine = 'orbital';
@@ -374,6 +388,7 @@ export class OrbitalRenderer {
     this.oreTileImg = bundle.oreTile;
     this.dustTileImg = bundle.dustTile;
     this.camCrater = bundle.crater;
+    if (this.lunar) await this._applyLunarArt();
     this.lastCam = 0;
     this._camTexReady = false;
     this._camPoseKey = '';
@@ -386,6 +401,33 @@ export class OrbitalRenderer {
     }
     this.maskDirty = true;
     this.rebuildMasks();
+  }
+
+  async _applyLunarArt() {
+    const [nav, near, sky] = await Promise.all([
+      loadImage(V08_ART_BASE + 'lunar-navcam.jpg'),
+      loadImage(V08_ART_BASE + 'lunar-navcam-near.jpg'),
+      loadImage(V08_ART_BASE + 'lunar-navcam-sky.jpg'),
+    ]);
+    if (nav) {
+      this.mastcamImg = nav;
+      this.camMid = nav;
+      this.camFar = nav;
+      this.camAlt = nav;
+      this.camPano = nav;
+    } else {
+      this.mastcamImg = greyscaleCopy(this.mastcamImg);
+      this.camMid = greyscaleCopy(this.camMid);
+      this.camFar = greyscaleCopy(this.camFar);
+      this.camAlt = greyscaleCopy(this.camAlt);
+      this.camPano = greyscaleCopy(this.camPano);
+    }
+    this.camNear = near || nav || greyscaleCopy(this.camNear);
+    this.camSky = sky || null;
+    this.camCrater = greyscaleCopy(this.camCrater);
+    this.landerFwdImg = greyscaleCopy(this.landerFwdImg);
+    this.camRocks = greyscaleCopy(this.camRocks);
+    this._camTexReady = false;
   }
 
   _warmGpu() {
@@ -1179,7 +1221,9 @@ export class OrbitalRenderer {
 
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (this.lunar) ctx.filter = 'grayscale(1) contrast(1.1) brightness(0.96)';
     ctx.drawImage(this.world, 0, 0, w, h);
+    ctx.filter = 'none';
 
     this._drawReticle(ctx, roverCol * scale + tx, roverRow * scale + ty);
     this._drawGrain(ctx, w, h, t);
