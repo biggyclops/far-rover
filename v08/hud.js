@@ -1,4 +1,5 @@
 import { CONFIG as C } from './config.js';
+import { REGOLITH_HELP, DIG_REGOLITH_HELP } from './game.js';
 
 function fmt(n) {
   return Math.floor(n + 1e-6).toString();
@@ -134,9 +135,19 @@ export function bindHud(root, game, hooks = {}) {
       if (!el) continue;
       const reason = game.affordReason(type);
       el.classList.toggle('unaffordable', !!reason);
-      el.title = reason || (type === 'tunnel-hub' ? game.hubPayoffText() : '');
+      if (type === 'hauler') {
+        el.title = reason && reason !== REGOLITH_HELP
+          ? `${reason} ${REGOLITH_HELP}`
+          : REGOLITH_HELP;
+      } else if (type === 'tunnel-hub') {
+        el.title = reason || game.hubPayoffText();
+      } else {
+        el.title = reason || '';
+      }
       el.disabled = type === 'hauler' && reason === 'Need an idle printer';
     }
+    const dig = $('#order-dig');
+    if (dig) dig.title = DIG_REGOLITH_HELP;
   }
 
   function sync() {

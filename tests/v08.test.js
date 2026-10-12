@@ -774,6 +774,160 @@ test.describe('Far Rover v0.8 M3/M4 unit (seeded state)', () => {
     await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/storage-tip-board.png', fullPage: true });
   });
 
+  test('bottom toolbar buttons stay put when status changes', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await ready(page);
+    async function layout() {
+      return page.evaluate(() => {
+        const ids = ['order-go', 'order-dig', 'build-hub', 'print-hauler', 'btn-build-scout'];
+        const bar = document.getElementById('hud-bottom').getBoundingClientRect();
+        const buttons = {};
+        for (const id of ids) {
+          const r = document.getElementById(id).getBoundingClientRect();
+          buttons[id] = { x: Math.round(r.x), y: Math.round(r.y) };
+        }
+        return { barY: Math.round(bar.y), barH: Math.round(bar.height), buttons };
+      });
+    }
+    const before = await layout();
+    expect(before.barH).toBe(72);
+    await page.evaluate(() => {
+      const t = window.__v08Test;
+      t.selectUnits(t.getState().units.map((u) => u.id));
+      t.syncHud();
+    });
+    const afterSelect = await layout();
+    await page.evaluate(() => {
+      const t = window.__v08Test;
+      t.launchProgram(['distance', 'spectral'], [
+        { condition: { type: 'always' }, action: { type: 'explore' } },
+      ]);
+      t.playTraceOnlyReturn();
+      t.syncHud();
+    });
+    const afterLog = await layout();
+    expect(afterSelect.barY).toBe(before.barY);
+    expect(afterLog.barY).toBe(before.barY);
+    expect(afterSelect.barH).toBe(before.barH);
+    expect(afterLog.barH).toBe(before.barH);
+    expect(afterSelect.buttons).toEqual(before.buttons);
+    expect(afterLog.buttons).toEqual(before.buttons);
+    await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/toolbar-fixed.png', fullPage: true });
+  });
+
+  test('print-hauler and Dig tooltips explain regolith, idle cargo is labeled', async ({ page }) => {
+    await ready(page);
+    await page.evaluate(() => window.__v08Test.syncHud());
+    await expect(page.locator('#print-hauler')).toHaveAttribute('title', /Need regolith\? Right-click open ground/);
+    await expect(page.locator('#order-dig')).toHaveAttribute('title', /Digging yields regolith/);
+    await expect(page.locator('#build-hub')).toHaveAttribute('title', /Digging yields regolith/);
+    const task = await page.evaluate(() => {
+      const t = window.__v08Test;
+      const u = t.getState().units[0];
+      t.setBattery(u.id, 100);
+      t.setCargo(u.id, { ice: 10, regolith: 0 });
+      t.clearOrder(u.id);
+      t.selectUnits([u.id]);
+      t.syncHud();
+      return t.getState().units[0];
+    });
+    expect(task.task).toMatch(/Idle with cargo: right-click storage to drop it/);
+    expect(task.label).toMatch(/Idle with cargo: right-click storage to drop it/);
+    await expect(page.locator('#unit-card')).toContainText('Idle with cargo: right-click storage to drop it');
+    await page.locator('#print-hauler').screenshot({ path: '/opt/cursor/artifacts/screenshots/print-hauler-tooltip.png' });
+    await page.locator('#unit-card').screenshot({ path: '/opt/cursor/artifacts/screenshots/idle-cargo.png' });
+  });
+
+  test('invalid placement toasts the rejection reason', async ({ page }) => {
+    await ready(page);
+    const snap = await page.evaluate(() => {
+      const t = window.__v08Test;
+      t.placeBuilding('storage', 2, 2);
+      t.syncHud();
+      return { toast: t.getState().toast, reason: t.placementRejectReason('storage', 2, 2) };
+    });
+    expect(snap.reason).toBe('Cannot place: outside command range');
+    expect(snap.toast).toBe('Cannot place: outside command range');
+    await expect(page.locator('#toast')).toContainText('Cannot place: outside command range');
+    await page.locator('#toast').screenshot({ path: '/opt/cursor/artifacts/screenshots/place-reject.png' });
+  });
+
+  test('confirmed-then-lost scout result is a success line', async ({ page }) => {
+    await ready(page);
+    const result = await page.evaluate(() => window.__v08Test.playConfirmedThenLost());
+    expect(result.line).toBe('Ice deposit confirmed at F2! The scout then ran out of battery 9 tiles from the lander. Its job is done.');
+    expect(result.status).toBe('returned');
+    expect(result.line).not.toMatch(/threshold/);
+    await expect(page.locator('#scout-trace h2')).toHaveText(/Ice deposit confirmed at F2/);
+    await expect(page.locator('#scout-trace h2')).toHaveText(/Its job is done/);
+    await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/confirmed-then-lost.png', fullPage: true });
+  });
+
+  test('haulers resume dig and build after a 0-power night', async ({ page }) => {
+    await ready(page);
+    const snap = await page.evaluate(() => {
+      const t = window.__v08Test;
+      const C = t.config;
+      t.setSpeed(0);
+      const home = t.placeBuilding('tunnel-hub', 14, 21);
+      const far = t.placeBuilding('tunnel-hub', 22, 21);
+      if (!home || !far) return { error: 'hubs' };
+      t.completeBuilding(home.id);
+      t.completeBuilding(far.id);
+      const tiles = t.startDigCorridor();
+      if (!tiles?.length) return { error: 'corridor' };
+      const storage = t.placeBuilding('storage', 21, 18);
+      if (!storage) return { error: 'storage' };
+      const s = t.getState();
+      const [h1, h2] = s.units.filter((u) => u.kind === 'hauler');
+      const tile = C.tileSize;
+      t.setUnitPos(h1.id, (tiles[0].tx + 0.5) * tile, (tiles[0].ty + 0.5) * tile);
+      t.setUnitPos(h2.id, (storage.tx + 0.5) * tile, (storage.ty + 1.5) * tile);
+      t.setBattery(h1.id, C.haulerBattery);
+      t.setBattery(h2.id, C.haulerBattery);
+      t.selectUnits([h1.id]);
+      t.issueOrder({ type: 'dig' });
+      t.selectUnits([h2.id]);
+      t.issueOrder({ type: 'build', buildingId: storage.id });
+      t.setResources({ power: 0 });
+      t.setTime(C.startDaylightRemainingSec + 1);
+      t.advance(1.2);
+      const night = t.getState();
+      t.setResources({ power: 100 });
+      t.setTime(0);
+      t.setBattery(h1.id, C.haulerBattery);
+      t.setBattery(h2.id, C.haulerBattery);
+      t.advance(1.2);
+      t.selectUnits([h1.id, h2.id]);
+      t.syncHud();
+      const dawn = t.getState();
+      return {
+        night: {
+          day: night.isDay,
+          power: night.power,
+          h1: night.units.find((u) => u.id === h1.id),
+          h2: night.units.find((u) => u.id === h2.id),
+        },
+        dawn: {
+          day: dawn.isDay,
+          power: dawn.power,
+          h1: dawn.units.find((u) => u.id === h1.id),
+          h2: dawn.units.find((u) => u.id === h2.id),
+        },
+      };
+    });
+    expect(snap.error).toBeUndefined();
+    expect(snap.night.h1.blockedReason).toBe('Need power');
+    expect(snap.night.h1.order).toBe('dig');
+    expect(snap.dawn.h1.blockedReason).toBeNull();
+    expect(snap.dawn.h1.order).toBe('dig');
+    expect(snap.dawn.h2.order).toBe('build');
+    expect(snap.dawn.h1.task).not.toBe('charge');
+    expect(snap.dawn.h2.task).not.toBe('charge');
+    await expect(page.locator('#unit-card')).not.toContainText('Need power');
+    await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/need-power-resume.png', fullPage: true });
+  });
+
   test('unit: setResources cannot put ice above the habitat cap', async ({ page }) => {
     await ready(page);
     const result = await page.evaluate(() => {

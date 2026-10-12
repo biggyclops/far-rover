@@ -253,6 +253,21 @@ const debugHooks = {
     const u = game.unitById(id);
     if (u) u.battery = v;
   },
+  setCargo: (id, cargo = {}) => {
+    const u = game.unitById(id);
+    if (!u) return;
+    if (cargo.ice != null) u.cargo.ice = cargo.ice;
+    if (cargo.regolith != null) u.cargo.regolith = cargo.regolith;
+  },
+  clearOrder: (id) => {
+    const u = game.unitById(id);
+    if (!u) return;
+    u.order = null;
+    u.lastOrder = null;
+    u.resumeOrder = null;
+    u.blockedReason = null;
+    u.status = 'idle';
+  },
   selectUnits: (ids, additive) => game.selectUnits(ids, additive),
   selectBuilding: (id) => game.selectBuilding(id),
   issueContextual: (x, y) => game.issueContextual(x, y),
@@ -267,6 +282,7 @@ const debugHooks = {
     return true;
   },
   placeBuilding: (type, tx, ty) => game.placeBuilding(type, tx, ty, true),
+  placementRejectReason: (type, tx, ty) => game.placementRejectReason(type, tx, ty),
   startPrint: () => game.startPrint(),
   unitClientPos: (id) => {
     const u = game.unitById(id);
@@ -307,6 +323,7 @@ const debugHooks = {
   openBuild: () => scout.openBuild(),
   hideOverlay: () => scout.hideOverlay(),
   playTraceOnlyReturn: () => scout.playTraceOnlyReturn(),
+  playConfirmedThenLost: () => scout.playConfirmedThenLost(),
   explainScoutResult: (sim) => scout.explainResult(sim),
   queuePatch: (slot, condition, action) => game.queuePatch(slot, condition, action),
   startRecall: () => game.startRecall(),

@@ -226,6 +226,7 @@ export function bindScout(root, game, hooks = {}) {
   function statusFor(sim) {
     if (!sim) return null;
     if (!sim.outcome) return 'running';
+    if (sim.iceConfirmed) return 'returned';
     if (sim.outcome === Sim.OUTCOMES.LOST_CRATER || sim.outcome === Sim.OUTCOMES.LOST_BATTERY) return 'lost';
     if (String(sim.outcome).startsWith('stuck')) return 'stuck';
     return 'returned';
@@ -297,6 +298,34 @@ export function bindScout(root, game, hooks = {}) {
     return last;
   }
 
+  function playConfirmedThenLost() {
+    if (!lastSim) {
+      lastSim = Sim.createInitialState([Sim.SENSORS.SPECTRAL, Sim.SENSORS.DISTANCE], [
+        { condition: { type: Sim.CONDITIONS.ON_ORE }, action: { type: Sim.ACTIONS.NOTIFY } },
+        { condition: { type: Sim.CONDITIONS.ALWAYS }, action: { type: Sim.ACTIONS.EXPLORE } },
+      ]);
+      setGameStateForTest(lastSim);
+      setSelectedSensorsForTest([Sim.SENSORS.SPECTRAL, Sim.SENSORS.DISTANCE]);
+      setRulesForTest(lastSim.rules);
+      game.markExpeditionLaunched({ hasNotifyRule: true });
+    }
+    pingOreCell('F2');
+    lastSim.iceConfirmed = true;
+    lastSim.col = 5;
+    lastSim.row = 3;
+    lastSim.outcome = Sim.OUTCOMES.LOST_BATTERY;
+    lastSim.trace = lastSim.trace || [];
+    const hasConfirm = lastSim.trace.some((t) => t?.actionResult?.confirmedIce);
+    if (!hasConfirm) {
+      lastSim.trace.push({ actionResult: { confirmedIce: true, cell: 'F2' } });
+    }
+    lastSim.lastNotify = { confirmedIce: true, cell: 'F2' };
+    if (game.state.expedition.ended) game.state.expedition.ended = false;
+    finishIfNeeded();
+    openTrace();
+    return { line: resultLineFor(lastSim), status: statusFor(lastSim) };
+  }
+
   function playTraceOnlyReturn() {
     if (!lastSim) {
       lastSim = Sim.createInitialState([Sim.SENSORS.SPECTRAL, Sim.SENSORS.DISTANCE], [
@@ -365,6 +394,7 @@ export function bindScout(root, game, hooks = {}) {
     viewTrace,
     hideOverlay,
     playTraceOnlyReturn,
+    playConfirmedThenLost,
     explainResult: (sim) => explainScoutResult(sim || lastSim),
     pump,
     launchProgram,

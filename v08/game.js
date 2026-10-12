@@ -9,6 +9,10 @@ export const TILE = {
   ICE_MINED: 'ice-mined',
 };
 
+export const REGOLITH_HELP = 'Need regolith? Right-click open ground away from buildings to mine it. Digging tunnels also yields regolith.';
+export const IDLE_CARGO_HELP = 'Idle with cargo: right-click storage to drop it.';
+export const DIG_REGOLITH_HELP = 'Digging yields regolith';
+
 export function tileVariant(tx, ty) {
   const n = Math.sin(tx * 127.1 + ty * 311.7 + 19.19) * 43758.5453;
   return (Math.floor(Math.abs(n - Math.floor(n)) * 4) % 4) + 1;
@@ -704,23 +708,48 @@ export function createGame() {
     return hubs().some((h) => minChebyshevBetween(type, tx, ty, h) === 1);
   }
 
-  function canPlace(type, tx, ty) {
+  function tileBlockReason(tile) {
+    if (!tile) return 'Cannot place: off the map';
+    if (tile.buildingId) return 'Cannot place: blocked by a building';
+    if (tile.craterM || tile.type === TILE.CRATER_S || tile.type === TILE.CRATER_M) {
+      return 'Cannot place: blocked by crater';
+    }
+    if (tile.type === TILE.PIT) return 'Cannot place: blocked by a pit';
+    if (tile.type === TILE.ICE || tile.type === TILE.ICE_MINED) return 'Cannot place: blocked by ice';
+    if (tile.type !== TILE.GROUND) return 'Cannot place: blocked by terrain';
+    return null;
+  }
+
+  function placementRejectReason(type, tx, ty) {
     const n = buildingFootprint(type);
-    if (tx < 0 || ty < 0 || tx + n > C.mapWidth || ty + n > C.mapHeight) return false;
+    if (tx < 0 || ty < 0 || tx + n > C.mapWidth || ty + n > C.mapHeight) {
+      return 'Cannot place: off the map';
+    }
     for (let y = 0; y < n; y++) {
       for (let x = 0; x < n; x++) {
-        if (isBlockedForBuild(tileAt(tx + x, ty + y))) return false;
+        const reason = tileBlockReason(tileAt(tx + x, ty + y));
+        if (reason) return reason;
       }
     }
-    if (type === 'tunnel-hub' && hubs().length >= C.tunnelHubCount) return false;
-    if (type === 'tunnel-hub' && !hubSeparationOk(tx, ty)) return false;
-    if (type === 'vault' && !hubBesideVault(type, tx, ty)) return false;
+    if (type === 'tunnel-hub' && hubs().length >= C.tunnelHubCount) {
+      return 'Cannot place: hub limit reached';
+    }
+    if (type === 'tunnel-hub' && !hubSeparationOk(tx, ty)) {
+      return `Cannot place: hubs must be at least ${C.tunnelHubMinSeparationTiles} tiles apart`;
+    }
+    if (type === 'vault' && !hubBesideVault(type, tx, ty)) {
+      return 'Cannot place: vault must sit beside a hub';
+    }
     const inRange = placementInCommandRange(type, tx, ty);
     if (!inRange) {
-      if (type === 'tunnel-hub' && hubBesideDeepIceAt(tx, ty)) return true;
-      return false;
+      if (type === 'tunnel-hub' && hubBesideDeepIceAt(tx, ty)) return null;
+      return 'Cannot place: outside command range';
     }
-    return true;
+    return null;
+  }
+
+  function canPlace(type, tx, ty) {
+    return !placementRejectReason(type, tx, ty);
   }
 
   function solTime() {
@@ -959,7 +988,7 @@ export function createGame() {
     const spec = buildCost(type);
     if (!spec) return 'Unknown';
     const tot = totals();
-    if (tot.regolith + 1e-6 < spec.reg) return `Need ${spec.reg} regolith`;
+    if (tot.regolith + 1e-6 < spec.reg) return REGOLITH_HELP;
     if (spec.power > 0 && tot.power + 1e-6 < spec.power) return `Need ${spec.power} power`;
     if (type === 'hauler' && !state.buildings.some((b) => b.type === 'printer' && b.complete && !b.printing)) {
       return 'Need an idle printer';
@@ -1008,6 +1037,7 @@ export function createGame() {
   function unitTask(unit) {
     if (unit.blockedReason) return unit.blockedReason;
     if (!unit.order) {
+      if (cargoAmount(unit) > 0.001) return IDLE_CARGO_HELP;
       if (unit.resumeOrder?.type === 'haul') return 'hauling';
       if (unit.lastOrder?.type === 'haul' && canRepeat(unit.lastOrder)) return 'hauling';
       return 'idle';
@@ -1141,8 +1171,9 @@ export function createGame() {
   function insertCharge(unit) {
     if (unit.kind !== 'hauler') return;
     if (unit.order?.type === 'charge') return;
+    if (unit.battery >= C.haulerBattery - 0.01) return;
     if (unit.order) unit.resumeOrder = cloneOrder(unit.order);
-    else if (unit.lastOrder) unit.resumeOrder = cloneOrder(unit.lastOrder);
+    else if (unit.lastOrder && unit.lastOrder.type !== 'charge') unit.resumeOrder = cloneOrder(unit.lastOrder);
     const dest = habitat();
     if (!dest) return;
     unit.order = { type: 'charge', buildingId: dest.id };
@@ -1219,6 +1250,7 @@ export function createGame() {
 
   function canRepeat(order) {
     if (!order) return false;
+    if (order.type === 'charge') return false;
     if (order.type === 'mine') return sourceHasWork(order.tx, order.ty);
     if (order.type === 'haul') return sourceHasWork(order.sourceTx, order.sourceTy);
     if (order.type === 'build') {
@@ -1258,14 +1290,21 @@ export function createGame() {
       const priorHaul = (u.order?.type === 'haul' && cloneOrder(u.order))
         || (u.lastOrder?.type === 'haul' && cloneOrder(u.lastOrder))
         || (u.resumeOrder?.type === 'haul' && cloneOrder(u.resumeOrder));
+      const priorWork = (u.order && u.order.type !== 'charge' && cloneOrder(u.order))
+        || (u.resumeOrder && u.resumeOrder.type !== 'charge' && cloneOrder(u.resumeOrder))
+        || (u.lastOrder && u.lastOrder.type !== 'charge' && cloneOrder(u.lastOrder));
       u._emptyAfterDrop = false;
       u.order = resetOrder(order);
       if (order.type === 'build' && priorHaul) {
         u.lastOrder = resetOrder(priorHaul);
+        u.resumeOrder = resetOrder(priorHaul);
+      } else if (order.type === 'charge' && priorWork) {
+        u.lastOrder = cloneOrder(priorWork);
+        u.resumeOrder = cloneOrder(priorWork);
       } else {
         u.lastOrder = cloneOrder(u.order);
+        u.resumeOrder = null;
       }
-      u.resumeOrder = order.type === 'build' && priorHaul ? resetOrder(priorHaul) : null;
       u.blockedReason = null;
       u._strandWarned = false;
       u.status = order.type;
@@ -1402,7 +1441,10 @@ export function createGame() {
   function unitLabel(unit) {
     if (unit.blockedReason) return unit.blockedReason;
     if (unit.status === 'blocked') return unit.blockedReason || 'Blocked';
-    if (unit.status === 'idle') return 'Idle';
+    if (unit.status === 'idle') {
+      if (cargoAmount(unit) > 0.001) return IDLE_CARGO_HELP;
+      return 'Idle';
+    }
     return '';
   }
 
@@ -1458,6 +1500,9 @@ export function createGame() {
   }
 
   function stepUnit(unit, dt) {
+    if (unit.blockedReason === 'Need power' && totals().power > 1e-6) {
+      unit.blockedReason = null;
+    }
     if (unit.kind === 'hauler' && unit.battery <= 0 && unit.order?.type !== 'charge') {
       insertCharge(unit);
     } else if (
@@ -1533,6 +1578,19 @@ export function createGame() {
     }
 
     if (order.type === 'charge') {
+      if (unit.battery >= C.haulerBattery - 0.01) {
+        if (unit.resumeOrder) {
+          unit.order = cloneOrder(unit.resumeOrder);
+          if (unit.order.type === 'haul' && !unit.order.phase) unit.order.phase = 'toSource';
+          unit.lastOrder = cloneOrder(unit.resumeOrder.type === 'charge' ? unit.lastOrder : unit.resumeOrder);
+          unit.resumeOrder = null;
+          unit.blockedReason = null;
+        } else {
+          finishOrder(unit);
+        }
+        refreshUnitStatus(unit);
+        return Math.max(1e-4, dt * 0.05);
+      }
       const b = buildingById(order.buildingId) || habitat();
       if (!b) {
         finishOrder(unit);
@@ -1548,19 +1606,6 @@ export function createGame() {
         }
         refreshUnitStatus(unit);
         return dt;
-      }
-      if (unit.battery >= C.haulerBattery - 0.01) {
-        if (unit.resumeOrder) {
-          unit.order = cloneOrder(unit.resumeOrder);
-          if (unit.order.type === 'haul' && !unit.order.phase) unit.order.phase = 'toSource';
-          unit.lastOrder = cloneOrder(unit.resumeOrder.type === 'charge' ? unit.lastOrder : unit.resumeOrder);
-          unit.resumeOrder = null;
-          unit.blockedReason = null;
-        } else {
-          finishOrder(unit);
-        }
-        refreshUnitStatus(unit);
-        return Math.max(1e-4, dt * 0.05);
       }
       const room = C.haulerBattery - unit.battery;
       const tot = totals();
@@ -2344,12 +2389,13 @@ export function createGame() {
     };
     const spec = costs[type];
     if (!spec) return null;
-    if (!canPlace(type, tx, ty)) {
-      toast('Cannot place here');
+    const reject = placementRejectReason(type, tx, ty);
+    if (reject) {
+      toast(reject);
       return null;
     }
     if (totals().regolith < spec.reg) {
-      toast(`Need ${spec.reg} regolith`);
+      toast(REGOLITH_HELP);
       return null;
     }
     spendRegolith(spec.reg);
@@ -2387,7 +2433,7 @@ export function createGame() {
     const tot = totals();
     const regCost = nextPrintCostRegolith();
     if (tot.regolith < regCost) {
-      toast(`Need ${regCost} regolith`);
+      toast(REGOLITH_HELP);
       return false;
     }
     if (tot.power < C.printerHaulerCostPower) {
@@ -2507,7 +2553,7 @@ export function createGame() {
   }
 
   function hubPayoffText() {
-    return `A tunnel moves ice ${tunnelSpeedMultiple()}x faster than haulers.`;
+    return `A tunnel moves ice ${tunnelSpeedMultiple()}x faster than haulers. ${DIG_REGOLITH_HELP}.`;
   }
 
   function roughGroundText() {
@@ -2517,6 +2563,10 @@ export function createGame() {
   }
 
   function iceHoverText(tx, ty) {
+    if (state.buildGhost?.type) {
+      const reject = placementRejectReason(state.buildGhost.type, tx, ty);
+      if (reject) return reject;
+    }
     const t = tileAt(tx, ty);
     if (!t) return '';
     const b = buildingAtTile(tx, ty);
@@ -2588,6 +2638,7 @@ export function createGame() {
     unitById,
     selectedUnits,
     canPlace,
+    placementRejectReason,
     update,
     flushEvents,
     selectUnits,

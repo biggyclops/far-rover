@@ -65,12 +65,40 @@ function cellLabel(sim) {
   return Sim.formatCell(sim.col, sim.row);
 }
 
+function confirmedDepositCell(sim) {
+  const trace = sim?.trace || [];
+  for (let i = trace.length - 1; i >= 0; i--) {
+    const ar = trace[i]?.actionResult;
+    if (ar?.confirmedIce && ar.cell) return ar.cell;
+  }
+  if (sim?.lastNotify?.confirmedIce && sim.lastNotify.cell) return sim.lastNotify.cell;
+  return 'F2';
+}
+
+function confirmedThenLost(sim) {
+  if (!sim?.iceConfirmed) return null;
+  const deposit = confirmedDepositCell(sim);
+  const prefix = `Ice deposit confirmed at ${deposit}!`;
+  if (sim.outcome === Sim.OUTCOMES.LOST_BATTERY) {
+    const n = tilesFromLander(sim.col, sim.row);
+    const where = n === 1 ? '1 tile from the lander' : `${n} tiles from the lander`;
+    return `${prefix} The scout then ran out of battery ${where}. Its job is done.`;
+  }
+  if (sim.outcome === Sim.OUTCOMES.LOST_CRATER) {
+    return `${prefix} The scout then drove into a crater at ${cellLabel(sim)}. Its job is done.`;
+  }
+  return null;
+}
+
 export function explainScoutResult(sim) {
   if (!sim?.outcome) return null;
   const last = lastActed(sim);
   const label = actionLabel(last.rule, last.tick);
   const cell = cellLabel(sim);
   const below = rulesBelow(sim, last.index);
+
+  const confirmedLost = confirmedThenLost(sim);
+  if (confirmedLost) return confirmedLost;
 
   if (sim.outcome === Sim.OUTCOMES.LOST_CRATER) {
     const viaReturn = last.rule?.action?.type === Sim.ACTIONS.RETURN_CHARGE
