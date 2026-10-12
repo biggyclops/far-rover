@@ -50,6 +50,8 @@ Best tunnel: **Tunnel, 2 diggers** at 4:52 (**4.2% faster**).
 
 Inner / auto layouts stay slow (haulers-2 7:52, print-1 7:28, print-2 9:43) — that is the table that used to hide the ring-edge win.
 
+Honest Playwright (1x, `canPlace` only): haulers **7:53**, 1-digger **7:08**, 2-digger (longer legal corridor) **4:58**, ring-edge 2-digger **4:38** (home 20,9 / far 35,8). No honest win under 4:00.
+
 ### Five criteria (best placement)
 
 | # | Criterion | Result |

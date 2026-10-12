@@ -1351,7 +1351,7 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
   async function honestTunnel(page, diggers, { ringEdge = false } = {}) {
     test.setTimeout(240000);
     await ready(page);
-    const result = await page.evaluate(({ prog, diggers: n, ringEdge: edge }) => {
+    const result = await page.evaluate(async ({ prog, diggers: n, ringEdge: edge }) => {
       const t = window.__v08Test;
       function haulers() {
         return t.getState().units.filter((u) => u.kind === 'hauler');
@@ -1427,37 +1427,26 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
       t.advance(2.1);
       const deep = t.getState().deepIce;
       if (!deep.unlocked) return { error: 'no deep ice', time: t.getState().time };
+      const { listTunnelPlans } = await import('/v08/balance/placements.js');
+      const plans = listTunnelPlans().filter((p) => p.far && p.home);
+      plans.sort((a, b) => (a.corr ?? 99) - (b.corr ?? 99));
+      const plan = edge ? plans[0] : (plans[plans.length - 1] || plans[0]);
+      if (!plan) return { error: 'no legal tunnel plan' };
       t.selectUnits(haulers().map((u) => u.id));
-      let farHub = null;
-      for (let ty = deep.ty - 3; ty <= deep.ty + 1 && !farHub; ty++) {
-        for (let tx = deep.tx - 3; tx <= deep.tx + 1 && !farHub; tx++) {
-          farHub = t.placeBuilding('tunnel-hub', tx, ty);
-        }
-      }
-      if (!farHub) return { error: 'far hub place failed', deep };
+      const farHub = t.placeBuilding('tunnel-hub', plan.far.tx, plan.far.ty);
+      if (!farHub) return { error: 'far hub place failed', plan, deep };
       if (!waitDone(farHub.id)) return { error: 'far hub not complete' };
-      const hab = t.getState().buildings.find((b) => b.type === 'habitat');
-      const C = t.config;
-      const candidates = [];
-      for (let tx = 0; tx < C.mapWidth - 1; tx++) candidates.push({ tx, ty: farHub.ty });
-      for (let ty = 0; ty < C.mapHeight - 1; ty++) candidates.push({ tx: farHub.tx, ty });
-      candidates.sort((a, b) => edge
-        ? Math.hypot(a.tx - farHub.tx, a.ty - farHub.ty) - Math.hypot(b.tx - farHub.tx, b.ty - farHub.ty)
-        : Math.hypot(a.tx - hab.tx, a.ty - hab.ty) - Math.hypot(b.tx - hab.tx, b.ty - hab.ty));
-      let homeHub = null;
       t.selectUnits(haulers().map((u) => u.id));
-      for (const p of candidates) {
-        homeHub = t.placeBuilding('tunnel-hub', p.tx, p.ty);
-        if (homeHub) break;
-      }
-      if (!homeHub) return { error: 'home hub place failed', far: farHub };
+      const homeHub = t.placeBuilding('tunnel-hub', plan.home.tx, plan.home.ty);
+      if (!homeHub) return { error: 'home hub place failed', plan, far: farHub };
       if (!waitDone(homeHub.id)) return { error: 'home hub not complete' };
       t.selectUnits(haulers().map((u) => u.id));
-      const vault = t.placeBuilding('vault', homeHub.tx - 3, homeHub.ty)
+      const vault = (plan.vault && t.placeBuilding('vault', plan.vault.tx, plan.vault.ty))
+        || t.placeBuilding('vault', homeHub.tx - 3, homeHub.ty)
         || t.placeBuilding('vault', homeHub.tx + 2, homeHub.ty)
         || t.placeBuilding('vault', homeHub.tx, homeHub.ty - 3)
         || t.placeBuilding('vault', homeHub.tx, homeHub.ty + 2);
-      if (!vault) return { error: 'vault place failed' };
+      if (!vault) return { error: 'vault place failed', plan };
       if (!waitDone(vault.id)) return { error: 'vault not complete' };
       const tiles = t.startDigCorridor();
       if (!tiles || !tiles.length) return { error: 'no corridor', home: homeHub, far: farHub };
@@ -1503,6 +1492,7 @@ test.describe('Far Rover v0.8 M3/M4 honest play', () => {
         diggers: n,
         home: { tx: homeHub.tx, ty: homeHub.ty },
         far: { tx: farHub.tx, ty: farHub.ty },
+        corr: plan.corr,
         ringEdge: edge,
       };
     }, { prog: NOTIFY_PROGRAM, diggers, ringEdge });
